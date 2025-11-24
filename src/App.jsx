@@ -194,7 +194,7 @@ const dbService = {
   // CORREÇÃO DA HIERARQUIA: Garante ímpar (Collection -> Document -> Collection...)
   getCollRef: (user, colName) => {
     if (!user) throw new Error("Usuário não autenticado");
-    return collection(db, 'artifacts', appId, 'shared_data', 'DADOS_EMPRESA', colName);
+    return collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', colName);
   },
   
   // Perfil e Permissões
