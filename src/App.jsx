@@ -336,6 +336,13 @@ const LoginScreen = ({ showToast }) => {
     );
 };
 
+
+// KPI CARD
+const KpiCard = ({ title, value, icon: Icon, color }) => {
+    const bgColors = { emerald: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400', rose: 'bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400', indigo: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' };
+    return (<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700"><div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">{title}</p><h3 className="text-2xl font-bold text-slate-800 dark:text-white">{value}</h3></div><div className={`p-3 rounded-xl ${bgColors[color] || bgColors.indigo}`}><Icon size={24} /></div></div></div>);
+};
+
 // DRE - Demonstração de Resultado (Novo Componente)
 const DREComponent = ({ transactions, period, theme, userRole }) => {
     const transactionsByPlan = useMemo(() => {
