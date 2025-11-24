@@ -236,7 +236,7 @@ const LoginScreen = () => {
           <div className="w-16 h-16 bg-indigo-600 rounded-xl flex items-center justify-center mx-auto mb-4">
             <Building2 className="text-white" size={32} />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Acesso Fechamento de Custos</h1>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Fechamento de Custos</h1>
         </div>
         <form onSubmit={handleAuth} className="space-y-4">
           <input type="email" required className="w-full border dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white p-3 rounded-lg" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}/>
