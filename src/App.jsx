@@ -115,9 +115,9 @@ const aiService = {
     
     // Cabeçalho
     doc.setFontSize(18);
-    doc.text(`Relatório Financeiro - ${period}`, 14, 20);
+    doc.text(`Relatório de Custos - ${period}`, 14, 20);
     doc.setFontSize(10);
-    doc.text(`Gerado via FinSaaS em ${new Date().toLocaleDateString()}`, 14, 26);
+    doc.text(`Gerado via Fechamento de Custos em ${new Date().toLocaleDateString()}`, 14, 26);
 
     // Análise da IA
     doc.setFontSize(12);
@@ -301,7 +301,7 @@ const LoginScreen = () => {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden">
         <div className="bg-white dark:bg-slate-800 w-full max-w-md p-8 rounded-2xl shadow-2xl relative z-10">
-          <div className="text-center mb-8"><div className="w-16 h-16 bg-indigo-600 rounded-xl flex items-center justify-center mx-auto mb-4"><Building2 className="text-white" size={32} /></div><h1 className="text-2xl font-bold text-slate-800 dark:text-white">Acesso Financeiro</h1></div>
+          <div className="text-center mb-8"><div className="w-16 h-16 bg-indigo-600 rounded-xl flex items-center justify-center mx-auto mb-4"><Building2 className="text-white" size={32} /></div><h1 className="text-2xl font-bold text-slate-800 dark:text-white">Fechamento de Custos</h1></div>
           <form onSubmit={handleAuth} className="space-y-4">
             <input type="email" required className="w-full border dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white p-3 rounded-lg" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}/>
             <input type="password" required className="w-full border dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white p-3 rounded-lg" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)}/>
@@ -468,7 +468,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
       <aside className="w-20 lg:w-64 bg-slate-900 dark:bg-slate-950 text-white flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800">
-        <div className="p-6 border-b border-slate-800 flex items-center gap-3"><div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center"><Building2 size={18} /></div><span className="text-xl font-bold hidden lg:block">FinSaaS</span></div>
+        <div className="p-6 border-b border-slate-800 flex items-center gap-3"><div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center"><Building2 size={18} /></div><span className="text-xl font-bold hidden lg:block">Fechamento de Custos</span></div>
         <nav className="flex-1 p-4 space-y-2">
           <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /><span className="hidden lg:block">Dashboard</span></button>
           <button onClick={() => setActiveTab('lancamentos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'lancamentos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><List size={20} /><span className="hidden lg:block">Lançamentos</span></button>
