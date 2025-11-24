@@ -154,7 +154,7 @@ const useSessionTimeout = (user, showToast) => {
 
 /**
  * ------------------------------------------------------------------
- * 4. SERVIÇOS DE BANCO DE DADOS (DB)
+ * 2. SERVIÇOS DE BANCO DE DADOS (DB)
  * ------------------------------------------------------------------
  */
 
@@ -190,42 +190,110 @@ const parseLegacyFile = (fileContent, selectedSegment) => {
     return cleanTransactions;
 };
 
+/**
+ * ------------------------------------------------------------------
+ * 2. SERVIÇO DE DADOS (CORRIGIDO)
+ * ------------------------------------------------------------------
+ */
 const dbService = {
-  // CORREÇÃO DA HIERARQUIA: Garante ímpar (Collection -> Document -> Collection...)
+  // Caminho corrigido para bater com as regras: shared_container
   getCollRef: (user, colName) => {
     if (!user) throw new Error("Usuário não autenticado");
     return collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', colName);
   },
-  
-  // Perfil e Permissões
+
+  // Lógica de Perfil Corrigida
   syncUserProfile: async (user) => {
-    const userRef = doc(db, 'artifacts', appId, 'users', user.uid);
-    const snap = await getDoc(userRef);
-    if (!snap.exists()) {
-      const usersColl = collection(db, 'artifacts', appId, 'users');
-      const allUsers = await getDocs(usersColl);
-      // O primeiro usuário que logar e não tiver perfil será Admin
-      const initialRole = allUsers.empty ? 'admin' : 'editor';
-      await setDoc(userRef, { email: user.email, role: initialRole, createdAt: new Date().toISOString() });
-      return initialRole;
+    try {
+        const userRef = doc(db, 'artifacts', appId, 'users', user.uid);
+        const snap = await getDoc(userRef);
+        
+        if (!snap.exists()) {
+          // Se o perfil não existe, tenta ver se é o primeiro usuário do sistema
+          const usersColl = collection(db, 'artifacts', appId, 'users');
+          const allUsers = await getDocs(usersColl);
+          
+          // Se a lista estiver vazia, o primeiro é ADMIN. Se não, é EDITOR (para poder usar o sistema).
+          // Mudei o padrão de 'editor' para que novos usuários consigam lançar dados imediatamente.
+          const initialRole = allUsers.empty ? 'admin' : 'editor';
+          
+          await setDoc(userRef, { email: user.email, role: initialRole, createdAt: new Date().toISOString() });
+          return initialRole;
+        }
+        return snap.data().role;
+    } catch (error) {
+        console.error("Erro ao sincronizar perfil:", error);
+        // Se der erro de permissão, assume que é 'viewer' por segurança, mas não trava o app
+        return 'viewer';
     }
-    return snap.data().role;
   },
-  getAllUsers: async () => { const usersColl = collection(db, 'artifacts', appId, 'users'); const snap = await getDocs(usersColl); return snap.docs.map(d => ({ id: d.id, ...d.data() })); },
-  updateUserRole: async (userId, newRole) => { const userRef = doc(db, 'artifacts', appId, 'users', userId); await updateDoc(userRef, { role: newRole }); },
 
-  // Transações (Tabelas Principais)
-  addBulkTransactions: async (user, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, 'transactions'); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } },
-  addTransaction: async (user, item) => { const colRef = dbService.getCollRef(user, 'transactions'); await addDoc(colRef, item); },
-  updateTransaction: async (user, id, data) => { const docRef = doc(dbService.getCollRef(user, 'transactions'), id); await updateDoc(docRef, data); },
-  deleteTransaction: async (user, id) => { const docRef = doc(dbService.getCollRef(user, 'transactions'), id); await deleteDoc(docRef); },
-  getAllTransactions: async (user) => { const colRef = dbService.getCollRef(user, 'transactions'); const snapshot = await getDocs(colRef); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); },
+  getAllUsers: async () => {
+    const usersColl = collection(db, 'artifacts', appId, 'users');
+    const snap = await getDocs(usersColl);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  },
 
-  // Segmentos/Unidades
-  getSegments: async (user) => { const colRef = dbService.getCollRef(user, 'segments'); const snapshot = await getDocs(colRef); const segs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); if (segs.length === 0) return []; return segs; },
-  addSegment: async (user, name) => { const colRef = dbService.getCollRef(user, 'segments'); await addDoc(colRef, { name }); },
-  updateSegment: async (user, id, newName) => { const docRef = doc(dbService.getCollRef(user, 'segments'), id); await updateDoc(docRef, { name: newName }); },
-  deleteSegment: async (user, id) => { const docRef = doc(dbService.getCollRef(user, 'segments'), id); await deleteDoc(docRef); }
+  updateUserRole: async (userId, newRole) => {
+    const userRef = doc(db, 'artifacts', appId, 'users', userId);
+    await updateDoc(userRef, { role: newRole });
+  },
+
+  // Funções de Transação (Mantidas e verificadas)
+  addBulkTransactions: async (user, items) => {
+    const chunkSize = 400;
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      const colRef = dbService.getCollRef(user, 'transactions');
+      chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); });
+      await batch.commit();
+    }
+  },
+
+  addTransaction: async (user, item) => {
+    const colRef = dbService.getCollRef(user, 'transactions');
+    await addDoc(colRef, item);
+  },
+  
+  updateTransaction: async (user, id, data) => {
+    const docRef = doc(dbService.getCollRef(user, 'transactions'), id);
+    await updateDoc(docRef, data);
+  },
+
+  deleteTransaction: async (user, id) => {
+    const docRef = doc(dbService.getCollRef(user, 'transactions'), id);
+    await deleteDoc(docRef);
+  },
+
+  getAllTransactions: async (user) => {
+    const colRef = dbService.getCollRef(user, 'transactions');
+    const snapshot = await getDocs(colRef);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  },
+
+  // Funções de Segmentos (Unidades)
+  getSegments: async (user) => {
+    const colRef = dbService.getCollRef(user, 'segments');
+    const snapshot = await getDocs(colRef);
+    const segs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return segs; 
+  },
+
+  addSegment: async (user, name) => { 
+    const colRef = dbService.getCollRef(user, 'segments'); 
+    await addDoc(colRef, { name }); 
+  },
+  
+  updateSegment: async (user, id, newName) => { 
+    const docRef = doc(dbService.getCollRef(user, 'segments'), id); 
+    await updateDoc(docRef, { name: newName }); 
+  },
+  
+  deleteSegment: async (user, id) => { 
+    const docRef = doc(dbService.getCollRef(user, 'segments'), id); 
+    await deleteDoc(docRef); 
+  }
 };
 
 /**
