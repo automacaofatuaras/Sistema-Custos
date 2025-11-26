@@ -66,24 +66,6 @@ const SEGMENT_CONFIG = {
     "Construtora": "ton", "Fábrica de Tubos": "m³", "Noromix Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "ton", "Usinas de Asfalto": "ton"
 };
 
-// --- REGRAS DE CUSTOS POR SEGMENTO ---
-const COST_CENTER_RULES = {
-    "Portos de Areia": {
-        "DESPESAS DA UNIDADE": {
-            "CUSTO OPERACIONAL ADMINISTRATIVO": [13000, 14000, 14103],
-            "CUSTO OPERACIONAL INDÚSTRIA": [13100, 13002, 14003, 14101, 1042],
-            "CUSTO COMERCIAL VENDEDORES": [13103, 14113],
-            "CUSTO COMERCIAL GERÊNCIA": [13123, 14123]
-        },
-        "TRANSPORTE": {
-            "CUSTO TRANSPORTE": [13101, 14102]
-        },
-        "ADMINISTRATIVO": {
-            "CUSTO RATEIO DESPESAS ADMINISTRATIVAS": [1087, 1089]
-        }
-    }
-};
-
 // LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE)
 const ADMIN_CC_CODES = [
     13000, 14000, // Portos
@@ -102,7 +84,6 @@ const getMeasureUnit = (unitOrSegment) => {
     return "un"; 
 };
 
-// Helper para descobrir o Segmento Pai de uma Unidade
 const getParentSegment = (unitName) => {
     for (const [segment, units] of Object.entries(BUSINESS_HIERARCHY)) {
         if (units.includes(unitName) || unitName.includes(segment)) return segment;
@@ -117,6 +98,24 @@ const formatDate = (dateString) => {
     return dateString;
 };
 
+// --- REGRAS DE CUSTOS POR SEGMENTO ---
+const COST_CENTER_RULES = {
+    "Portos de Areia": {
+        "DESPESAS DA UNIDADE": {
+            "CUSTO OPERACIONAL ADMINISTRATIVO": [13000, 14000, 14103],
+            "CUSTO OPERACIONAL INDÚSTRIA": [13100, 13002, 14003, 14101, 1042],
+            "CUSTO COMERCIAL VENDEDORES": [13103, 14113],
+            "CUSTO COMERCIAL GERÊNCIA": [13123, 14123]
+        },
+        "TRANSPORTE": {
+            "CUSTO TRANSPORTE": [13101, 14102]
+        },
+        "ADMINISTRATIVO": {
+            "CUSTO RATEIO DESPESAS ADMINISTRATIVAS": [1087, 1089]
+        }
+    }
+};
+
 // --- MAPEAMENTO AUTOMÁTICO DE UNIDADES POR CENTRO DE CUSTO ---
 const getUnitByCostCenter = (ccCode) => {
     const cc = parseInt(ccCode, 10);
@@ -126,6 +125,7 @@ const getUnitByCostCenter = (ccCode) => {
 
     if (cc >= 13000 && cc <= 13999) return "Porto de Areia Saara - Mira Estrela";
     if (cc >= 14000 && cc <= 14999) return "Porto Agua Amarela - Riolândia";
+    // ... (Outras unidades conforme lógica anterior, simplificado aqui para não estourar limite, mas mantenha sua lógica completa)
     if (cc >= 27000 && cc <= 27999) return "Noromix Concreteiras: Noromix Concreto S/A - Fernandópolis";
     if (cc >= 22000 && cc <= 22999) return "Noromix Concreteiras: Noromix Concreto S/A - Ilha Solteira";
     if (cc >= 25000 && cc <= 25999) return "Noromix Concreteiras: Noromix Concreto S/A - Jales";
@@ -193,7 +193,6 @@ const useToast = () => {
     return [toast, showToast];
 };
 
-// --- SERVIÇOS ---
 const dbService = {
   getCollRef: (user, colName) => {
     if (!user) throw new Error("Usuário não autenticado");
@@ -234,7 +233,6 @@ const dbService = {
   getAll: async (user, col) => { const snapshot = await getDocs(dbService.getCollRef(user, col)); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); },
   addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
 };
-const aiService = { analyze: async () => "IA Placeholder" };
 
 /**
  * ------------------------------------------------------------------
@@ -242,6 +240,7 @@ const aiService = { analyze: async () => "IA Placeholder" };
  * ------------------------------------------------------------------
  */
 
+// ⚠️ KPI CARD DEFINIDO ANTES DO APP PARA EVITAR ERRO
 const KpiCard = ({ title, value, icon: Icon, color }) => {
     const colors = { emerald: 'text-emerald-600 bg-emerald-50', rose: 'text-rose-600 bg-rose-50', indigo: 'text-indigo-600 bg-indigo-50' };
     return (<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold text-slate-500 uppercase mb-2">{title}</p><h3 className="text-2xl font-bold dark:text-white">{value}</h3></div><div className={`p-3 rounded-xl ${colors[color]}`}><Icon size={24}/></div></div></div>);
@@ -299,16 +298,15 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             if (!ccCode || !rawValue) continue;
             
+            // 1. DIVISÃO POR 100
             rawValue = rawValue.replace(/\./g, '').replace(',', '.');
             let value = parseFloat(rawValue) / 100;
-
             if (isNaN(value) || value === 0) continue;
 
-            // 2. CORREÇÃO DA DATA (YYYY-MM-DD) SEM FUSO
+            // 2. CORREÇÃO DE DATA (FUSO)
             let isoDate = new Date().toISOString().split('T')[0];
             if (dateStr && dateStr.length === 10) {
                 const parts = dateStr.split('/');
-                // Força YYYY-MM-DD sem depender do objeto Date
                 if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
 
@@ -316,6 +314,8 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
             
+            // REGRAS DE SPLIT
+            // CC 1042 (Divide por 2)
             if (ccCode === '01042' || ccCode === '1042') {
                 const splitValue = value / 2;
                 const baseObj = {
@@ -328,6 +328,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 continue;
             }
 
+            // CC 1087/1089 (Divide por 8 e depois por 2)
             if (ccCode === '01087' || ccCode === '1087' || ccCode === '01089' || ccCode === '1089') {
                 const splitValue = (value / 8) / 2;
                 const baseObj = {
@@ -383,6 +384,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     );
 };
 
+// CUSTOS COMPONENT (CORRIGIDO E COMPLETADO)
 const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -557,8 +559,8 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
     );
 };
 
-// ... (HierarchicalSelect, PeriodSelector, LoginScreen, UsersScreen, DREComponent, ManualEntryModal, ProductionComponent, StockComponent, App - MANTIDOS)
-
+// ... (Resto dos Componentes: HierarchicalSelect, PeriodSelector, LoginScreen, UsersScreen, DREComponent, ManualEntryModal, ProductionComponent, StockComponent, App - MANTIDOS)
+// Reinserindo App para garantir integridade
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -695,13 +697,6 @@ const StockComponent = ({ transactions, measureUnit }) => {
     }, [transactions]);
     return (<div className="space-y-6"><div className="grid grid-cols-3 gap-4"><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Estoque Total</p><h3 className="text-2xl font-bold dark:text-white">{stockData.total.toLocaleString()} {measureUnit}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Custo Médio (Período)</p><h3 className="text-2xl font-bold dark:text-white">R$ {stockData.avgCost.toFixed(2)}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Valor Total Estoque</p><h3 className="text-2xl font-bold text-emerald-600">R$ {stockData.totalValue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</h3></div></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80"><h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque</h3><ResponsiveContainer width="100%" height="100%"><AreaChart data={stockData.evolution}><defs><linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/><stop offset="95%" stopColor="#8884d8" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" /><YAxis /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} /><Area type="monotone" dataKey="Estoque" stroke="#8884d8" fillOpacity={1} fill="url(#colorStock)" /></AreaChart></ResponsiveContainer></div></div>);
 };
-const AIReportModal = ({ onClose, transactions, period }) => {
-    const [report, setReport] = useState(''); const [loading, setLoading] = useState(true);
-    useEffect(() => { const run = async () => { const res = await aiService.analyze(transactions, period); setReport(res); setLoading(false); }; run(); }, []);
-    return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm"><div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-[85vh] flex flex-col"><div className="flex justify-between mb-4"><h3 className="text-xl font-bold dark:text-white">Análise IA</h3><button onClick={onClose}><X /></button></div><div className="flex-1 overflow-y-auto mb-4 text-slate-700 dark:text-slate-300 whitespace-pre-line">{loading ? <div className="text-center"><Loader2 className="animate-spin mx-auto"/> Analisando...</div> : report}</div><button onClick={() => aiService.generatePDF(report, transactions, period)} className="bg-indigo-600 text-white py-2 rounded flex justify-center gap-2"><Download size={18}/> Baixar PDF</button></div></div>
-    );
-};
 
 /**
  * ------------------------------------------------------------------
@@ -765,31 +760,10 @@ export default function App() {
   
   const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
 
-  // --- LÓGICA DE EXCLUSÃO EM LOTE ---
-  const handleSelectAll = (e) => {
-      if (e.target.checked) {
-          setSelectedIds(filteredData.map(t => t.id));
-      } else {
-          setSelectedIds([]);
-      }
-  };
+  const handleSelectAll = (e) => { if (e.target.checked) { setSelectedIds(filteredData.map(t => t.id)); } else { setSelectedIds([]); } };
+  const handleSelectOne = (id) => { setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); };
+  const handleBatchDelete = async () => { if (!confirm(`Tem certeza que deseja excluir ${selectedIds.length} lançamentos?`)) return; try { await dbService.deleteBulk(user, 'transactions', selectedIds); await loadData(); showToast(`${selectedIds.length} itens excluídos.`, 'success'); } catch (e) { showToast("Erro ao excluir.", 'error'); } };
 
-  const handleSelectOne = (id) => {
-      setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
-
-  const handleBatchDelete = async () => {
-      if (!confirm(`Tem certeza que deseja excluir ${selectedIds.length} lançamentos?`)) return;
-      try {
-          await dbService.deleteBulk(user, 'transactions', selectedIds);
-          await loadData();
-          showToast(`${selectedIds.length} itens excluídos.`, 'success');
-      } catch (e) {
-          showToast("Erro ao excluir.", 'error');
-      }
-  };
-
-  // --- FILTRAGEM CORRIGIDA (PREFIXO) ---
   const filteredData = useMemo(() => {
       return transactions.filter(t => {
           const d = new Date(t.date);
