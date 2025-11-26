@@ -66,17 +66,7 @@ const SEGMENT_CONFIG = {
     "Construtora": "ton", "Fábrica de Tubos": "m³", "Noromix Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "ton", "Usinas de Asfalto": "ton"
 };
 
-// LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE)
-const ADMIN_CC_CODES = [
-    13000, 14000, // Portos
-    27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, // Concreteiras
-    10000, // Fabrica
-    20000, 5000, 4000, 3000, 26000, 2000, // Pedreiras
-    32000, 6000, 17000, 31000, 7000, 21000, // Usinas
-    40000 // Construtora
-];
-
-// REGRAS DE CUSTOS POR SEGMENTO
+// --- REGRAS DE CUSTOS POR SEGMENTO ---
 const COST_CENTER_RULES = {
     "Portos de Areia": {
         "DESPESAS DA UNIDADE": {
@@ -94,6 +84,16 @@ const COST_CENTER_RULES = {
     }
 };
 
+// LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE)
+const ADMIN_CC_CODES = [
+    13000, 14000, // Portos
+    27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, // Concreteiras
+    10000, // Fabrica
+    20000, 5000, 4000, 3000, 26000, 2000, // Pedreiras
+    32000, 6000, 17000, 31000, 7000, 21000, // Usinas
+    40000 // Construtora
+];
+
 const getMeasureUnit = (unitOrSegment) => {
     if (SEGMENT_CONFIG[unitOrSegment]) return SEGMENT_CONFIG[unitOrSegment];
     for (const [segment, units] of Object.entries(BUSINESS_HIERARCHY)) {
@@ -110,7 +110,6 @@ const getParentSegment = (unitName) => {
     return "Geral";
 };
 
-// CORREÇÃO DE FUSO HORÁRIO NA EXIBIÇÃO
 const formatDate = (dateString) => {
     if (!dateString) return '-';
     const parts = dateString.split('-'); 
@@ -305,9 +304,11 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             if (isNaN(value) || value === 0) continue;
 
+            // 2. CORREÇÃO DA DATA (YYYY-MM-DD) SEM FUSO
             let isoDate = new Date().toISOString().split('T')[0];
             if (dateStr && dateStr.length === 10) {
                 const parts = dateStr.split('/');
+                // Força YYYY-MM-DD sem depender do objeto Date
                 if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
 
@@ -315,7 +316,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
             
-            // LÓGICA SPLIT CC 1042
             if (ccCode === '01042' || ccCode === '1042') {
                 const splitValue = value / 2;
                 const baseObj = {
@@ -328,7 +328,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 continue;
             }
 
-            // LÓGICA SPLIT CC 1087/1089
             if (ccCode === '01087' || ccCode === '1087' || ccCode === '01089' || ccCode === '1089') {
                 const splitValue = (value / 8) / 2;
                 const baseObj = {
@@ -345,17 +344,10 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
 
             parsed.push({
-                date: isoDate,
-                segment: finalSegment,
-                costCenter: `${ccCode} - ${ccDesc}`,
-                accountPlan: planCode || '00.00',
-                planDescription: planDesc || 'Indefinido',
-                description: supplier, 
-                materialDescription: sortDesc, 
-                value: value,
-                type: type,
-                source: 'automatic_import',
-                createdAt: new Date().toISOString()
+                date: isoDate, segment: finalSegment, costCenter: `${ccCode} - ${ccDesc}`,
+                accountPlan: planCode || '00.00', planDescription: planDesc || 'Indefinido',
+                description: supplier, materialDescription: sortDesc, value: value,
+                type: type, source: 'automatic_import', createdAt: new Date().toISOString()
             });
         }
         setPreviewData(parsed);
@@ -565,6 +557,8 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
     );
 };
 
+// ... (HierarchicalSelect, PeriodSelector, LoginScreen, UsersScreen, DREComponent, ManualEntryModal, ProductionComponent, StockComponent, App - MANTIDOS)
+
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -667,7 +661,6 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
         if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
-        
         const [year, month] = form.date.split('-');
         const lastDay = new Date(year, month, 0).getDate();
         const fullDate = `${form.date}-${lastDay}`;
