@@ -5,7 +5,7 @@ import {
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, 
   AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown,
-  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search, CheckSquare, Square
+  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
@@ -44,6 +44,7 @@ const firebaseConfig = {
 // ⚠️ 2. COLE SUA CHAVE DO GEMINI AQUI ⚠️
 const GEMINI_API_KEY = "SUA_KEY_GEMINI"; 
 
+// Inicialização do Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -657,7 +658,7 @@ export default function App() {
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
-  const [selectedIds, setSelectedIds] = useState([]); // Para exclusão em lote
+  const [selectedIds, setSelectedIds] = useState([]);
 
   const [importText, setImportText] = useState('');
   const [importSegment, setImportSegment] = useState(''); 
@@ -679,7 +680,7 @@ export default function App() {
         const segs = await dbService.getAll(user, 'segments');
         setTransactions(txs);
         setSegments(segs);
-        setSelectedIds([]); // Limpa seleção ao recarregar
+        setSelectedIds([]);
     } catch (e) { showToast("Erro ao carregar dados.", 'error'); }
   };
   useEffect(() => { if (user) loadData(); }, [user]);
@@ -740,16 +741,12 @@ export default function App() {
           if (!dateMatch) return false;
           
           if (globalUnitFilter !== 'ALL') {
-              // CORREÇÃO AQUI: Verifica se a unidade é um segmento (pasta)
               if (BUSINESS_HIERARCHY[globalUnitFilter]) {
-                 // Se for segmento, verifica se a unidade do lançamento (limpa) está na lista desse segmento
-                 // O banco pode ter "Portos: Unidade" ou só "Unidade". Vamos limpar antes de comparar.
                  const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                 // Verifica se a unidade limpa está na lista do segmento selecionado
-                 const is inSegment = BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName)); // Includes é mais seguro caso haja pequenas variações
-                 return is inSegment;
+                 // Usa .some para verificar se alguma das unidades do segmento contém o nome da unidade da transação
+                 const isInSegment = BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
+                 return isInSegment;
               } else {
-                  // Se for unidade específica, compara direto
                   return t.segment === globalUnitFilter || t.segment.endsWith(globalUnitFilter);
               }
           }
