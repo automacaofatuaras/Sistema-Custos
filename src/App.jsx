@@ -33,12 +33,12 @@ import {
 
 // ⚠️ 1. COLE SUAS CHAVES DO FIREBASE AQUI ⚠️
 const firebaseConfig = {
-  apiKey: "SUA_KEY_FIREBASE",
-  authDomain: "SEU_PROJETO.firebaseapp.com",
-  projectId: "SEU_PROJETO",
-  storageBucket: "SEU_PROJETO.firebasestorage.app",
-  messagingSenderId: "SEU_ID",
-  appId: "SEU_APP_ID"
+  apiKey: "AIzaSyBmgCmtJnVRkmO2SzvyVmG5e7QCEhxDcy4",
+  authDomain: "sistema-custos.firebaseapp.com",
+  projectId: "sistema-custos",
+  storageBucket: "sistema-custos.firebasestorage.app",
+  messagingSenderId: "693431907072",
+  appId: "1:693431907072:web:2dbc529e5ef65476feb9e5"
 };
 
 // ⚠️ 2. COLE SUA CHAVE DO GEMINI AQUI ⚠️
