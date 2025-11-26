@@ -44,6 +44,7 @@ const firebaseConfig = {
 // ⚠️ 2. COLE SUA CHAVE DO GEMINI AQUI ⚠️
 const GEMINI_API_KEY = "SUA_KEY_GEMINI"; 
 
+// Inicialização do Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -284,159 +285,7 @@ const aiService = {
  * ------------------------------------------------------------------
  */
 
-// PARSER INTELIGENTE DE TXT COM DETECÇÃO DE CABEÇALHO E UNIDADE
-const AutomaticImportComponent = ({ onImport, segments, isProcessing }) => {
-    const [fileText, setFileText] = useState('');
-    const [previewData, setPreviewData] = useState([]);
-    const fileRef = useRef(null);
-
-    const handleFile = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            const text = evt.target.result;
-            setFileText(text);
-            parseAndPreview(text);
-        };
-        reader.readAsText(file, 'ISO-8859-1'); // Tenta ler com encoding PT-BR
-    };
-
-    const parseAndPreview = (text) => {
-        const lines = text.split('\n');
-        // 1. Encontrar linha de cabeçalho
-        let headerIndex = -1;
-        let colMap = {};
-        
-        for(let i=0; i< Math.min(lines.length, 20); i++) {
-            if (lines[i].includes('PRGER-CCUS')) {
-                headerIndex = i;
-                const cols = lines[i].split(';');
-                cols.forEach((col, idx) => {
-                    colMap[col.trim()] = idx;
-                });
-                break;
-            }
-        }
-
-        if (headerIndex === -1) {
-            alert("Erro: Cabeçalho (PRGER-CCUS) não encontrado no arquivo.");
-            return;
-        }
-
-        const parsed = [];
-        // Começa a ler depois do cabeçalho
-        for(let i = headerIndex + 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            const cols = line.split(';');
-            
-            // Extrair dados usando o mapa de colunas
-            const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
-            const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
-            const planCode = cols[colMap['PRGER-PLAN']]?.trim();
-            const planDesc = cols[colMap['PRGER-NPLC']]?.trim();
-            const supplier = cols[colMap['PRGER-NFOR']]?.trim() || 'Diversos';
-            const rawValue = cols[colMap['PRGER-TOTA']]?.trim();
-            const ccDesc = cols[colMap['PRGER-NCCU']]?.trim() || '';
-
-            // Validação Básica
-            if (!ccCode || !rawValue) continue;
-
-            // Identificar Unidade
-            const detectedUnit = getUnitByCostCenter(ccCode);
-            if (!detectedUnit) continue; // Ignora se não for de uma unidade conhecida
-
-            // Formatar Valor
-            const value = parseFloat(rawValue.replace(',', '.'));
-            if (isNaN(value)) continue;
-
-            // Formatar Data (DD/MM/YYYY -> YYYY-MM-DD)
-            let isoDate = new Date().toISOString().split('T')[0];
-            if (dateStr && dateStr.length === 10) {
-                const [d, m, y] = dateStr.split('/');
-                isoDate = `${y}-${m}-${d}`;
-            }
-
-            // Definir Tipo
-            const type = (planCode?.startsWith('1.') || planCode?.startsWith('4.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-
-            parsed.push({
-                date: isoDate,
-                segment: detectedUnit, // Nome completo da unidade (ex: Portos: Saara)
-                costCenter: ccDesc,
-                accountPlan: planCode || '00.00',
-                planDescription: planDesc || 'Indefinido',
-                description: supplier,
-                value: value,
-                type: type,
-                source: 'automatic_import',
-                createdAt: new Date().toISOString()
-            });
-        }
-        setPreviewData(parsed);
-    };
-
-    const handleConfirmImport = () => {
-        if (previewData.length === 0) return alert("Nenhum dado válido encontrado.");
-        onImport(previewData);
-        setFileText('');
-        setPreviewData([]);
-    };
-
-    return (
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="font-bold text-lg dark:text-white">Importação Inteligente (TXT)</h3>
-                <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Detecção Automática de Unidade</span>
-            </div>
-
-            <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
-                <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
-                <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
-                <p className="text-xs text-slate-500 mt-1">O sistema identificará as unidades pelos Centros de Custo</p>
-                <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
-            </div>
-
-            {previewData.length > 0 && (
-                <div className="mt-6 animate-in fade-in slide-in-from-bottom-4">
-                    <div className="flex justify-between items-center mb-2">
-                        <p className="font-bold text-sm text-emerald-600">{previewData.length} lançamentos identificados</p>
-                        <button onClick={handleConfirmImport} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2">
-                            {isProcessing ? <Loader2 className="animate-spin"/> : <CheckCircle size={18}/>}
-                            Confirmar Importação
-                        </button>
-                    </div>
-                    <div className="max-h-60 overflow-y-auto border dark:border-slate-700 rounded-lg">
-                        <table className="w-full text-xs text-left">
-                            <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0">
-                                <tr>
-                                    <th className="p-2">Data</th>
-                                    <th className="p-2">Unidade Detectada</th>
-                                    <th className="p-2">Descrição</th>
-                                    <th className="p-2 text-right">Valor</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y dark:divide-slate-700">
-                                {previewData.slice(0, 100).map((row, i) => (
-                                    <tr key={i} className="dark:text-slate-300">
-                                        <td className="p-2">{row.date}</td>
-                                        <td className="p-2 font-bold text-indigo-600 dark:text-indigo-400">{row.segment.split(':')[1]}</td>
-                                        <td className="p-2">{row.description}</td>
-                                        <td className="p-2 text-right">{row.value.toFixed(2)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        {previewData.length > 100 && <p className="p-2 text-center text-xs text-slate-400">... e mais {previewData.length - 100} linhas.</p>}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-// SELETOR HIERÁRQUICO (CORRIGIDO PARA REMOVER 'GERAL')
+// SELETOR HIERÁRQUICO (SEGMENTO -> UNIDADE)
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -451,11 +300,7 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
             if (!map[segment]) map[segment] = [];
             map[segment].push({ fullValue: opt.name, label: unitName });
         });
-        // Filtra 'Geral' para não mostrar duplicados
-        return Object.keys(map)
-            .filter(key => key !== 'Geral')
-            .sort()
-            .reduce((obj, key) => { obj[key] = map[key]; return obj; }, {});
+        return Object.keys(map).filter(key => key !== 'Geral').sort().reduce((obj, key) => { obj[key] = map[key]; return obj; }, {});
     }, [options]);
 
     useEffect(() => {
@@ -491,7 +336,6 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
 
             {isOpen && (
                 <div className="absolute top-full left-0 mt-1 w-[300px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl z-50">
-                    
                     {Object.entries(hierarchy).map(([segment, units]) => (
                         <div key={segment}>
                             <div 
@@ -765,6 +609,150 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
     );
 };
 
+// PARSER INTELIGENTE DE TXT COM DETECÇÃO DE CABEÇALHO E UNIDADE
+const AutomaticImportComponent = ({ onImport, segments, isProcessing }) => {
+    const [fileText, setFileText] = useState('');
+    const [previewData, setPreviewData] = useState([]);
+    const fileRef = useRef(null);
+
+    const handleFile = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const text = evt.target.result;
+            setFileText(text);
+            parseAndPreview(text);
+        };
+        reader.readAsText(file, 'ISO-8859-1'); 
+    };
+
+    const parseAndPreview = (text) => {
+        const lines = text.split('\n');
+        let headerIndex = -1;
+        let colMap = {};
+        
+        for(let i=0; i< Math.min(lines.length, 20); i++) {
+            if (lines[i].includes('PRGER-CCUS')) {
+                headerIndex = i;
+                const cols = lines[i].split(';');
+                cols.forEach((col, idx) => {
+                    colMap[col.trim()] = idx;
+                });
+                break;
+            }
+        }
+
+        if (headerIndex === -1) {
+            alert("Erro: Cabeçalho (PRGER-CCUS) não encontrado no arquivo.");
+            return;
+        }
+
+        const parsed = [];
+        for(let i = headerIndex + 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            const cols = line.split(';');
+            
+            const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
+            const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
+            const planCode = cols[colMap['PRGER-PLAN']]?.trim();
+            const planDesc = cols[colMap['PRGER-NPLC']]?.trim();
+            const supplier = cols[colMap['PRGER-NFOR']]?.trim() || 'Diversos';
+            const rawValue = cols[colMap['PRGER-TOTA']]?.trim();
+            const ccDesc = cols[colMap['PRGER-NCCU']]?.trim() || '';
+
+            if (!ccCode || !rawValue) continue;
+
+            const detectedUnit = getUnitByCostCenter(ccCode);
+            if (!detectedUnit) continue; 
+
+            const value = parseFloat(rawValue.replace(',', '.'));
+            if (isNaN(value)) continue;
+
+            let isoDate = new Date().toISOString().split('T')[0];
+            if (dateStr && dateStr.length === 10) {
+                const [d, m, y] = dateStr.split('/');
+                isoDate = `${y}-${m}-${d}`;
+            }
+
+            const type = (planCode?.startsWith('1.') || planCode?.startsWith('4.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
+
+            parsed.push({
+                date: isoDate,
+                segment: detectedUnit, 
+                costCenter: ccDesc,
+                accountPlan: planCode || '00.00',
+                planDescription: planDesc || 'Indefinido',
+                description: supplier,
+                value: value,
+                type: type,
+                source: 'automatic_import',
+                createdAt: new Date().toISOString()
+            });
+        }
+        setPreviewData(parsed);
+    };
+
+    const handleConfirmImport = () => {
+        if (previewData.length === 0) return alert("Nenhum dado válido encontrado.");
+        onImport(previewData);
+        setFileText('');
+        setPreviewData([]);
+    };
+
+    return (
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="font-bold text-lg dark:text-white">Importação Inteligente (TXT)</h3>
+                <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Detecção Automática de Unidade</span>
+            </div>
+
+            <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
+                <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
+                <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
+                <p className="text-xs text-slate-500 mt-1">O sistema identificará as unidades pelos Centros de Custo</p>
+                <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
+            </div>
+
+            {previewData.length > 0 && (
+                <div className="mt-6 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="flex justify-between items-center mb-2">
+                        <p className="font-bold text-sm text-emerald-600">{previewData.length} lançamentos identificados</p>
+                        <button onClick={handleConfirmImport} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2">
+                            {isProcessing ? <Loader2 className="animate-spin"/> : <CheckCircle size={18}/>}
+                            Confirmar Importação
+                        </button>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto border dark:border-slate-700 rounded-lg">
+                        <table className="w-full text-xs text-left">
+                            <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0">
+                                <tr>
+                                    <th className="p-2">Data</th>
+                                    <th className="p-2">Unidade Detectada</th>
+                                    <th className="p-2">Descrição</th>
+                                    <th className="p-2 text-right">Valor</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y dark:divide-slate-700">
+                                {previewData.slice(0, 100).map((row, i) => (
+                                    <tr key={i} className="dark:text-slate-300">
+                                        <td className="p-2">{row.date}</td>
+                                        <td className="p-2 font-bold text-indigo-600 dark:text-indigo-400">{row.segment.split(':')[1]}</td>
+                                        <td className="p-2">{row.description}</td>
+                                        <td className="p-2 text-right">{row.value.toFixed(2)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {previewData.length > 100 && <p className="p-2 text-center text-xs text-slate-400">... e mais {previewData.length - 100} linhas.</p>}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const ProductionComponent = ({ transactions, measureUnit }) => {
     const data = useMemo(() => {
         const metrics = transactions
@@ -793,7 +781,10 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="name" />
                         <YAxis />
-                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
+                            itemStyle={{ color: '#fff' }}
+                        />
                         <Legend />
                         <Bar dataKey="Produção" fill="#6366f1" radius={[4, 4, 0, 0]} />
                         <Bar dataKey="Vendas" fill="#10b981" radius={[4, 4, 0, 0]} />
@@ -879,17 +870,15 @@ export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [segments, setSegments] = useState([]);
   
-  // Inicializa com o primeiro segmento para ter dados
-  const [globalUnitFilter, setGlobalUnitFilter] = useState('Portos de Areia');
   const [filter, setFilter] = useState({ type: 'month', month: new Date().getMonth(), year: new Date().getFullYear(), quarter: 1, semester: 1 });
+  // Inicializa com o primeiro segmento da lista para não ficar vazio
+  const [globalUnitFilter, setGlobalUnitFilter] = useState('Portos de Areia');
 
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
 
-  const [importText, setImportText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
@@ -903,8 +892,8 @@ export default function App() {
     if (!user) return;
     try {
         const txs = await dbService.getAll(user, 'transactions');
-        // Usar SEED_UNITS para garantir que a lista está completa na UI
-        const segs = SEED_UNITS.map((name, id) => ({ id: String(id), name }));
+        // Carrega segmentos do banco (que foram criados pelo seed)
+        const segs = await dbService.getAll(user, 'segments');
         setTransactions(txs);
         setSegments(segs);
     } catch (e) { showToast("Erro ao carregar dados.", 'error'); }
@@ -913,99 +902,13 @@ export default function App() {
 
   const handleLogout = async () => await signOut(auth);
 
-  const handleImport = async () => {
-    if (!importText) return showToast("Sem dados.", 'warning');
+  const handleImport = async (data) => {
     setIsProcessing(true);
     try { 
-        const newTxs = parseLegacyFile(importText); 
-        await dbService.addBulk(user, 'transactions', newTxs); 
-        setImportText(''); await loadData(); showToast(`${newTxs.length} importados!`, 'success'); 
+        await dbService.addBulk(user, 'transactions', data); 
+        await loadData(); showToast(`${data.length} importados!`, 'success'); 
     } catch(e) { showToast("Erro ao importar.", 'error'); } 
     finally { setIsProcessing(false); }
-  };
-  
-  const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
-
-  const parseLegacyFile = (fileContent) => {
-    const rawLines = fileContent.split('\n');
-    const cleanTransactions = [];
-    let buffer = [];
-    const normalizedLines = [];
-    
-    // Encontrar Cabeçalho para mapear colunas
-    let headerIndex = -1;
-    let colMap = {};
-    for(let i=0; i< Math.min(rawLines.length, 20); i++) {
-        if (rawLines[i].includes('PRGER-CCUS')) {
-            headerIndex = i;
-            rawLines[i].split(';').forEach((col, idx) => colMap[col.trim()] = idx);
-            break;
-        }
-    }
-
-    const linesToProcess = headerIndex !== -1 ? rawLines.slice(headerIndex + 1) : rawLines;
-
-    linesToProcess.forEach((line) => {
-        const trimmed = line.trim(); if (!trimmed) return;
-        // Logica simples de buffer se necessario, mas com header é direto
-        if(headerIndex !== -1) normalizedLines.push(trimmed);
-        else {
-             if (/^\d{3,};/.test(trimmed)) { if (buffer.length > 0) normalizedLines.push(buffer.join(' ')); buffer = [trimmed]; } else { buffer.push(trimmed); }
-        }
-    });
-    if (headerIndex === -1 && buffer.length > 0) normalizedLines.push(buffer.join(' '));
-
-    normalizedLines.forEach((fullLine) => {
-        try {
-            const cols = fullLine.split(';');
-            
-            // Lógica de Extração (Com ou Sem mapa)
-            let ccCode, dateStr, planCode, planDesc, supplier, rawValue;
-            
-            if (headerIndex !== -1) {
-                ccCode = cols[colMap['PRGER-CCUS']]?.trim();
-                dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
-                planCode = cols[colMap['PRGER-PLAN']]?.trim();
-                planDesc = cols[colMap['PRGER-NPLC']]?.trim();
-                supplier = cols[colMap['PRGER-NFOR']]?.trim();
-                rawValue = cols[colMap['PRGER-TOTA']]?.trim();
-            } else {
-                // Fallback legado
-                rawValue = cols[11];
-                // ... (rest of legacy logic if needed)
-            }
-
-            if (!ccCode || !rawValue) return;
-
-            const detectedUnit = getUnitByCostCenter(ccCode);
-            if (!detectedUnit) return;
-
-            let value = parseFloat(rawValue.replace(',', '.'));
-            if (isNaN(value)) return;
-
-            let isoDate = new Date().toISOString().split('T')[0];
-            if (dateStr && dateStr.length === 10) {
-                const [d, m, y] = dateStr.split('/');
-                isoDate = `${y}-${m}-${d}`;
-            }
-
-            const type = (planCode?.startsWith('1.') || planCode?.startsWith('4.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-            
-            cleanTransactions.push({ 
-                date: isoDate, 
-                segment: detectedUnit, 
-                costCenter: ccCode, 
-                accountPlan: planCode || '00.00', 
-                planDescription: planDesc || 'Diversos', 
-                description: supplier || 'Fornecedor', 
-                value, 
-                type, 
-                source: 'automatic_import', 
-                createdAt: new Date().toISOString() 
-            });
-        } catch (err) { console.error(err); }
-    });
-    return cleanTransactions;
   };
 
   // --- FILTRAGEM ---
@@ -1026,7 +929,7 @@ export default function App() {
 
           if (!dateMatch) return false;
           
-          // Lógica de Filtro de Unidade
+          // Lógica de Filtro de Unidade (Segmento ou Unidade)
           if (BUSINESS_HIERARCHY[globalUnitFilter]) {
               return BUSINESS_HIERARCHY[globalUnitFilter].includes(t.segment);
           } else {
@@ -1059,6 +962,7 @@ export default function App() {
           <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos</span></button>
           <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'estoque' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Zap size={20} /><span className="hidden lg:block">Estoque</span></button>
           <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção</span></button>
+          {['admin', 'editor'].includes(userRole) && <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>}
           {userRole === 'admin' && <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-slate-800`}><Users size={20} /><span className="hidden lg:block">Usuários</span></button>}
         </nav>
         <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-sm text-slate-400"><div className="p-1 bg-slate-800 rounded"><UserCircle size={16} /></div><div className="flex-1 min-w-0"><p className="truncate font-bold text-white">{user.email}</p><p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p></div></div></div>
@@ -1134,44 +1038,7 @@ export default function App() {
 
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
 
-        {activeTab === 'ingestion' && (
-            <div className="max-w-3xl mx-auto bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
-               <h2 className="text-xl font-bold mb-6 text-slate-800 dark:text-white">Importação de TXT</h2>
-               <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-lg mb-6">
-                   <p className="text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
-                       <Zap size={16}/> 
-                       O sistema detectará automaticamente a unidade e a data com base no conteúdo do arquivo.
-                   </p>
-               </div>
-               <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-12 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileInputRef.current?.click()}>
-                   <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                       <UploadCloud className="text-indigo-600 dark:text-indigo-400" size={32} />
-                   </div>
-                   <p className="font-bold text-lg text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
-                   <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">Suporta formato SAF/Soft-line</p>
-                   <input type="file" ref={fileInputRef} className="hidden" accept=".txt,.csv" onChange={handleFileUpload} />
-               </div>
-               
-               {/* Área de Preview (Nova) */}
-               {importText && (
-                   <div className="mt-8 animate-in slide-in-from-bottom-4 fade-in">
-                       <div className="flex justify-between items-center mb-4">
-                           <h3 className="font-bold text-slate-700 dark:text-white">Prévia da Importação</h3>
-                           <button onClick={handleImport} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2 transition-all hover:scale-105">
-                                {isProcessing ? <Loader2 className="animate-spin"/> : <CheckCircle size={20}/>}
-                                Confirmar Importação
-                           </button>
-                       </div>
-                       <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-4 border dark:border-slate-700 max-h-60 overflow-y-auto font-mono text-xs text-slate-600 dark:text-slate-300">
-                           {importText.split('\n').slice(0, 10).map((line, i) => (
-                               <div key={i} className="truncate">{line}</div>
-                           ))}
-                           {importText.split('\n').length > 10 && <div className="text-center italic mt-2 text-slate-400">... e mais {importText.split('\n').length - 10} linhas</div>}
-                       </div>
-                   </div>
-               )}
-            </div>
-        )}
+        {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
       </main>
 
       {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
