@@ -5,7 +5,7 @@ import {
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, 
   AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown,
-  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart
+  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
@@ -198,7 +198,7 @@ const dbService = {
  * ------------------------------------------------------------------
  */
 
-// COMPONENTE DE IMPORTAÇÃO INTELIGENTE (ATUALIZADO PARA PR-SORT E COLUNAS)
+// COMPONENTE DE IMPORTAÇÃO (ATUALIZADO)
 const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const [fileText, setFileText] = useState('');
     const [previewData, setPreviewData] = useState([]);
@@ -279,7 +279,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 accountPlan: planCode || '00.00',
                 planDescription: planDesc || 'Indefinido',
                 description: supplier, 
-                materialDescription: sortDesc, // Campo novo para "Matéria"
+                materialDescription: sortDesc, 
                 value: value,
                 type: type,
                 source: 'automatic_import',
@@ -331,8 +331,8 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                             <tbody className="divide-y dark:divide-slate-700">
                                 {previewData.map((row, i) => (
                                     <tr key={i} className="dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
-                                        <td className="p-2">{row.date}</td>
-                                        <td className="p-2 font-bold text-indigo-600 dark:text-indigo-400">{row.segment.split(':')[1]}</td>
+                                        <td className="p-2">{new Date(row.date).toLocaleDateString()}</td>
+                                        <td className="p-2 font-bold text-indigo-600 dark:text-indigo-400">{row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}</td>
                                         <td className="p-2">{row.accountPlan}</td>
                                         <td className="p-2">{row.planDescription}</td>
                                         <td className="p-2">{row.description}</td>
@@ -351,50 +351,82 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     );
 };
 
-// COMPONENTE DE CUSTOS (AGRUPADO E EXPANSÍVEL)
+// COMPONENTE DE CUSTOS E DESPESAS (AGRUPADO HIERARQUICAMENTE)
 const CustosComponent = ({ transactions, showToast }) => {
     const [filtered, setFiltered] = useState([]);
-    const [expandedGroups, setExpandedGroups] = useState({});
+    const [searchTerm, setSearchTerm] = useState('');
+    const [expandedGroups, setExpandedGroups] = useState({
+        'DESPESAS DA UNIDADE': true,
+        'CUSTO OPERACIONAL INDÚSTRIA': true,
+        'CUSTO OPERACIONAL ADMINISTRAÇÃO': true
+    });
 
     useEffect(() => {
-        setFiltered(transactions.filter(t => t.type === 'expense'));
-    }, [transactions]);
+        let data = transactions.filter(t => t.type === 'expense');
+        if (searchTerm) {
+            const lowerTerm = searchTerm.toLowerCase();
+            data = data.filter(t => 
+                (t.accountPlan && t.accountPlan.toLowerCase().includes(lowerTerm)) ||
+                (t.planDescription && t.planDescription.toLowerCase().includes(lowerTerm)) ||
+                (t.description && t.description.toLowerCase().includes(lowerTerm))
+            );
+        }
+        setFiltered(data);
+    }, [transactions, searchTerm]);
 
-    // Agrupa por Cód + Descrição da Classe
+    // Agrupamento em 3 Níveis: Grupo Principal -> Subgrupo -> Classe -> Itens
     const groupedData = useMemo(() => {
-        const groups = {};
+        // Estrutura Base
+        const hierarchy = {
+            'DESPESAS DA UNIDADE': {
+                total: 0,
+                subgroups: {
+                    'CUSTO OPERACIONAL INDÚSTRIA': { total: 0, classes: {} },
+                    'CUSTO OPERACIONAL ADMINISTRAÇÃO': { total: 0, classes: {} },
+                    'OUTRAS DESPESAS': { total: 0, classes: {} }
+                }
+            }
+        };
+
         filtered.forEach(t => {
-            const key = `${t.accountPlan} - ${t.planDescription}`;
-            if (!groups[key]) {
-                groups[key] = { 
-                    id: key,
-                    code: t.accountPlan, 
-                    name: t.planDescription, 
-                    total: 0, 
-                    items: [] 
+            let subgroupName = 'OUTRAS DESPESAS';
+            if (t.accountPlan?.startsWith('03') || t.accountPlan?.startsWith('3.')) subgroupName = 'CUSTO OPERACIONAL INDÚSTRIA';
+            else if (t.accountPlan?.startsWith('04') || t.accountPlan?.startsWith('4.')) subgroupName = 'CUSTO OPERACIONAL ADMINISTRAÇÃO';
+
+            // Referência ao Subgrupo
+            const subgroup = hierarchy['DESPESAS DA UNIDADE'].subgroups[subgroupName];
+            
+            // Chave da Classe (Ex: 3.01.01 - Mão de Obra)
+            const classKey = `${t.accountPlan} - ${t.planDescription}`;
+            
+            if (!subgroup.classes[classKey]) {
+                subgroup.classes[classKey] = {
+                    id: classKey,
+                    code: t.accountPlan,
+                    name: t.planDescription,
+                    total: 0,
+                    items: []
                 };
             }
-            groups[key].total += t.value;
-            groups[key].items.push(t);
+
+            // Acumular Valores
+            subgroup.classes[classKey].items.push(t);
+            subgroup.classes[classKey].total += t.value;
+            subgroup.total += t.value;
+            hierarchy['DESPESAS DA UNIDADE'].total += t.value;
         });
-        // Ordena por código da classe
-        return Object.values(groups).sort((a, b) => a.code.localeCompare(b.code));
+
+        return hierarchy;
     }, [filtered]);
 
-    const toggleGroup = (groupId) => {
-        setExpandedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
+    const toggleGroup = (id) => {
+        setExpandedGroups(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
     const exportData = (type) => {
         const data = filtered.map(t => ({ 
-            Data: t.date, 
-            Unidade: t.segment,
-            Fornecedor: t.description, 
-            Matéria: t.materialDescription || '',
-            Cod_Classe: t.accountPlan,
-            Desc_Classe: t.planDescription,
-            Centro_Custo: t.costCenter,
-            Valor: t.value 
+            Data: t.date, Unidade: t.segment, Fornecedor: t.description, Matéria: t.materialDescription || '',
+            Cod_Classe: t.accountPlan, Desc_Classe: t.planDescription, Centro_Custo: t.costCenter, Valor: t.value 
         }));
         if (type === 'xlsx') {
             const ws = XLSX.utils.json_to_sheet(data);
@@ -407,53 +439,80 @@ const CustosComponent = ({ transactions, showToast }) => {
     
     return (
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
-            <div className="p-6 border-b dark:border-slate-700 flex justify-between">
-                <h3 className="font-bold text-lg dark:text-white">Custos por Classe</h3>
-                <button onClick={() => exportData('xlsx')} className="text-emerald-500 flex items-center gap-1"><Download size={16}/> Excel</button>
+            <div className="p-6 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
+                <h3 className="font-bold text-lg dark:text-white">Custos e Despesas</h3>
+                <div className="flex gap-2 w-full md:w-auto">
+                    <div className="relative flex-1 md:w-64">
+                        <Search className="absolute left-3 top-2.5 text-slate-400" size={16}/>
+                        <input 
+                            className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                            placeholder="Pesquisar classe ou fornecedor..." 
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                    <button onClick={() => exportData('xlsx')} className="text-emerald-500 flex items-center gap-1 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg hover:bg-emerald-100"><Download size={16}/> Excel</button>
+                </div>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300">
                         <tr>
                             <th className="p-3 w-10"></th>
-                            <th className="p-3">Cód. Classe</th>
-                            <th className="p-3">Descrição da Classe</th>
+                            <th className="p-3">Estrutura de Contas</th>
                             <th className="p-3 text-right">Valor Total</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
-                        {groupedData.map(group => (
-                            <React.Fragment key={group.id}>
-                                {/* Linha Pai (Classe) */}
-                                <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer font-medium dark:text-white" onClick={() => toggleGroup(group.id)}>
-                                    <td className="p-3 text-center">
-                                        {expandedGroups[group.id] ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}
-                                    </td>
-                                    <td className="p-3">{group.code}</td>
-                                    <td className="p-3">{group.name}</td>
-                                    <td className="p-3 text-right text-rose-600 dark:text-rose-400 font-bold">
-                                        {group.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                                    </td>
-                                </tr>
-                                
-                                {/* Linhas Filhas (Detalhes) */}
-                                {expandedGroups[group.id] && group.items.map(t => (
-                                    <tr key={t.id} className="bg-slate-50 dark:bg-slate-900/30 text-xs text-slate-600 dark:text-slate-400">
-                                        <td></td>
-                                        <td className="p-2 pl-4">{new Date(t.date).toLocaleDateString()}</td>
-                                        <td className="p-2">
-                                            <div className="flex flex-col">
-                                                <span className="font-bold text-slate-700 dark:text-slate-300">{t.description}</span>
-                                                <span className="italic text-xs">{t.materialDescription}</span>
-                                                <span className="text-[10px] text-slate-400">{t.segment.split(':')[1]}</span>
-                                            </div>
-                                        </td>
-                                        <td className="p-2 text-right">
-                                            {t.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
-                                        </td>
+                        {/* GRUPO PRINCIPAL: DESPESAS DA UNIDADE */}
+                        <tr className="bg-slate-200 dark:bg-slate-800 font-bold cursor-pointer" onClick={() => toggleGroup('DESPESAS DA UNIDADE')}>
+                            <td className="p-3 text-center">{expandedGroups['DESPESAS DA UNIDADE'] ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</td>
+                            <td className="p-3 uppercase text-indigo-800 dark:text-indigo-400">DESPESAS DA UNIDADE</td>
+                            <td className="p-3 text-right text-rose-600 dark:text-rose-400">{groupedData['DESPESAS DA UNIDADE'].total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                        </tr>
+
+                        {expandedGroups['DESPESAS DA UNIDADE'] && Object.entries(groupedData['DESPESAS DA UNIDADE'].subgroups).map(([subName, subData]) => (
+                            subData.total > 0 && (
+                                <React.Fragment key={subName}>
+                                    {/* SUBGRUPOS: INDÚSTRIA / ADM */}
+                                    <tr className="bg-slate-100 dark:bg-slate-700/50 font-semibold cursor-pointer border-l-4 border-indigo-500" onClick={() => toggleGroup(subName)}>
+                                        <td className="p-3 text-center pl-6">{expandedGroups[subName] ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}</td>
+                                        <td className="p-3 text-slate-700 dark:text-slate-200">{subName}</td>
+                                        <td className="p-3 text-right text-slate-700 dark:text-slate-200">{subData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                     </tr>
-                                ))}
-                            </React.Fragment>
+
+                                    {/* CLASSES DE CUSTO */}
+                                    {expandedGroups[subName] && Object.values(subData.classes).sort((a,b) => a.code.localeCompare(b.code)).map(classe => (
+                                        <React.Fragment key={classe.id}>
+                                            <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer" onClick={() => toggleGroup(classe.id)}>
+                                                <td className="p-3 text-center pl-10">{expandedGroups[classe.id] ? <ChevronDown size={14} className="text-slate-400"/> : <ChevronRight size={14} className="text-slate-400"/>}</td>
+                                                <td className="p-3 dark:text-slate-300">
+                                                    <span className="font-mono text-xs bg-slate-200 dark:bg-slate-600 px-1 rounded mr-2">{classe.code}</span>
+                                                    {classe.name}
+                                                </td>
+                                                <td className="p-3 text-right dark:text-slate-300">{classe.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                                            </tr>
+
+                                            {/* ITENS (LANÇAMENTOS) */}
+                                            {expandedGroups[classe.id] && classe.items.map(t => (
+                                                <tr key={t.id} className="bg-white dark:bg-slate-900 text-xs border-b dark:border-slate-800">
+                                                    <td></td>
+                                                    <td className="p-2 pl-16">
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                            <div>
+                                                                <p className="font-bold text-slate-600 dark:text-slate-400">{t.description} <span className="font-normal text-[10px] ml-2 text-slate-400">{new Date(t.date).toLocaleDateString()}</span></p>
+                                                                <p className="text-[10px] text-slate-400">CC: {t.costCenter}</p>
+                                                            </div>
+                                                            <div className="text-slate-500 italic">{t.materialDescription}</div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-2 text-right text-rose-500">{t.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                                                </tr>
+                                            ))}
+                                        </React.Fragment>
+                                    ))}
+                                </React.Fragment>
+                            )
                         ))}
                     </tbody>
                 </table>
@@ -545,58 +604,6 @@ const UsersScreen = ({ user, myRole, showToast }) => {
     const handleDelete = async (uid) => { if (!confirm("Remover acesso?")) return; await dbService.deleteUserAccess(uid); loadUsers(); showToast("Acesso revogado.", 'success'); };
     return (<div className="p-6 max-w-4xl mx-auto"><h2 className="text-2xl font-bold mb-6 dark:text-white">Gestão de Acessos</h2><div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-8 border dark:border-slate-700"><h3 className="font-bold mb-4 flex items-center gap-2 dark:text-white"><PlusCircle size={20}/> Cadastrar Novo Usuário</h3><div className="flex gap-4 items-end"><div className="flex-1"><label className="text-xs font-bold text-slate-500">Email</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserEmail} onChange={e=>setNewUserEmail(e.target.value)}/></div><div className="flex-1"><label className="text-xs font-bold text-slate-500">Senha Provisória</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserPass} onChange={e=>setNewUserPass(e.target.value)}/></div><button onClick={handleCreateUser} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700">Criar</button></div></div><div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700"><table className="w-full text-left"><thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{users.map(u => (<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{u.email}</td><td className="p-4"><select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select></td><td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td></tr>))}</tbody></table></div></div>);
 };
-const DREComponent = ({ transactions }) => {
-    const dreData = useMemo(() => {
-        const rows = JSON.parse(JSON.stringify(DRE_BLUEPRINT)); const accMap = {};
-        transactions.forEach(t => { if (!t.accountPlan) return; const match = rows.find(r => t.accountPlan.startsWith(r.code) && !r.formula); if (match) { const val = t.type === 'revenue' ? t.value : -t.value; accMap[match.code] = (accMap[match.code] || 0) + val; } });
-        rows.forEach(row => { if (accMap[row.code]) row.value = accMap[row.code]; });
-        for(let i=0; i<2; i++) { rows.forEach(row => { if (row.parent) { const parent = rows.find(r => r.code === row.parent); if (parent) parent.value = (parent.value || 0) + (row.value || 0); } }); }
-        rows.forEach(row => { if (row.formula) { const parts = row.formula.split(' '); let total = 0; let op = '+'; parts.forEach(part => { if (part === '+' || part === '-') { op = part; return; } const refRow = rows.find(r => r.code === part || r.code === part.replace('LUCRO_BRUTO', 'LUCRO_BRUTO')); const refVal = refRow ? (refRow.value || 0) : 0; if (op === '+') total += refVal; else total -= refVal; }); row.value = total; } });
-        return rows;
-    }, [transactions]);
-    return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden"><div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial</div><div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{dreData.map((row, i) => (<tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}><td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td><td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>{(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>))}</tbody></table></div></div>);
-};
-const KpiCard = ({ title, value, icon: Icon, color }) => { const colors = { emerald: 'text-emerald-600 bg-emerald-50', rose: 'text-rose-600 bg-rose-50', indigo: 'text-indigo-600 bg-indigo-50' }; return (<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold text-slate-500 uppercase mb-2">{title}</p><h3 className="text-2xl font-bold dark:text-white">{value}</h3></div><div className={`p-3 rounded-xl ${colors[color]}`}><Icon size={24}/></div></div></div>); };
-const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
-    const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 7), type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
-    const [activeTab, setActiveTab] = useState('expense'); 
-    useEffect(() => { if (initialData) { setForm({ ...initialData, date: initialData.date.slice(0, 7) }); setActiveTab(initialData.type === 'metric' ? 'metric' : initialData.type); } }, [initialData]);
-    const handleSubmit = async () => {
-        const val = parseFloat(form.value);
-        if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
-        if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
-        if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
-        const fullDate = `${form.date}-01`; 
-        let tx = { ...form, date: fullDate, value: val, costCenter: 'GERAL', source: 'manual', createdAt: new Date().toISOString(), type: activeTab };
-        if (activeTab === 'metric') { tx.description = `Lançamento de ${form.metricType === 'producao' ? 'Produção' : (form.metricType === 'vendas' ? 'Vendas' : 'Estoque')}`; tx.accountPlan = 'METRICS'; }
-        try { if(initialData?.id) await dbService.update(user, 'transactions', initialData.id, tx); else await dbService.add(user, 'transactions', tx); showToast("Lançamento realizado!", 'success'); onSave(); onClose(); } catch(e) { showToast("Erro ao salvar.", 'error'); }
-    };
-    const unitMeasure = form.segment ? getMeasureUnit(form.segment) : 'un';
-    return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"><div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6 dark:border-slate-700 border"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold dark:text-white">{initialData ? 'Editar' : 'Novo'} Lançamento</h3><button onClick={onClose}><X size={20} className="text-slate-400"/></button></div><div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg mb-4"><button onClick={() => setActiveTab('revenue')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'revenue' ? 'bg-white dark:bg-slate-700 shadow text-emerald-600' : 'text-slate-500'}`}>Receita</button><button onClick={() => setActiveTab('expense')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'expense' ? 'bg-white dark:bg-slate-700 shadow text-rose-600' : 'text-slate-500'}`}>Despesa</button><button onClick={() => setActiveTab('metric')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'metric' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-500'}`}>Métricas</button></div><div className="space-y-3"><label className="block text-xs font-bold text-slate-500 uppercase">Competência</label><input type="month" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} /><label className="block text-xs font-bold text-slate-500 uppercase">Unidade</label><HierarchicalSelect value={form.segment} onChange={(val) => setForm({...form, segment: val})} options={segments} placeholder="Selecione a Unidade..." />{activeTab !== 'metric' && (<><label className="block text-xs font-bold text-slate-500 uppercase">Detalhes</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição (Ex: Pgto Fornecedor)" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} /><select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.accountPlan} onChange={e=>setForm({...form, accountPlan: e.target.value})}><option value="">Conta do DRE...</option>{DRE_BLUEPRINT.filter(r => r.level === 2).map(r => <option key={r.code} value={r.code}>{r.code} - {r.name}</option>)}</select></>)}{activeTab === 'metric' && (<div className="grid grid-cols-3 gap-2"><button onClick={()=>setForm({...form, metricType:'producao'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='producao'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Factory className="mx-auto mb-1" size={16}/> Produção</button><button onClick={()=>setForm({...form, metricType:'vendas'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='vendas'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><ShoppingCart className="mx-auto mb-1" size={16}/> Vendas</button><button onClick={()=>setForm({...form, metricType:'estoque'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='estoque'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Package className="mx-auto mb-1" size={16}/> Estoque</button></div>)}<div className="relative"><span className="absolute left-3 top-2 text-slate-400 font-bold">{activeTab === 'metric' ? unitMeasure : 'R$'}</span><input type="number" className="w-full border p-2 pl-12 rounded dark:bg-slate-700 dark:text-white" placeholder="Valor" value={form.value} onChange={e=>setForm({...form, value: e.target.value})} /></div><button onClick={handleSubmit} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">Salvar Lançamento</button></div></div></div>
-    );
-};
-const ProductionComponent = ({ transactions, measureUnit }) => {
-    const data = useMemo(() => {
-        const metrics = transactions.filter(t => t.type === 'metric' && (t.metricType === 'producao' || t.metricType === 'vendas')).sort((a, b) => new Date(a.date) - new Date(b.date));
-        const grouped = {};
-        metrics.forEach(t => { const d = new Date(t.date); const key = `${d.getFullYear()}-${d.getMonth()}`; const label = d.toLocaleString('default', { month: 'short' }); if (!grouped[key]) grouped[key] = { name: label, Produção: 0, Vendas: 0, sortKey: d.getTime() }; if (t.metricType === 'producao') grouped[key].Produção += t.value; if (t.metricType === 'vendas') grouped[key].Vendas += t.value; });
-        return Object.values(grouped).sort((a,b) => a.sortKey - b.sortKey);
-    }, [transactions]);
-    return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6"><h3 className="font-bold text-lg mb-4 dark:text-white">Produção vs Vendas ({measureUnit})</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={data}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" /><YAxis /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} itemStyle={{ color: '#fff' }}/><Legend /><Line type="monotone" dataKey="Produção" stroke="#8884d8" strokeWidth={2} /><Line type="monotone" dataKey="Vendas" stroke="#82ca9d" strokeWidth={2} /></LineChart></ResponsiveContainer></div></div>);
-};
-const StockComponent = ({ transactions, measureUnit }) => {
-    const stockData = useMemo(() => {
-        const stockTxs = transactions.filter(t => t.type === 'metric' && t.metricType === 'estoque').sort((a, b) => new Date(a.date) - new Date(b.date));
-        const totalStock = stockTxs.reduce((acc, t) => acc + t.value, 0);
-        const mpExpenses = transactions.filter(t => t.type === 'expense' && t.accountPlan === '03.02').reduce((acc, t) => acc + t.value, 0);
-        const productionVol = transactions.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
-        const avgCost = productionVol > 0 ? mpExpenses / productionVol : 0;
-        const evolution = stockTxs.map(t => ({ date: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), Estoque: t.value }));
-        return { total: totalStock, avgCost, totalValue: totalStock * avgCost, evolution };
-    }, [transactions]);
-    return (<div className="space-y-6"><div className="grid grid-cols-3 gap-4"><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Estoque Total</p><h3 className="text-2xl font-bold dark:text-white">{stockData.total.toLocaleString()} {measureUnit}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Custo Médio (Período)</p><h3 className="text-2xl font-bold dark:text-white">R$ {stockData.avgCost.toFixed(2)}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Valor Total Estoque</p><h3 className="text-2xl font-bold text-emerald-600">R$ {stockData.totalValue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</h3></div></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80"><h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque</h3><ResponsiveContainer width="100%" height="100%"><AreaChart data={stockData.evolution}><defs><linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/><stop offset="95%" stopColor="#8884d8" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" /><YAxis /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} /><Area type="monotone" dataKey="Estoque" stroke="#8884d8" fillOpacity={1} fill="url(#colorStock)" /></AreaChart></ResponsiveContainer></div></div>);
-};
 
 /**
  * ------------------------------------------------------------------
@@ -622,7 +629,6 @@ export default function App() {
   const [showAIModal, setShowAIModal] = useState(false);
 
   const [importText, setImportText] = useState('');
-  const [importSegment, setImportSegment] = useState(''); 
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -706,7 +712,7 @@ export default function App() {
           <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /><span className="hidden lg:block">Visão Geral</span></button>
           <button onClick={() => setActiveTab('lancamentos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'lancamentos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><List size={20} /><span className="hidden lg:block">Lançamentos</span></button>
           <button onClick={() => setActiveTab('dre')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dre' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><FileText size={20} /><span className="hidden lg:block">DRE</span></button>
-          <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos</span></button>
+          <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos e Despesas</span></button>
           <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'estoque' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Zap size={20} /><span className="hidden lg:block">Estoque</span></button>
           <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção</span></button>
           {['admin', 'editor'].includes(userRole) && <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>}
@@ -728,6 +734,8 @@ export default function App() {
           </div>
         </header>
 
+        {/* CONTEÚDO DAS ABAS */}
+        
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
