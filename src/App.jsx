@@ -50,49 +50,21 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
 
-// --- DADOS DE INICIALIZAÇÃO (HIERARQUIA DE SEGMENTOS) ---
-const BUSINESS_HIERARCHY = {
-    "Portos de Areia": [
-        "Porto de Areia Saara - Mira Estrela",
-        "Porto Agua Amarela - Riolândia"
-    ],
-    "Noromix Concreteiras": [
-        "Noromix Concreto S/A - Fernandópolis",
-        "Noromix Concreto S/A - Ilha Solteira",
-        "Noromix Concreto S/A - Jales",
-        "Noromix Concreto S/A - Ouroeste",
-        "Noromix Concreto S/A - Paranaíba",
-        "Noromix Concreto S/A - Monções",
-        "Noromix Concreto S/A - Pereira Barreto",
-        "Noromix Concreto S/A - Três Fronteiras",
-        "Noromix Concreto S/A - Votuporanga"
-    ],
-    "Fábrica de Tubos": [
-        "Noromix Concreto S/A - Votuporanga (Fábrica)"
-    ],
-    "Pedreiras": [
-        "Mineração Grandes Lagos - Icém",
-        "Mineração Grandes Lagos - Itapura",
-        "Mineração Grandes Lagos - Riolândia",
-        "Mineração Grandes Lagos - Três Fronteiras",
-        "Noromix Concreto S/A - Rinópolis",
-        "Mineração Noroeste Paulista - Monções"
-    ],
-    "Usinas de Asfalto": [
-        "Noromix Concreto S/A - Assis",
-        "Noromix Concreto S/A - Monções (Usina)",
-        "Noromix Concreto S/A - Itapura (Usina)",
-        "Noromix Concreto S/A - Rinópolis (Usina)",
-        "Demop Participações LTDA - Três Fronteiras",
-        "Mineração Grandes Lagos - Icém (Usina)"
-    ],
-    "Construtora": [
-        "Noromix Construtora"
-    ]
-};
-
-// Converter para lista plana para uso interno (seed)
-const SEED_UNITS = Object.values(BUSINESS_HIERARCHY).flat();
+// --- DADOS DE INICIALIZAÇÃO (HIERARQUIA) ---
+const SEED_UNITS = [
+    "Portos de Areia: Porto Saara - Mira Estrela",
+    "Portos de Areia: Porto Agua Amarela - Riolândia",
+    "Noromix Concreteiras: Fernandópolis", "Noromix Concreteiras: Ilha Solteira", "Noromix Concreteiras: Jales",
+    "Noromix Concreteiras: Ouroeste", "Noromix Concreteiras: Paranaíba", "Noromix Concreteiras: Monções",
+    "Noromix Concreteiras: Pereira Barreto", "Noromix Concreteiras: Três Fronteiras", "Noromix Concreteiras: Votuporanga",
+    "Fábrica de Tubos: Votuporanga",
+    "Pedreiras: Mineração Grandes Lagos - Icém", "Pedreiras: Mineração Grandes Lagos - Itapura",
+    "Pedreiras: Mineração Grandes Lagos - Riolândia", "Pedreiras: Mineração Grandes Lagos - Três Fronteiras",
+    "Pedreiras: Noromix - Rinópolis", "Pedreiras: Mineração Noroeste - Monções",
+    "Usinas de Asfalto: Assis", "Usinas de Asfalto: Monções", "Usinas de Asfalto: Itapura",
+    "Usinas de Asfalto: Rinópolis", "Usinas de Asfalto: Demop - Três Fronteiras", "Usinas de Asfalto: Grandes Lagos - Icém",
+    "Construtora: Noromix Construtora"
+];
 
 // --- ESTRUTURA DRE ---
 const DRE_BLUEPRINT = [
@@ -166,7 +138,7 @@ const dbService = {
             const segRef = collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', 'segments');
             const segSnap = await getDocs(segRef);
             if (segSnap.empty) {
-                console.log("Seed inicial...");
+                console.log("Inicializando unidades...");
                 const batch = writeBatch(db);
                 SEED_UNITS.forEach(name => {
                     const docRef = doc(segRef);
@@ -240,66 +212,56 @@ const aiService = {
  * ------------------------------------------------------------------
  */
 
-const UnitSelector = ({ selectedUnit, onChange, hierarchy }) => {
+// UNIT SELECTOR (Hierárquico para Filtro)
+const UnitSelector = ({ selectedUnit, onChange, segments }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [expandedSegments, setExpandedSegments] = useState({});
-    const dropdownRef = useRef(null);
+    const [expanded, setExpanded] = useState({});
+    const ref = useRef(null);
+
+    // Organiza a lista plana (vinda do DB) em hierarquia
+    const hierarchy = useMemo(() => {
+        const map = {};
+        segments.forEach(seg => {
+            const parts = seg.name.split(':');
+            const category = parts.length > 1 ? parts[0].trim() : 'Outros';
+            const unitName = parts.length > 1 ? parts[1].trim() : seg.name;
+            if (!map[category]) map[category] = [];
+            map[category].push({ fullName: seg.name, shortName: unitName });
+        });
+        return map;
+    }, [segments]);
 
     useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
+        const clickOut = (e) => { if (ref.current && !ref.current.contains(e.target)) setIsOpen(false); };
+        document.addEventListener("mousedown", clickOut);
+        return () => document.removeEventListener("mousedown", clickOut);
     }, []);
 
-    const toggleSegment = (seg) => {
-        setExpandedSegments(prev => ({ ...prev, [seg]: !prev[seg] }));
-    };
+    const toggle = (cat) => setExpanded(prev => ({...prev, [cat]: !prev[cat]}));
+    const select = (val) => { onChange(val); setIsOpen(false); };
 
-    const handleSelect = (unit) => {
-        onChange(unit);
-        setIsOpen(false);
-    };
+    // Encontrar nome curto para exibição
+    const displayValue = selectedUnit === 'ALL' ? 'Todas as Unidades' : (selectedUnit.includes(':') ? selectedUnit.split(':')[1].trim() : selectedUnit);
 
     return (
-        <div className="relative" ref={dropdownRef}>
-            <button 
-                onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 min-w-[250px] justify-between"
-            >
-                <span className="truncate">{selectedUnit === 'ALL' ? 'Todas as Unidades' : selectedUnit}</span>
-                <ChevronDown size={16} />
+        <div className="relative" ref={ref}>
+            <button onClick={() => setIsOpen(!isOpen)} className="flex items-center justify-between gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 min-w-[220px]">
+                <span className="truncate max-w-[180px]">{displayValue}</span>
+                <ChevronDown size={16}/>
             </button>
-
             {isOpen && (
-                <div className="absolute top-full left-0 mt-1 w-[300px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50">
-                    <div 
-                        className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-bold text-sm text-slate-800 dark:text-white border-b dark:border-slate-700"
-                        onClick={() => handleSelect('ALL')}
-                    >
-                        🏢 Todas as Unidades
-                    </div>
-                    {Object.entries(hierarchy).map(([segment, units]) => (
-                        <div key={segment}>
-                            <div 
-                                className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold text-slate-600 dark:text-slate-300"
-                                onClick={() => toggleSegment(segment)}
-                            >
-                                {expandedSegments[segment] ? <FolderOpen size={16} className="text-indigo-500"/> : <Folder size={16} className="text-indigo-500"/>}
-                                {segment}
+                <div className="absolute top-full left-0 mt-1 w-[280px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-xl z-50">
+                    <div onClick={() => select('ALL')} className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-bold text-sm text-slate-800 dark:text-white border-b dark:border-slate-700">🏢 Todas as Unidades</div>
+                    {Object.entries(hierarchy).map(([cat, units]) => (
+                        <div key={cat}>
+                            <div onClick={() => toggle(cat)} className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold text-slate-600 dark:text-slate-300">
+                                {expanded[cat] ? <FolderOpen size={16} className="text-indigo-500"/> : <Folder size={16} className="text-indigo-500"/>} {cat}
                             </div>
-                            {expandedSegments[segment] && (
+                            {expanded[cat] && (
                                 <div className="pl-6 bg-slate-50/50 dark:bg-slate-900/20">
-                                    {units.map(unit => (
-                                        <div 
-                                            key={unit}
-                                            className={`p-2 text-xs hover:bg-indigo-50 dark:hover:bg-indigo-900/30 cursor-pointer text-slate-600 dark:text-slate-400 border-l-2 border-transparent hover:border-indigo-500 ${selectedUnit === unit ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-700 dark:text-indigo-300' : ''}`}
-                                            onClick={() => handleSelect(unit)}
-                                        >
-                                            {unit}
+                                    {units.map(u => (
+                                        <div key={u.fullName} onClick={() => select(u.fullName)} className={`p-2 text-xs hover:bg-indigo-50 dark:hover:bg-indigo-900/30 cursor-pointer text-slate-600 dark:text-slate-400 border-l-2 border-transparent hover:border-indigo-500 ${selectedUnit === u.fullName ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-700 dark:text-indigo-300' : ''}`}>
+                                            {u.shortName}
                                         </div>
                                     ))}
                                 </div>
@@ -515,7 +477,20 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
     const [form, setForm] = useState({ date: new Date().toISOString().split('T')[0], type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
     
     // Tabs de lançamento: Receita, Despesa, Métricas
-    const [activeTab, setActiveTab] = useState('expense'); // 'revenue', 'expense', 'metric'
+    const [activeTab, setActiveTab] = useState('expense'); 
+
+    // Agrupar Segmentos para o Dropdown
+    const groupedSegments = useMemo(() => {
+        const groups = {};
+        segments.forEach(seg => {
+            const parts = seg.name.split(':');
+            const category = parts.length > 1 ? parts[0].trim() : 'Outros';
+            const unitName = parts.length > 1 ? parts[1].trim() : seg.name;
+            if (!groups[category]) groups[category] = [];
+            groups[category].push({ id: seg.id, name: seg.name, label: unitName });
+        });
+        return groups;
+    }, [segments]);
 
     useEffect(() => { 
         if (initialData) {
@@ -536,12 +511,12 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
             costCenter: 'GERAL', 
             source: 'manual', 
             createdAt: new Date().toISOString(),
-            type: activeTab // revenue, expense ou metric
+            type: activeTab 
         };
 
         if (activeTab === 'metric') {
             tx.description = `Lançamento de ${form.metricType === 'producao' ? 'Produção' : (form.metricType === 'vendas' ? 'Vendas' : 'Estoque')}`;
-            tx.accountPlan = 'METRICS'; // Não vai pro DRE financeiro
+            tx.accountPlan = 'METRICS'; 
         }
         
         try {
@@ -559,7 +534,7 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                     <button onClick={onClose}><X size={20} className="text-slate-400"/></button>
                 </div>
                 
-                {/* Tabs de Tipo */}
+                {/* Tabs */}
                 <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg mb-4">
                     <button onClick={() => setActiveTab('revenue')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'revenue' ? 'bg-white dark:bg-slate-700 shadow text-emerald-600' : 'text-slate-500'}`}>Receita</button>
                     <button onClick={() => setActiveTab('expense')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'expense' ? 'bg-white dark:bg-slate-700 shadow text-rose-600' : 'text-slate-500'}`}>Despesa</button>
@@ -567,15 +542,20 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                 </div>
 
                 <div className="space-y-3">
-                    {/* Campos Comuns */}
                     <input type="date" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
                     
+                    {/* Seletor de Unidade com Grupos */}
                     <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.segment} onChange={e=>setForm({...form, segment: e.target.value})}>
                         <option value="">Selecione a Unidade...</option>
-                        {segments.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                        {Object.entries(groupedSegments).map(([groupName, units]) => (
+                            <optgroup key={groupName} label={groupName}>
+                                {units.map(u => (
+                                    <option key={u.id} value={u.name}>{u.label}</option>
+                                ))}
+                            </optgroup>
+                        ))}
                     </select>
 
-                    {/* Campos Específicos Financeiros */}
                     {activeTab !== 'metric' && (
                         <>
                             <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição (Ex: Pgto Fornecedor)" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
@@ -586,7 +566,6 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                         </>
                     )}
 
-                    {/* Campos Específicos Métricas */}
                     {activeTab === 'metric' && (
                         <div className="grid grid-cols-3 gap-2">
                             <button onClick={()=>setForm({...form, metricType:'producao'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='producao'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Factory className="mx-auto mb-1" size={16}/> Produção</button>
@@ -608,10 +587,8 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
 };
 
 const ProductionComponent = ({ transactions }) => {
-    // Filtra apenas transações de produção e vendas
     const data = useMemo(() => {
         const metrics = transactions.filter(t => t.type === 'metric' && (t.metricType === 'producao' || t.metricType === 'vendas'));
-        // Agrupar por mês
         const grouped = {};
         metrics.forEach(t => {
             const month = new Date(t.date).toLocaleString('default', { month: 'short' });
@@ -647,12 +624,10 @@ const StockComponent = ({ transactions }) => {
         const stockTxs = transactions.filter(t => t.type === 'metric' && t.metricType === 'estoque');
         const totalStock = stockTxs.reduce((acc, t) => acc + t.value, 0);
         
-        // Calcular Custo Médio (Simulado com base nas despesas de MP divididas pela produção)
         const mpExpenses = transactions.filter(t => t.type === 'expense' && t.accountPlan === '03.02').reduce((acc, t) => acc + t.value, 0);
         const productionVol = transactions.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
         const avgCost = productionVol > 0 ? mpExpenses / productionVol : 0;
 
-        // Dados para gráfico de evolução (simulado por mês)
         const evolution = stockTxs.map(t => ({
             date: new Date(t.date).toLocaleDateString(),
             Estoque: t.value
@@ -708,7 +683,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [transactions, setTransactions] = useState([]);
-  const [segments, setSegments] = useState([]); // Agora usado como lista plana para dropdowns
+  const [segments, setSegments] = useState([]);
   
   const [filter, setFilter] = useState({ type: 'month', month: new Date().getMonth(), year: new Date().getFullYear(), quarter: 1, semester: 1 });
   const [globalUnitFilter, setGlobalUnitFilter] = useState('ALL');
@@ -717,7 +692,6 @@ export default function App() {
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
 
-  // Upload states (mantidos para compatibilidade, mas feature menos usada agora)
   const [importText, setImportText] = useState('');
   const [importSegment, setImportSegment] = useState(''); 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -744,7 +718,6 @@ export default function App() {
 
   const handleLogout = async () => await signOut(auth);
 
-  // --- FILTRAGEM ---
   const filteredData = useMemo(() => {
       return transactions.filter(t => {
           const d = new Date(t.date);
@@ -791,8 +764,10 @@ export default function App() {
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div className="flex gap-2 w-full md:w-auto items-center">
-             <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
-             <UnitSelector selectedUnit={globalUnitFilter} onChange={setGlobalUnitFilter} hierarchy={BUSINESS_HIERARCHY} />
+             {/* LÓGICA: O filtro de período some na aba lançamentos */}
+             {activeTab !== 'lancamentos' && <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
+             
+             <UnitSelector selectedUnit={globalUnitFilter} onChange={setGlobalUnitFilter} segments={segments} />
           </div>
           <div className="flex gap-2">
              <button onClick={() => setShowAIModal(true)} className="p-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg shadow-lg"><Sparkles size={20} /></button>
@@ -801,6 +776,8 @@ export default function App() {
           </div>
         </header>
 
+        {/* CONTEÚDO DAS ABAS */}
+        
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
