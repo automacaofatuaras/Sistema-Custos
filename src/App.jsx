@@ -4,7 +4,7 @@ import {
   DollarSign, Trash2, Building2, PlusCircle, Settings, Edit2, 
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, 
-  AlertTriangle, CheckCircle, Zap, Filter, ChevronRight, ChevronDown,
+  AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown,
   BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart
 } from 'lucide-react';
 import { 
@@ -212,24 +212,30 @@ const aiService = {
  * ------------------------------------------------------------------
  */
 
-// UNIT SELECTOR (Hierárquico para Filtro)
-const UnitSelector = ({ selectedUnit, onChange, segments }) => {
+// COMPONENTE DE SELEÇÃO HIERÁRQUICA (PASTAS -> UNIDADES)
+// Usado tanto no Filtro Global quanto no Formulário de Lançamento
+const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
     const ref = useRef(null);
 
-    // Organiza a lista plana (vinda do DB) em hierarquia
+    // Agrupa unidades por pasta (segmento)
     const hierarchy = useMemo(() => {
         const map = {};
-        segments.forEach(seg => {
-            const parts = seg.name.split(':');
-            const category = parts.length > 1 ? parts[0].trim() : 'Outros';
-            const unitName = parts.length > 1 ? parts[1].trim() : seg.name;
-            if (!map[category]) map[category] = [];
-            map[category].push({ fullName: seg.name, shortName: unitName });
+        options.forEach(opt => {
+            const parts = opt.name.split(':');
+            const segment = parts.length > 1 ? parts[0].trim() : 'Geral';
+            const unitName = parts.length > 1 ? parts[1].trim() : opt.name;
+            
+            if (!map[segment]) map[segment] = [];
+            map[segment].push({ fullValue: opt.name, label: unitName });
         });
-        return map;
-    }, [segments]);
+        // Ordena segmentos alfabeticamente
+        return Object.keys(map).sort().reduce((obj, key) => {
+            obj[key] = map[key];
+            return obj;
+        }, {});
+    }, [options]);
 
     useEffect(() => {
         const clickOut = (e) => { if (ref.current && !ref.current.contains(e.target)) setIsOpen(false); };
@@ -237,37 +243,68 @@ const UnitSelector = ({ selectedUnit, onChange, segments }) => {
         return () => document.removeEventListener("mousedown", clickOut);
     }, []);
 
-    const toggle = (cat) => setExpanded(prev => ({...prev, [cat]: !prev[cat]}));
-    const select = (val) => { onChange(val); setIsOpen(false); };
+    const toggleFolder = (seg) => setExpanded(prev => ({...prev, [seg]: !prev[seg]}));
+    
+    const handleSelect = (val) => {
+        onChange(val);
+        setIsOpen(false);
+    };
 
-    // Encontrar nome curto para exibição
-    const displayValue = selectedUnit === 'ALL' ? 'Todas as Unidades' : (selectedUnit.includes(':') ? selectedUnit.split(':')[1].trim() : selectedUnit);
+    // Texto a exibir no botão fechado
+    let displayText = placeholder;
+    if (value === 'ALL' && isFilter) displayText = 'Todas as Unidades';
+    else if (value) {
+        displayText = value.includes(':') ? value.split(':')[1].trim() : value;
+    }
 
     return (
-        <div className="relative" ref={ref}>
-            <button onClick={() => setIsOpen(!isOpen)} className="flex items-center justify-between gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 min-w-[220px]">
-                <span className="truncate max-w-[180px]">{displayValue}</span>
-                <ChevronDown size={16}/>
+        <div className="relative w-full" ref={ref}>
+            <button 
+                onClick={() => setIsOpen(!isOpen)} 
+                className={`flex items-center justify-between w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 ${isOpen ? 'ring-2 ring-indigo-500' : ''}`}
+                type="button" // Importante para não submeter form
+            >
+                <span className="truncate">{displayText}</span>
+                <ChevronDown size={16} className="text-slate-500"/>
             </button>
+
             {isOpen && (
-                <div className="absolute top-full left-0 mt-1 w-[280px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-xl z-50">
-                    <div onClick={() => select('ALL')} className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-bold text-sm text-slate-800 dark:text-white border-b dark:border-slate-700">🏢 Todas as Unidades</div>
-                    {Object.entries(hierarchy).map(([cat, units]) => (
-                        <div key={cat}>
-                            <div onClick={() => toggle(cat)} className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold text-slate-600 dark:text-slate-300">
-                                {expanded[cat] ? <FolderOpen size={16} className="text-indigo-500"/> : <Folder size={16} className="text-indigo-500"/>} {cat}
+                <div className="absolute top-full left-0 mt-1 w-full max-h-60 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl z-50">
+                    {isFilter && (
+                        <div onClick={() => handleSelect('ALL')} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 font-bold text-sm text-slate-800 dark:text-white">
+                            🏢 Todas as Unidades
+                        </div>
+                    )}
+                    
+                    {Object.entries(hierarchy).map(([segment, units]) => (
+                        <div key={segment}>
+                            {/* Pasta do Segmento */}
+                            <div 
+                                onClick={() => toggleFolder(segment)}
+                                className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200 select-none"
+                            >
+                                {expanded[segment] ? <FolderOpen size={16} className="text-amber-500"/> : <Folder size={16} className="text-amber-500"/>}
+                                {segment}
                             </div>
-                            {expanded[cat] && (
-                                <div className="pl-6 bg-slate-50/50 dark:bg-slate-900/20">
+                            
+                            {/* Unidades dentro da pasta */}
+                            {expanded[segment] && (
+                                <div className="bg-slate-50 dark:bg-slate-900/30 border-l-2 border-slate-200 dark:border-slate-700 ml-3">
                                     {units.map(u => (
-                                        <div key={u.fullName} onClick={() => select(u.fullName)} className={`p-2 text-xs hover:bg-indigo-50 dark:hover:bg-indigo-900/30 cursor-pointer text-slate-600 dark:text-slate-400 border-l-2 border-transparent hover:border-indigo-500 ${selectedUnit === u.fullName ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-700 dark:text-indigo-300' : ''}`}>
-                                            {u.shortName}
+                                        <div 
+                                            key={u.fullValue}
+                                            onClick={() => handleSelect(u.fullValue)}
+                                            className={`p-2 pl-4 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 ${value === u.fullValue ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-600' : ''}`}
+                                        >
+                                            {u.label}
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </div>
                     ))}
+                    
+                    {options.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Nenhuma unidade carregada.</div>}
                 </div>
             )}
         </div>
@@ -479,19 +516,6 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
     // Tabs de lançamento: Receita, Despesa, Métricas
     const [activeTab, setActiveTab] = useState('expense'); 
 
-    // Agrupar Segmentos para o Dropdown
-    const groupedSegments = useMemo(() => {
-        const groups = {};
-        segments.forEach(seg => {
-            const parts = seg.name.split(':');
-            const category = parts.length > 1 ? parts[0].trim() : 'Outros';
-            const unitName = parts.length > 1 ? parts[1].trim() : seg.name;
-            if (!groups[category]) groups[category] = [];
-            groups[category].push({ id: seg.id, name: seg.name, label: unitName });
-        });
-        return groups;
-    }, [segments]);
-
     useEffect(() => { 
         if (initialData) {
             setForm({ ...initialData, date: initialData.date });
@@ -544,17 +568,13 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                 <div className="space-y-3">
                     <input type="date" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
                     
-                    {/* Seletor de Unidade com Grupos */}
-                    <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.segment} onChange={e=>setForm({...form, segment: e.target.value})}>
-                        <option value="">Selecione a Unidade...</option>
-                        {Object.entries(groupedSegments).map(([groupName, units]) => (
-                            <optgroup key={groupName} label={groupName}>
-                                {units.map(u => (
-                                    <option key={u.id} value={u.name}>{u.label}</option>
-                                ))}
-                            </optgroup>
-                        ))}
-                    </select>
+                    {/* Seletor de Unidade Hierárquico (Pastas) */}
+                    <HierarchicalSelect 
+                        value={form.segment} 
+                        onChange={(val) => setForm({...form, segment: val})} 
+                        options={segments}
+                        placeholder="Selecione a Unidade..." 
+                    />
 
                     {activeTab !== 'metric' && (
                         <>
@@ -767,7 +787,13 @@ export default function App() {
              {/* LÓGICA: O filtro de período some na aba lançamentos */}
              {activeTab !== 'lancamentos' && <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
              
-             <UnitSelector selectedUnit={globalUnitFilter} onChange={setGlobalUnitFilter} segments={segments} />
+             {/* FILTRO DE UNIDADES HIERÁRQUICO */}
+             <HierarchicalSelect 
+                value={globalUnitFilter} 
+                onChange={setGlobalUnitFilter} 
+                options={segments} 
+                isFilter={true}
+             />
           </div>
           <div className="flex gap-2">
              <button onClick={() => setShowAIModal(true)} className="p-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg shadow-lg"><Sparkles size={20} /></button>
