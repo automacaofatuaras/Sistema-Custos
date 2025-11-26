@@ -66,7 +66,17 @@ const SEGMENT_CONFIG = {
     "Construtora": "ton", "Fábrica de Tubos": "m³", "Noromix Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "ton", "Usinas de Asfalto": "ton"
 };
 
-// --- REGRAS DE CUSTOS POR SEGMENTO ---
+// LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE)
+const ADMIN_CC_CODES = [
+    13000, 14000, // Portos
+    27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, // Concreteiras
+    10000, // Fabrica
+    20000, 5000, 4000, 3000, 26000, 2000, // Pedreiras
+    32000, 6000, 17000, 31000, 7000, 21000, // Usinas
+    40000 // Construtora
+];
+
+// REGRAS DE CUSTOS POR SEGMENTO
 const COST_CENTER_RULES = {
     "Portos de Areia": {
         "DESPESAS DA UNIDADE": {
@@ -79,20 +89,10 @@ const COST_CENTER_RULES = {
             "CUSTO TRANSPORTE": [13101, 14102]
         },
         "ADMINISTRATIVO": {
-            "CUSTO RATEIO DESPESAS ADMINISTRATIVAS": [1087, 1089] 
+            "CUSTO RATEIO DESPESAS ADMINISTRATIVAS": [1087, 1089]
         }
     }
 };
-
-// LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE)
-const ADMIN_CC_CODES = [
-    13000, 14000, // Portos
-    27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, // Concreteiras
-    10000, // Fabrica
-    20000, 5000, 4000, 3000, 26000, 2000, // Pedreiras
-    32000, 6000, 17000, 31000, 7000, 21000, // Usinas
-    40000 // Construtora
-];
 
 const getMeasureUnit = (unitOrSegment) => {
     if (SEGMENT_CONFIG[unitOrSegment]) return SEGMENT_CONFIG[unitOrSegment];
@@ -122,33 +122,34 @@ const getUnitByCostCenter = (ccCode) => {
     const cc = parseInt(ccCode, 10);
     if (isNaN(cc)) return null;
     
-    if (cc === 1087 || cc === 1089) return "Porto de Areia Saara - Mira Estrela";
+    // Rateios Especiais (Serão tratados na importação para split, aqui é fallback)
+    if (cc === 1087 || cc === 1089 || cc === 1042) return "Porto de Areia Saara - Mira Estrela"; 
 
     if (cc >= 13000 && cc <= 13999) return "Porto de Areia Saara - Mira Estrela";
     if (cc >= 14000 && cc <= 14999) return "Porto Agua Amarela - Riolândia";
-    if (cc >= 27000 && cc <= 27999) return "Noromix Concreteiras: Noromix Concreto S/A - Fernandópolis";
-    if (cc >= 22000 && cc <= 22999) return "Noromix Concreteiras: Noromix Concreto S/A - Ilha Solteira";
-    if (cc >= 25000 && cc <= 25999) return "Noromix Concreteiras: Noromix Concreto S/A - Jales";
-    if (cc >= 33000 && cc <= 33999) return "Noromix Concreteiras: Noromix Concreto S/A - Ouroeste";
-    if (cc >= 38000 && cc <= 38999) return "Noromix Concreteiras: Noromix Concreto S/A - Paranaíba";
-    if (cc >= 34000 && cc <= 34999) return "Noromix Concreteiras: Noromix Concreto S/A - Monções";
-    if (cc >= 29000 && cc <= 29999) return "Noromix Concreteiras: Noromix Concreto S/A - Pereira Barreto";
-    if (cc >= 9000 && cc <= 9999) return "Noromix Concreteiras: Noromix Concreto S/A - Três Fronteiras";
-    if (cc >= 8000 && cc <= 8999) return "Noromix Concreteiras: Noromix Concreto S/A - Votuporanga";
-    if (cc >= 10000 && cc <= 10999) return "Fábrica de Tubos: Noromix Concreto S/A - Votuporanga (Fábrica)";
-    if (cc >= 20000 && cc <= 20999) return "Pedreiras: Mineração Grandes Lagos - Icém";
-    if (cc >= 5000 && cc <= 5999) return "Pedreiras: Mineração Grandes Lagos - Itapura";
-    if (cc >= 4000 && cc <= 4999) return "Pedreiras: Mineração Grandes Lagos - Riolândia";
-    if (cc >= 3000 && cc <= 3999) return "Pedreiras: Mineração Grandes Lagos - Três Fronteiras";
-    if (cc >= 26000 && cc <= 26999) return "Pedreiras: Noromix Concreto S/A - Rinópolis";
-    if (cc >= 2000 && cc <= 2999) return "Pedreiras: Mineração Noroeste Paulista - Monções";
-    if (cc >= 32000 && cc <= 32999) return "Usinas de Asfalto: Noromix Concreto S/A - Assis";
-    if (cc >= 6000 && cc <= 6999) return "Usinas de Asfalto: Noromix Concreto S/A - Monções (Usina)";
-    if (cc >= 17000 && cc <= 17999) return "Usinas de Asfalto: Noromix Concreto S/A - Itapura (Usina)";
-    if (cc >= 31000 && cc <= 31999) return "Usinas de Asfalto: Noromix Concreto S/A - Rinópolis (Usina)";
-    if (cc >= 7000 && cc <= 7999) return "Usinas de Asfalto: Demop Participações LTDA - Três Fronteiras";
-    if (cc >= 21000 && cc <= 21999) return "Usinas de Asfalto: Mineração Grandes Lagos - Icém (Usina)";
-    if (cc >= 40000 && cc <= 94999 && cc !== 94901) return "Construtora: Noromix Construtora";
+    if (cc >= 27000 && cc <= 27999) return "Noromix Concreto S/A - Fernandópolis";
+    if (cc >= 22000 && cc <= 22999) return "Noromix Concreto S/A - Ilha Solteira";
+    if (cc >= 25000 && cc <= 25999) return "Noromix Concreto S/A - Jales";
+    if (cc >= 33000 && cc <= 33999) return "Noromix Concreto S/A - Ouroeste";
+    if (cc >= 38000 && cc <= 38999) return "Noromix Concreto S/A - Paranaíba";
+    if (cc >= 34000 && cc <= 34999) return "Noromix Concreto S/A - Monções";
+    if (cc >= 29000 && cc <= 29999) return "Noromix Concreto S/A - Pereira Barreto";
+    if (cc >= 9000 && cc <= 9999) return "Noromix Concreto S/A - Três Fronteiras";
+    if (cc >= 8000 && cc <= 8999) return "Noromix Concreto S/A - Votuporanga";
+    if (cc >= 10000 && cc <= 10999) return "Noromix Concreto S/A - Votuporanga (Fábrica)";
+    if (cc >= 20000 && cc <= 20999) return "Mineração Grandes Lagos - Icém";
+    if (cc >= 5000 && cc <= 5999) return "Mineração Grandes Lagos - Itapura";
+    if (cc >= 4000 && cc <= 4999) return "Mineração Grandes Lagos - Riolândia";
+    if (cc >= 3000 && cc <= 3999) return "Mineração Grandes Lagos - Três Fronteiras";
+    if (cc >= 26000 && cc <= 26999) return "Noromix Concreto S/A - Rinópolis";
+    if (cc >= 2000 && cc <= 2999) return "Mineração Noroeste Paulista - Monções";
+    if (cc >= 32000 && cc <= 32999) return "Noromix Concreto S/A - Assis";
+    if (cc >= 6000 && cc <= 6999) return "Noromix Concreto S/A - Monções (Usina)";
+    if (cc >= 17000 && cc <= 17999) return "Noromix Concreto S/A - Itapura (Usina)";
+    if (cc >= 31000 && cc <= 31999) return "Noromix Concreto S/A - Rinópolis (Usina)";
+    if (cc >= 7000 && cc <= 7999) return "Demop Participações LTDA - Três Fronteiras";
+    if (cc >= 21000 && cc <= 21999) return "Mineração Grandes Lagos - Icém (Usina)";
+    if (cc >= 40000 && cc <= 94999 && cc !== 94901) return "Noromix Construtora";
     return null;
 };
 
@@ -193,6 +194,7 @@ const useToast = () => {
     return [toast, showToast];
 };
 
+// --- SERVIÇOS ---
 const dbService = {
   getCollRef: (user, colName) => {
     if (!user) throw new Error("Usuário não autenticado");
@@ -233,7 +235,25 @@ const dbService = {
   getAll: async (user, col) => { const snapshot = await getDocs(dbService.getCollRef(user, col)); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); },
   addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
 };
-const aiService = { analyze: async () => "IA Placeholder" };
+
+const aiService = {
+  analyze: async (transactions, period) => {
+    if (!GEMINI_API_KEY || GEMINI_API_KEY.includes("SUA_KEY")) return "Erro: Configure a API Key do Gemini.";
+    const revenue = transactions.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
+    const expense = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
+    const categories = {};
+    transactions.filter(t => t.type === 'expense').forEach(t => { categories[t.accountPlan] = (categories[t.accountPlan] || 0) + t.value; });
+    const top = Object.entries(categories).sort((a,b) => b[1] - a[1]).slice(0, 3).map(([k,v]) => `${k}: ${v.toFixed(0)}`).join(', ');
+    const prompt = `Analise (${period}): Receita R$${revenue.toFixed(0)}, Despesa R$${expense.toFixed(0)}. Top contas: ${top}. Dê 3 insights de gestão de custos.`;
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+      const data = await response.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || "Sem resposta.";
+    } catch (error) { return "Erro na IA."; }
+  }
+};
 
 /**
  * ------------------------------------------------------------------
@@ -309,13 +329,11 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
 
-            if (!sortDesc || /^0+$/.test(sortDesc)) {
-                sortDesc = "Lançamento SAF";
-            }
+            if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
 
             const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
             
-            // LÓGICA DE SPLIT CC 1042
+            // LÓGICA CC 1042 (SPLIT / 2)
             if (ccCode === '01042' || ccCode === '1042') {
                 const splitValue = value / 2;
                 const baseObj = {
@@ -328,7 +346,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 continue;
             }
 
-            // LÓGICA DE SPLIT CC 1087 e 1089
+            // LÓGICA CC 1087 e 1089 (SPLIT / 8 / 2)
             if (ccCode === '01087' || ccCode === '1087' || ccCode === '01089' || ccCode === '1089') {
                 const splitValue = (value / 8) / 2;
                 const baseObj = {
@@ -371,53 +389,19 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="font-bold text-lg dark:text-white">Importação Inteligente (TXT)</h3>
-            </div>
+            <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg dark:text-white">Importação Inteligente (TXT)</h3></div>
             <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
-                <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
-                <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
-                <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
+                <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} /><p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p><input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
             </div>
             {previewData.length > 0 && (
                 <div className="mt-6 animate-in fade-in">
                     <div className="flex justify-between items-center mb-2">
                         <p className="font-bold text-sm text-emerald-600">{previewData.length} lançamentos</p>
-                        <button onClick={handleConfirmImport} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2">
-                            {isProcessing ? <Loader2 className="animate-spin"/> : <CheckCircle size={18}/>} Confirmar Importação
-                        </button>
+                        <button onClick={handleConfirmImport} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2">{isProcessing ? <Loader2 className="animate-spin"/> : <CheckCircle size={18}/>} Confirmar Importação</button>
                     </div>
                     <div className="max-h-96 overflow-y-auto border dark:border-slate-700 rounded-lg">
-                        <table className="w-full text-xs text-left">
-                            <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0">
-                                <tr>
-                                    <th className="p-2">Data</th>
-                                    <th className="p-2">Unidade</th>
-                                    <th className="p-2">C. Custo</th>
-                                    <th className="p-2">Cód. Classe</th>
-                                    <th className="p-2">Desc. Classe</th>
-                                    <th className="p-2">Fornecedor</th>
-                                    <th className="p-2">Matéria</th>
-                                    <th className="p-2 text-right">Valor</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y dark:divide-slate-700">
-                                {previewData.map((row, i) => (
-                                    <tr key={i} className="dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
-                                        <td className="p-2">{formatDate(row.date)}</td>
-                                        <td className="p-2 font-bold text-indigo-600 dark:text-indigo-400">{row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}</td>
-                                        <td className="p-2">{row.costCenter}</td>
-                                        <td className="p-2">{row.accountPlan}</td>
-                                        <td className="p-2">{row.planDescription}</td>
-                                        <td className="p-2">{row.description}</td>
-                                        <td className="p-2 text-slate-500">{row.materialDescription}</td>
-                                        <td className={`p-2 text-right font-bold ${row.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                            {row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                        <table className="w-full text-xs text-left"><thead className="bg-slate-100 dark:bg-slate-900 sticky top-0"><tr><th className="p-2">Data</th><th className="p-2">Unidade</th><th className="p-2">C. Custo</th><th className="p-2">Cód. Classe</th><th className="p-2">Desc. Classe</th><th className="p-2">Fornecedor</th><th className="p-2">Matéria</th><th className="p-2 text-right">Valor</th></tr></thead>
+                            <tbody className="divide-y dark:divide-slate-700">{previewData.map((row, i) => (<tr key={i} className="dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"><td className="p-2">{formatDate(row.date)}</td><td className="p-2 font-bold text-indigo-600 dark:text-indigo-400">{row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}</td><td className="p-2">{row.costCenter}</td><td className="p-2">{row.accountPlan}</td><td className="p-2">{row.planDescription}</td><td className="p-2">{row.description}</td><td className="p-2 text-slate-500">{row.materialDescription}</td><td className={`p-2 text-right font-bold ${row.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>{row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>))}</tbody></table>
                     </div>
                 </div>
             )}
@@ -425,6 +409,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     );
 };
 
+// COMPONENTE DE CUSTOS (CORRIGIDO E COMPLETADO)
 const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -449,14 +434,11 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
 
     const groupedData = useMemo(() => {
         const hierarchy = {
-            'DESPESAS DA UNIDADE': {
-                total: 0,
-                subgroups: {
-                    'CUSTO OPERACIONAL INDÚSTRIA': { total: 0, classes: {} },
-                    'CUSTO OPERACIONAL ADMINISTRATIVO': { total: 0, classes: {} },
-                    'OUTRAS DESPESAS': { total: 0, classes: {} }
-                }
-            }
+            'DESPESAS DA UNIDADE': { total: 0, subgroups: { 'CUSTO OPERACIONAL INDÚSTRIA': { total: 0, classes: {} }, 'CUSTO OPERACIONAL ADMINISTRATIVO': { total: 0, classes: {} }, 'OUTRAS DESPESAS': { total: 0, classes: {} } } },
+            'TRANSPORTE': { total: 0, subgroups: { 'CUSTO TRANSPORTE': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
+            'ADMINISTRATIVO': { total: 0, subgroups: { 'CUSTO RATEIO DESPESAS ADMINISTRATIVAS': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
+            'IMPOSTOS': { total: 0, subgroups: { 'CUSTO IMPOSTOS': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
+            'OUTROS': { total: 0, subgroups: { 'Geral': {total:0, classes:{}} } }
         };
 
         const grandTotal = filtered.reduce((acc, t) => acc + t.value, 0);
@@ -468,8 +450,8 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
             
             let targetRoot = 'OUTROS';
             let targetSub = 'Geral';
-
             let matched = false;
+            
             if (rules) {
                 for (const [rootGroup, subGroups] of Object.entries(rules)) {
                     for (const [subGroup, ccList] of Object.entries(subGroups)) {
@@ -492,9 +474,6 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                 else { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'OUTRAS DESPESAS'; }
             }
 
-            // VALOR JÁ VEM CORRETO DO BANCO, NÃO REAPLICAR RATEIO DE 8 AQUI
-            let finalValue = t.value;
-            
             if (!hierarchy[targetRoot]) hierarchy[targetRoot] = { total: 0, subgroups: {} };
             if (!hierarchy[targetRoot].subgroups[targetSub]) hierarchy[targetRoot].subgroups[targetSub] = { total: 0, classes: {} };
 
@@ -506,9 +485,9 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
             }
 
             subgroup.classes[classKey].items.push(t);
-            subgroup.classes[classKey].total += finalValue;
-            subgroup.total += finalValue;
-            hierarchy[targetRoot].total += finalValue;
+            subgroup.classes[classKey].total += t.value;
+            subgroup.total += t.value;
+            hierarchy[targetRoot].total += t.value;
         });
 
         return { hierarchy, grandTotal };
@@ -517,15 +496,8 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
     const toggleGroup = (id) => setExpandedGroups(prev => ({ ...prev, [id]: !prev[id] }));
 
     const exportData = (type) => {
-        const data = filtered.map(t => ({ 
-            Data: t.date, Unidade: t.segment, Fornecedor: t.description, Matéria: t.materialDescription, Cod_Classe: t.accountPlan, Desc_Classe: t.planDescription, Centro_Custo: t.costCenter, Valor: t.value 
-        }));
-        if (type === 'xlsx') {
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Custos");
-            XLSX.writeFile(wb, "custos_detalhados.xlsx");
-        }
+        const data = filtered.map(t => ({ Data: t.date, Unidade: t.segment, Fornecedor: t.description, Matéria: t.materialDescription, Cod_Classe: t.accountPlan, Desc_Classe: t.planDescription, Centro_Custo: t.costCenter, Valor: t.value }));
+        if (type === 'xlsx') { const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Custos"); XLSX.writeFile(wb, "custos_detalhados.xlsx"); }
         showToast(`Exportado para ${type}`, 'success');
     };
     
@@ -534,10 +506,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
             <div className="p-6 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
                 <h3 className="font-bold text-lg dark:text-white">Custos e Despesas</h3>
                 <div className="flex gap-2 w-full md:w-auto">
-                    <div className="relative flex-1 md:w-64">
-                        <Search className="absolute left-3 top-2.5 text-slate-400" size={16}/>
-                        <input className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Pesquisar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                    </div>
+                    <div className="relative flex-1 md:w-64"><Search className="absolute left-3 top-2.5 text-slate-400" size={16}/><input className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Pesquisar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
                     <button onClick={() => exportData('xlsx')} className="text-emerald-500 flex items-center gap-1 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg hover:bg-emerald-100"><Download size={16}/> Excel</button>
                 </div>
             </div>
@@ -547,8 +516,9 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                         <tr><th className="p-3 w-10"></th><th className="p-3">Estrutura de Contas</th><th className="p-3 text-right">Valor Total</th><th className="p-3 text-right">Custo p/ {measureUnit}</th><th className="p-3 text-right">%</th></tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
-                        {Object.entries(groupedData.hierarchy).map(([rootName, rootData]) => (
-                            rootData.total > 0 && (
+                        {Object.entries(groupedData.hierarchy).map(([rootName, rootData]) => {
+                            if (rootData.total === 0) return null;
+                            return (
                             <React.Fragment key={rootName}>
                                 <tr className="bg-slate-200 dark:bg-slate-800 font-bold cursor-pointer" onClick={() => toggleGroup(rootName)}>
                                     <td className="p-3 text-center">{expandedGroups[rootName] ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</td>
@@ -557,19 +527,16 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                     <td className="p-3 text-right">-</td>
                                     <td className="p-3 text-right font-mono">{((rootData.total / groupedData.grandTotal) * 100).toFixed(1)}%</td>
                                 </tr>
-                                {expandedGroups[rootName] && Object.entries(rootData.subgroups)
-                                    .sort(([, a], [, b]) => b.total - a.total)
-                                    .map(([subName, subData]) => (
-                                    subData.total > 0 && (
+                                {expandedGroups[rootName] && Object.entries(rootData.subgroups).sort(([, a], [, b]) => b.total - a.total).map(([subName, subData]) => {
+                                    if (subData.total === 0) return null;
+                                    return (
                                         <React.Fragment key={subName}>
                                             <tr className="bg-slate-100 dark:bg-slate-700/50 font-semibold cursor-pointer border-l-4 border-indigo-500" onClick={() => toggleGroup(subName)}>
                                                 <td className="p-3 text-center pl-6">{expandedGroups[subName] ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}</td>
                                                 <td className="p-3 text-slate-700 dark:text-slate-200">{subName}</td>
                                                 <td className="p-3 text-right text-slate-700 dark:text-slate-200">{subData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                                 <td className="p-3 text-right font-mono text-xs">{totalProduction > 0 ? (subData.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
-                                                <td className="p-3 text-right font-mono text-xs text-slate-500 dark:text-slate-400">
-                                                    {((subData.total / groupedData.grandTotal) * 100).toFixed(1)}%
-                                                </td>
+                                                <td className="p-3 text-right font-mono text-xs text-slate-500 dark:text-slate-400">{((subData.total / groupedData.grandTotal) * 100).toFixed(1)}%</td>
                                             </tr>
                                             {expandedGroups[subName] && Object.values(subData.classes).sort((a,b) => b.total - a.total).map(classe => (
                                                 <React.Fragment key={classe.id}>
@@ -578,9 +545,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                                         <td className="p-3 dark:text-slate-300"><span className="font-mono text-xs bg-slate-200 dark:bg-slate-600 px-1 rounded mr-2">{classe.code}</span>{classe.name}</td>
                                                         <td className="p-3 text-right dark:text-slate-300">{classe.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                                         <td className="p-3 text-right font-mono text-xs dark:text-slate-400">{totalProduction > 0 ? (classe.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
-                                                        <td className="p-3 text-right font-mono text-xs dark:text-slate-400">
-                                                            {((classe.total / groupedData.grandTotal) * 100).toFixed(1)}%
-                                                        </td>
+                                                        <td className="p-3 text-right font-mono text-xs dark:text-slate-400">{((classe.total / subData.total) * 100).toFixed(1)}%</td>
                                                     </tr>
                                                     {expandedGroups[classe.id] && classe.items.map(t => (
                                                         <tr key={t.id} className="bg-white dark:bg-slate-900 text-xs border-b dark:border-slate-800">
@@ -593,24 +558,21 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                                             </td>
                                                             <td className="p-2 text-right text-rose-500">{t.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                                                             <td className="p-2 text-right">-</td>
-                                                            <td className="p-2 text-right text-slate-400">{((t.value / groupedData.grandTotal) * 100).toFixed(1)}%</td>
+                                                            <td className="p-2 text-right text-slate-400">{((t.value / classe.total) * 100).toFixed(1)}%</td>
                                                         </tr>
                                                     ))}
                                                 </React.Fragment>
                                             ))}
                                         </React.Fragment>
-                                    )
-                                ))
-                            }
+                                    );
+                                })}
                             </React.Fragment>
-                        ))}
-                        {/* LINHA DE TOTAL GERAL */}
+                            );
+                        })}
                         <tr className="bg-slate-900 text-white font-bold text-lg">
                             <td colSpan={2} className="p-4 text-right">TOTAL GERAL</td>
                             <td className="p-4 text-right">{groupedData.grandTotal.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
-                            <td className="p-4 text-right">
-                                {totalProduction > 0 ? (groupedData.grandTotal / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
-                            </td>
+                            <td className="p-4 text-right">{totalProduction > 0 ? (groupedData.grandTotal / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
                             <td className="p-4 text-right">100%</td>
                         </tr>
                     </tbody>
@@ -620,10 +582,8 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
     );
 };
 
-// ... (HierarchicalSelect, PeriodSelector, LoginScreen, UsersScreen, DREComponent, ManualEntryModal, ProductionComponent, StockComponent e App Function mantidos)
-// Vou reinserir a estrutura principal do App para fechar o arquivo corretamente.
+// ... (HierarchicalSelect, PeriodSelector, LoginScreen, UsersScreen, DREComponent, ManualEntryModal, ProductionComponent, StockComponent, App - MANTIDOS)
 
-// ... (Mantenha os outros componentes como estavam no anterior)
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -726,6 +686,7 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
         if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
+        
         const [year, month] = form.date.split('-');
         const lastDay = new Date(year, month, 0).getDate();
         const fullDate = `${form.date}-${lastDay}`;
@@ -830,31 +791,10 @@ export default function App() {
   
   const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
 
-  // --- LÓGICA DE EXCLUSÃO EM LOTE ---
-  const handleSelectAll = (e) => {
-      if (e.target.checked) {
-          setSelectedIds(filteredData.map(t => t.id));
-      } else {
-          setSelectedIds([]);
-      }
-  };
+  const handleSelectAll = (e) => { if (e.target.checked) { setSelectedIds(filteredData.map(t => t.id)); } else { setSelectedIds([]); } };
+  const handleSelectOne = (id) => { setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); };
+  const handleBatchDelete = async () => { if (!confirm(`Tem certeza que deseja excluir ${selectedIds.length} lançamentos?`)) return; try { await dbService.deleteBulk(user, 'transactions', selectedIds); await loadData(); showToast(`${selectedIds.length} itens excluídos.`, 'success'); } catch (e) { showToast("Erro ao excluir.", 'error'); } };
 
-  const handleSelectOne = (id) => {
-      setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
-
-  const handleBatchDelete = async () => {
-      if (!confirm(`Tem certeza que deseja excluir ${selectedIds.length} lançamentos?`)) return;
-      try {
-          await dbService.deleteBulk(user, 'transactions', selectedIds);
-          await loadData();
-          showToast(`${selectedIds.length} itens excluídos.`, 'success');
-      } catch (e) {
-          showToast("Erro ao excluir.", 'error');
-      }
-  };
-
-  // --- FILTRAGEM CORRIGIDA (PREFIXO) ---
   const filteredData = useMemo(() => {
       return transactions.filter(t => {
           const d = new Date(t.date);
