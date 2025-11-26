@@ -198,7 +198,13 @@ const dbService = {
  * ------------------------------------------------------------------
  */
 
-// COMPONENTE DE IMPORTAÇÃO (ATUALIZADO)
+// --- COMPONENTE FALTANTE: KPI CARD ---
+const KpiCard = ({ title, value, icon: Icon, color }) => {
+    const colors = { emerald: 'text-emerald-600 bg-emerald-50', rose: 'text-rose-600 bg-rose-50', indigo: 'text-indigo-600 bg-indigo-50' };
+    return (<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold text-slate-500 uppercase mb-2">{title}</p><h3 className="text-2xl font-bold dark:text-white">{value}</h3></div><div className={`p-3 rounded-xl ${colors[color]}`}><Icon size={24}/></div></div></div>);
+};
+// -------------------------------------
+
 const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const [fileText, setFileText] = useState('');
     const [previewData, setPreviewData] = useState([]);
@@ -604,6 +610,57 @@ const UsersScreen = ({ user, myRole, showToast }) => {
     const handleDelete = async (uid) => { if (!confirm("Remover acesso?")) return; await dbService.deleteUserAccess(uid); loadUsers(); showToast("Acesso revogado.", 'success'); };
     return (<div className="p-6 max-w-4xl mx-auto"><h2 className="text-2xl font-bold mb-6 dark:text-white">Gestão de Acessos</h2><div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-8 border dark:border-slate-700"><h3 className="font-bold mb-4 flex items-center gap-2 dark:text-white"><PlusCircle size={20}/> Cadastrar Novo Usuário</h3><div className="flex gap-4 items-end"><div className="flex-1"><label className="text-xs font-bold text-slate-500">Email</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserEmail} onChange={e=>setNewUserEmail(e.target.value)}/></div><div className="flex-1"><label className="text-xs font-bold text-slate-500">Senha Provisória</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserPass} onChange={e=>setNewUserPass(e.target.value)}/></div><button onClick={handleCreateUser} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700">Criar</button></div></div><div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700"><table className="w-full text-left"><thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{users.map(u => (<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{u.email}</td><td className="p-4"><select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select></td><td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td></tr>))}</tbody></table></div></div>);
 };
+const DREComponent = ({ transactions }) => {
+    const dreData = useMemo(() => {
+        const rows = JSON.parse(JSON.stringify(DRE_BLUEPRINT)); const accMap = {};
+        transactions.forEach(t => { if (!t.accountPlan) return; const match = rows.find(r => t.accountPlan.startsWith(r.code) && !r.formula); if (match) { const val = t.type === 'revenue' ? t.value : -t.value; accMap[match.code] = (accMap[match.code] || 0) + val; } });
+        rows.forEach(row => { if (accMap[row.code]) row.value = accMap[row.code]; });
+        for(let i=0; i<2; i++) { rows.forEach(row => { if (row.parent) { const parent = rows.find(r => r.code === row.parent); if (parent) parent.value = (parent.value || 0) + (row.value || 0); } }); }
+        rows.forEach(row => { if (row.formula) { const parts = row.formula.split(' '); let total = 0; let op = '+'; parts.forEach(part => { if (part === '+' || part === '-') { op = part; return; } const refRow = rows.find(r => r.code === part || r.code === part.replace('LUCRO_BRUTO', 'LUCRO_BRUTO')); const refVal = refRow ? (refRow.value || 0) : 0; if (op === '+') total += refVal; else total -= refVal; }); row.value = total; } });
+        return rows;
+    }, [transactions]);
+    return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden"><div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial</div><div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{dreData.map((row, i) => (<tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}><td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td><td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>{(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>))}</tbody></table></div></div>);
+};
+const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
+    const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 7), type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
+    const [activeTab, setActiveTab] = useState('expense'); 
+    useEffect(() => { if (initialData) { setForm({ ...initialData, date: initialData.date.slice(0, 7) }); setActiveTab(initialData.type === 'metric' ? 'metric' : initialData.type); } }, [initialData]);
+    const handleSubmit = async () => {
+        const val = parseFloat(form.value);
+        if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
+        if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
+        if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
+        const fullDate = `${form.date}-01`; 
+        let tx = { ...form, date: fullDate, value: val, costCenter: 'GERAL', source: 'manual', createdAt: new Date().toISOString(), type: activeTab };
+        if (activeTab === 'metric') { tx.description = `Lançamento de ${form.metricType === 'producao' ? 'Produção' : (form.metricType === 'vendas' ? 'Vendas' : 'Estoque')}`; tx.accountPlan = 'METRICS'; }
+        try { if(initialData?.id) await dbService.update(user, 'transactions', initialData.id, tx); else await dbService.add(user, 'transactions', tx); showToast("Lançamento realizado!", 'success'); onSave(); onClose(); } catch(e) { showToast("Erro ao salvar.", 'error'); }
+    };
+    const unitMeasure = form.segment ? getMeasureUnit(form.segment) : 'un';
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"><div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6 dark:border-slate-700 border"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold dark:text-white">{initialData ? 'Editar' : 'Novo'} Lançamento</h3><button onClick={onClose}><X size={20} className="text-slate-400"/></button></div><div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg mb-4"><button onClick={() => setActiveTab('revenue')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'revenue' ? 'bg-white dark:bg-slate-700 shadow text-emerald-600' : 'text-slate-500'}`}>Receita</button><button onClick={() => setActiveTab('expense')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'expense' ? 'bg-white dark:bg-slate-700 shadow text-rose-600' : 'text-slate-500'}`}>Despesa</button><button onClick={() => setActiveTab('metric')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'metric' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-500'}`}>Métricas</button></div><div className="space-y-3"><label className="block text-xs font-bold text-slate-500 uppercase">Competência</label><input type="month" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} /><label className="block text-xs font-bold text-slate-500 uppercase">Unidade</label><HierarchicalSelect value={form.segment} onChange={(val) => setForm({...form, segment: val})} options={segments} placeholder="Selecione a Unidade..." />{activeTab !== 'metric' && (<><label className="block text-xs font-bold text-slate-500 uppercase">Detalhes</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição (Ex: Pgto Fornecedor)" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} /><select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.accountPlan} onChange={e=>setForm({...form, accountPlan: e.target.value})}><option value="">Conta do DRE...</option>{DRE_BLUEPRINT.filter(r => r.level === 2).map(r => <option key={r.code} value={r.code}>{r.code} - {r.name}</option>)}</select></>)}{activeTab === 'metric' && (<div className="grid grid-cols-3 gap-2"><button onClick={()=>setForm({...form, metricType:'producao'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='producao'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Factory className="mx-auto mb-1" size={16}/> Produção</button><button onClick={()=>setForm({...form, metricType:'vendas'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='vendas'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><ShoppingCart className="mx-auto mb-1" size={16}/> Vendas</button><button onClick={()=>setForm({...form, metricType:'estoque'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='estoque'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Package className="mx-auto mb-1" size={16}/> Estoque</button></div>)}<div className="relative"><span className="absolute left-3 top-2 text-slate-400 font-bold">{activeTab === 'metric' ? unitMeasure : 'R$'}</span><input type="number" className="w-full border p-2 pl-12 rounded dark:bg-slate-700 dark:text-white" placeholder="Valor" value={form.value} onChange={e=>setForm({...form, value: e.target.value})} /></div><button onClick={handleSubmit} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">Salvar Lançamento</button></div></div></div>
+    );
+};
+const ProductionComponent = ({ transactions, measureUnit }) => {
+    const data = useMemo(() => {
+        const metrics = transactions.filter(t => t.type === 'metric' && (t.metricType === 'producao' || t.metricType === 'vendas')).sort((a, b) => new Date(a.date) - new Date(b.date));
+        const grouped = {};
+        metrics.forEach(t => { const d = new Date(t.date); const key = `${d.getFullYear()}-${d.getMonth()}`; const label = d.toLocaleString('default', { month: 'short' }); if (!grouped[key]) grouped[key] = { name: label, Produção: 0, Vendas: 0, sortKey: d.getTime() }; if (t.metricType === 'producao') grouped[key].Produção += t.value; if (t.metricType === 'vendas') grouped[key].Vendas += t.value; });
+        return Object.values(grouped).sort((a,b) => a.sortKey - b.sortKey);
+    }, [transactions]);
+    return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6"><h3 className="font-bold text-lg mb-4 dark:text-white">Produção vs Vendas ({measureUnit})</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={data}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" /><YAxis /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} itemStyle={{ color: '#fff' }}/><Legend /><Line type="monotone" dataKey="Produção" stroke="#8884d8" strokeWidth={2} /><Line type="monotone" dataKey="Vendas" stroke="#82ca9d" strokeWidth={2} /></LineChart></ResponsiveContainer></div></div>);
+};
+const StockComponent = ({ transactions, measureUnit }) => {
+    const stockData = useMemo(() => {
+        const stockTxs = transactions.filter(t => t.type === 'metric' && t.metricType === 'estoque').sort((a, b) => new Date(a.date) - new Date(b.date));
+        const totalStock = stockTxs.reduce((acc, t) => acc + t.value, 0);
+        const mpExpenses = transactions.filter(t => t.type === 'expense' && t.accountPlan === '03.02').reduce((acc, t) => acc + t.value, 0);
+        const productionVol = transactions.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
+        const avgCost = productionVol > 0 ? mpExpenses / productionVol : 0;
+        const evolution = stockTxs.map(t => ({ date: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), Estoque: t.value }));
+        return { total: totalStock, avgCost, totalValue: totalStock * avgCost, evolution };
+    }, [transactions]);
+    return (<div className="space-y-6"><div className="grid grid-cols-3 gap-4"><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Estoque Total</p><h3 className="text-2xl font-bold dark:text-white">{stockData.total.toLocaleString()} {measureUnit}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Custo Médio (Período)</p><h3 className="text-2xl font-bold dark:text-white">R$ {stockData.avgCost.toFixed(2)}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Valor Total Estoque</p><h3 className="text-2xl font-bold text-emerald-600">R$ {stockData.totalValue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</h3></div></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80"><h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque</h3><ResponsiveContainer width="100%" height="100%"><AreaChart data={stockData.evolution}><defs><linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/><stop offset="95%" stopColor="#8884d8" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" /><YAxis /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} /><Area type="monotone" dataKey="Estoque" stroke="#8884d8" fillOpacity={1} fill="url(#colorStock)" /></AreaChart></ResponsiveContainer></div></div>);
+};
 
 /**
  * ------------------------------------------------------------------
@@ -629,6 +686,7 @@ export default function App() {
   const [showAIModal, setShowAIModal] = useState(false);
 
   const [importText, setImportText] = useState('');
+  const [importSegment, setImportSegment] = useState(''); 
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -682,7 +740,6 @@ export default function App() {
 
           if (!dateMatch) return false;
           
-          // Lógica de Filtro de Unidade (Segmento ou Unidade)
           if (BUSINESS_HIERARCHY[globalUnitFilter]) {
               return BUSINESS_HIERARCHY[globalUnitFilter].includes(t.segment);
           } else {
