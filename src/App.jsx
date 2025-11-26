@@ -609,8 +609,8 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
     );
 };
 
-// PARSER INTELIGENTE DE TXT COM DETECÇÃO DE CABEÇALHO E UNIDADE
-const AutomaticImportComponent = ({ onImport, segments, isProcessing }) => {
+// PARSER INTELIGENTE DE TXT COM DETECÇÃO DE CABEÇALHO E UNIDADE (ATUALIZADO)
+const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const [fileText, setFileText] = useState('');
     const [previewData, setPreviewData] = useState([]);
     const fileRef = useRef(null);
@@ -618,12 +618,17 @@ const AutomaticImportComponent = ({ onImport, segments, isProcessing }) => {
     const handleFile = (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        
+        // Feedback visual imediato
+        alert("Arquivo selecionado: " + file.name + ". Processando...");
+
         const reader = new FileReader();
         reader.onload = (evt) => {
             const text = evt.target.result;
             setFileText(text);
             parseAndPreview(text);
         };
+        // Tenta ler com encoding que suporte acentos (ISO-8859-1 ou Windows-1252 é comum em sistemas antigos)
         reader.readAsText(file, 'ISO-8859-1'); 
     };
 
@@ -632,56 +637,82 @@ const AutomaticImportComponent = ({ onImport, segments, isProcessing }) => {
         let headerIndex = -1;
         let colMap = {};
         
-        for(let i=0; i< Math.min(lines.length, 20); i++) {
+        console.log("Iniciando leitura do arquivo. Total linhas:", lines.length);
+
+        // 1. Tenta encontrar a linha de cabeçalho
+        for(let i=0; i < lines.length; i++) {
             if (lines[i].includes('PRGER-CCUS')) {
                 headerIndex = i;
-                const cols = lines[i].split(';');
+                // Remove aspas e espaços extras das colunas
+                const cols = lines[i].replace(/"/g, '').split(';');
                 cols.forEach((col, idx) => {
                     colMap[col.trim()] = idx;
                 });
+                console.log("Cabeçalho encontrado na linha:", i);
                 break;
             }
         }
 
         if (headerIndex === -1) {
-            alert("Erro: Cabeçalho (PRGER-CCUS) não encontrado no arquivo.");
+            alert("ERRO: O sistema não encontrou o cabeçalho 'PRGER-CCUS' no arquivo. Verifique se é o TXT correto.");
             return;
         }
 
         const parsed = [];
+        
+        // 2. Processa as linhas
         for(let i = headerIndex + 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            const cols = line.split(';');
             
+            // Remove aspas globais se existirem, para facilitar o split
+            // Nota: Cuidado se houver ponto e vírgula DENTRO do texto, mas em TXT financeiro é raro
+            const cleanLine = line.replace(/"/g, ''); 
+            const cols = cleanLine.split(';');
+            
+            // Extração segura usando o mapa
             const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
             const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
             const planCode = cols[colMap['PRGER-PLAN']]?.trim();
             const planDesc = cols[colMap['PRGER-NPLC']]?.trim();
             const supplier = cols[colMap['PRGER-NFOR']]?.trim() || 'Diversos';
-            const rawValue = cols[colMap['PRGER-TOTA']]?.trim();
+            let rawValue = cols[colMap['PRGER-TOTA']]?.trim();
             const ccDesc = cols[colMap['PRGER-NCCU']]?.trim() || '';
 
+            // Se não tiver código de centro de custo ou valor, pula
             if (!ccCode || !rawValue) continue;
 
+            // Tenta identificar a unidade
             const detectedUnit = getUnitByCostCenter(ccCode);
-            if (!detectedUnit) continue; 
+            
+            // Formata Valor (converte vírgula para ponto)
+            // Ex: "1.200,50" -> remove ponto milhar, troca virgula decimal
+            rawValue = rawValue.replace(/\./g, '').replace(',', '.');
+            const value = parseFloat(rawValue);
 
-            const value = parseFloat(rawValue.replace(',', '.'));
-            if (isNaN(value)) continue;
+            if (isNaN(value) || value === 0) continue;
 
-            let isoDate = new Date().toISOString().split('T')[0];
+            // Formata Data
+            let isoDate = new Date().toISOString().split('T')[0]; // Default hoje
             if (dateStr && dateStr.length === 10) {
-                const [d, m, y] = dateStr.split('/');
-                isoDate = `${y}-${m}-${d}`;
+                // Espera DD/MM/AAAA
+                const parts = dateStr.split('/');
+                if(parts.length === 3) {
+                    isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                }
             }
 
-            const type = (planCode?.startsWith('1.') || planCode?.startsWith('4.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
+            // Define Tipo (Receita ou Despesa)
+            const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
+
+            // Se não achou a unidade, marcamos como "Unidade Desconhecida" para não perder o dado (opcional)
+            // Ou usamos 'continue' para ignorar estritamente. Vamos usar a unidade detectada ou avisar.
+            const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
 
             parsed.push({
                 date: isoDate,
-                segment: detectedUnit, 
-                costCenter: ccDesc,
+                segment: finalSegment,
+                costCenter: `${ccCode} - ${ccDesc}`,
                 accountPlan: planCode || '00.00',
                 planDescription: planDesc || 'Indefinido',
                 description: supplier,
@@ -691,11 +722,18 @@ const AutomaticImportComponent = ({ onImport, segments, isProcessing }) => {
                 createdAt: new Date().toISOString()
             });
         }
+
         setPreviewData(parsed);
+
+        if (parsed.length > 0) {
+            alert(`SUCESSO! O sistema reconheceu ${parsed.length} lançamentos neste arquivo. Revise a tabela abaixo e clique em 'Confirmar Importação'.`);
+        } else {
+            alert("AVISO: O arquivo foi lido, mas nenhum lançamento válido foi encontrado. Verifique se os Centros de Custo correspondem às unidades cadastradas.");
+        }
     };
 
     const handleConfirmImport = () => {
-        if (previewData.length === 0) return alert("Nenhum dado válido encontrado.");
+        if (previewData.length === 0) return alert("Nenhum dado válido para importar.");
         onImport(previewData);
         setFileText('');
         setPreviewData([]);
@@ -705,47 +743,50 @@ const AutomaticImportComponent = ({ onImport, segments, isProcessing }) => {
         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-lg dark:text-white">Importação Inteligente (TXT)</h3>
-                <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Detecção Automática de Unidade</span>
+                <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">Automático</span>
             </div>
 
             <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
                 <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
                 <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
-                <p className="text-xs text-slate-500 mt-1">O sistema identificará as unidades pelos Centros de Custo</p>
+                <p className="text-xs text-slate-500 mt-1">O sistema identificará Unidade e Custos automaticamente</p>
                 <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
             </div>
 
             {previewData.length > 0 && (
                 <div className="mt-6 animate-in fade-in slide-in-from-bottom-4">
                     <div className="flex justify-between items-center mb-2">
-                        <p className="font-bold text-sm text-emerald-600">{previewData.length} lançamentos identificados</p>
+                        <p className="font-bold text-sm text-emerald-600">{previewData.length} lançamentos prontos para importar</p>
                         <button onClick={handleConfirmImport} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2">
                             {isProcessing ? <Loader2 className="animate-spin"/> : <CheckCircle size={18}/>}
                             Confirmar Importação
                         </button>
                     </div>
-                    <div className="max-h-60 overflow-y-auto border dark:border-slate-700 rounded-lg">
+                    <div className="max-h-96 overflow-y-auto border dark:border-slate-700 rounded-lg">
                         <table className="w-full text-xs text-left">
                             <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0">
                                 <tr>
                                     <th className="p-2">Data</th>
-                                    <th className="p-2">Unidade Detectada</th>
+                                    <th className="p-2">Unidade (Detectada)</th>
+                                    <th className="p-2">C. Custo</th>
                                     <th className="p-2">Descrição</th>
                                     <th className="p-2 text-right">Valor</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y dark:divide-slate-700">
-                                {previewData.slice(0, 100).map((row, i) => (
-                                    <tr key={i} className="dark:text-slate-300">
-                                        <td className="p-2">{row.date}</td>
-                                        <td className="p-2 font-bold text-indigo-600 dark:text-indigo-400">{row.segment.split(':')[1]}</td>
+                                {previewData.map((row, i) => (
+                                    <tr key={i} className="dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                        <td className="p-2">{new Date(row.date).toLocaleDateString()}</td>
+                                        <td className="p-2 font-bold text-indigo-600 dark:text-indigo-400">{row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}</td>
+                                        <td className="p-2">{row.costCenter}</td>
                                         <td className="p-2">{row.description}</td>
-                                        <td className="p-2 text-right">{row.value.toFixed(2)}</td>
+                                        <td className={`p-2 text-right font-bold ${row.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                            {row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
-                        {previewData.length > 100 && <p className="p-2 text-center text-xs text-slate-400">... e mais {previewData.length - 100} linhas.</p>}
                     </div>
                 </div>
             )}
