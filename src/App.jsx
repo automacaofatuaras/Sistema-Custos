@@ -31,6 +31,7 @@ import {
  * ------------------------------------------------------------------
  */
 
+// ⚠️ 1. COLE SUAS CHAVES DO FIREBASE AQUI ⚠️
 const firebaseConfig = {
   apiKey: "AIzaSyBmgCmtJnVRkmO2SzvyVmG5e7QCEhxDcy4",
   authDomain: "sistema-custos.firebaseapp.com",
@@ -40,8 +41,10 @@ const firebaseConfig = {
   appId: "1:693431907072:web:2dbc529e5ef65476feb9e5"
 };
 
+// ⚠️ 2. COLE SUA CHAVE DO GEMINI AQUI ⚠️
 const GEMINI_API_KEY = "SUA_KEY_GEMINI"; 
 
+// Inicialização do Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -68,7 +71,7 @@ const COST_CENTER_RULES = {
     "Portos de Areia": {
         "DESPESAS DA UNIDADE": {
             "CUSTO OPERACIONAL ADMINISTRATIVO": [13000, 14000, 14103],
-            "CUSTO OPERACIONAL INDÚSTRIA": [13100, 13002, 14003, 14101],
+            "CUSTO OPERACIONAL INDÚSTRIA": [13100, 13002, 14003, 14101, 1042], // 1042 Adicionado aqui
             "CUSTO COMERCIAL VENDEDORES": [13103, 14113],
             "CUSTO COMERCIAL GERÊNCIA": [13123, 14123]
         },
@@ -76,12 +79,20 @@ const COST_CENTER_RULES = {
             "CUSTO TRANSPORTE": [13101, 14102]
         },
         "ADMINISTRATIVO": {
-            "CUSTO RATEIO DESPESAS ADMINISTRATIVAS": [1087, 1089] // Regra especial: Dividir por 8
+            "CUSTO RATEIO DESPESAS ADMINISTRATIVAS": [1087, 1089] // Dividir por 8
         }
-        // Impostos é tratado via Conta Contábil 02.01
     }
-    // Outros segmentos serão adicionados aqui conforme você enviar
 };
+
+// LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE GERAL)
+const ADMIN_CC_CODES = [
+    13000, 14000, // Portos
+    27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, // Concreteiras
+    10000, // Fabrica
+    20000, 5000, 4000, 3000, 26000, 2000, // Pedreiras
+    32000, 6000, 17000, 31000, 7000, 21000, // Usinas
+    40000 // Construtora
+];
 
 const getMeasureUnit = (unitOrSegment) => {
     if (SEGMENT_CONFIG[unitOrSegment]) return SEGMENT_CONFIG[unitOrSegment];
@@ -99,39 +110,46 @@ const getParentSegment = (unitName) => {
     return "Geral";
 };
 
+const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const parts = dateString.split('-'); 
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return dateString;
+};
+
+// --- MAPEAMENTO AUTOMÁTICO DE UNIDADES POR CENTRO DE CUSTO ---
 const getUnitByCostCenter = (ccCode) => {
     const cc = parseInt(ccCode, 10);
     if (isNaN(cc)) return null;
-    // Mapeamento simplificado para exemplo (mantenha sua lógica completa aqui se necessário)
-    if (cc >= 13000 && cc <= 13999) return "Portos de Areia: Porto de Areia Saara - Mira Estrela";
-    if (cc >= 14000 && cc <= 14999) return "Portos de Areia: Porto Agua Amarela - Riolândia";
-    // ... (Mantenha o resto do mapeamento que você já tinha ou eu posso restaurar se preferir o bloco completo)
-    // Vou manter o bloco completo abaixo para garantir funcionamento
-    if (cc >= 27000 && cc <= 27999) return "Noromix Concreteiras: Noromix Concreto S/A - Fernandópolis";
-    if (cc >= 22000 && cc <= 22999) return "Noromix Concreteiras: Noromix Concreto S/A - Ilha Solteira";
-    if (cc >= 25000 && cc <= 25999) return "Noromix Concreteiras: Noromix Concreto S/A - Jales";
-    if (cc >= 33000 && cc <= 33999) return "Noromix Concreteiras: Noromix Concreto S/A - Ouroeste";
-    if (cc >= 38000 && cc <= 38999) return "Noromix Concreteiras: Noromix Concreto S/A - Paranaíba";
-    if (cc >= 34000 && cc <= 34999) return "Noromix Concreteiras: Noromix Concreto S/A - Monções";
-    if (cc >= 29000 && cc <= 29999) return "Noromix Concreteiras: Noromix Concreto S/A - Pereira Barreto";
-    if (cc >= 9000 && cc <= 9999) return "Noromix Concreteiras: Noromix Concreto S/A - Três Fronteiras";
-    if (cc >= 8000 && cc <= 8999) return "Noromix Concreteiras: Noromix Concreto S/A - Votuporanga";
-    if (cc >= 10000 && cc <= 10999) return "Fábrica de Tubos: Noromix Concreto S/A - Votuporanga (Fábrica)";
-    if (cc >= 20000 && cc <= 20999) return "Pedreiras: Mineração Grandes Lagos - Icém";
-    if (cc >= 5000 && cc <= 5999) return "Pedreiras: Mineração Grandes Lagos - Itapura";
-    if (cc >= 4000 && cc <= 4999) return "Pedreiras: Mineração Grandes Lagos - Riolândia";
-    if (cc >= 3000 && cc <= 3999) return "Pedreiras: Mineração Grandes Lagos - Três Fronteiras";
-    if (cc >= 26000 && cc <= 26999) return "Pedreiras: Noromix Concreto S/A - Rinópolis";
-    if (cc >= 2000 && cc <= 2999) return "Pedreiras: Mineração Noroeste Paulista - Monções";
-    if (cc >= 32000 && cc <= 32999) return "Usinas de Asfalto: Noromix Concreto S/A - Assis";
-    if (cc >= 6000 && cc <= 6999) return "Usinas de Asfalto: Noromix Concreto S/A - Monções (Usina)";
-    if (cc >= 17000 && cc <= 17999) return "Usinas de Asfalto: Noromix Concreto S/A - Itapura (Usina)";
-    if (cc >= 31000 && cc <= 31999) return "Usinas de Asfalto: Noromix Concreto S/A - Rinópolis (Usina)";
-    if (cc >= 7000 && cc <= 7999) return "Usinas de Asfalto: Demop Participações LTDA - Três Fronteiras";
-    if (cc >= 21000 && cc <= 21999) return "Usinas de Asfalto: Mineração Grandes Lagos - Icém (Usina)";
-    if (cc >= 40000 && cc <= 94999 && cc !== 94901) return "Construtora: Noromix Construtora";
-    // Rateios Adm (1087, 1089) geralmente não definem unidade sozinhos na importação, 
-    // mas se vierem, assumimos uma padrão ou deixamos nulo para preencher manual se necessário.
+    
+    // Mapeamento Especial para Rateio (para cair no segmento Portos)
+    if (cc === 1087 || cc === 1089) return "Porto de Areia Saara - Mira Estrela"; // Atribui a um para cair no filtro do segmento
+
+    if (cc >= 13000 && cc <= 13999) return "Porto de Areia Saara - Mira Estrela";
+    if (cc >= 14000 && cc <= 14999) return "Porto Agua Amarela - Riolândia";
+    if (cc >= 27000 && cc <= 27999) return "Noromix Concreto S/A - Fernandópolis";
+    if (cc >= 22000 && cc <= 22999) return "Noromix Concreto S/A - Ilha Solteira";
+    if (cc >= 25000 && cc <= 25999) return "Noromix Concreto S/A - Jales";
+    if (cc >= 33000 && cc <= 33999) return "Noromix Concreto S/A - Ouroeste";
+    if (cc >= 38000 && cc <= 38999) return "Noromix Concreto S/A - Paranaíba";
+    if (cc >= 34000 && cc <= 34999) return "Noromix Concreto S/A - Monções";
+    if (cc >= 29000 && cc <= 29999) return "Noromix Concreto S/A - Pereira Barreto";
+    if (cc >= 9000 && cc <= 9999) return "Noromix Concreto S/A - Três Fronteiras";
+    if (cc >= 8000 && cc <= 8999) return "Noromix Concreto S/A - Votuporanga";
+    if (cc >= 10000 && cc <= 10999) return "Noromix Concreto S/A - Votuporanga (Fábrica)";
+    if (cc >= 20000 && cc <= 20999) return "Mineração Grandes Lagos - Icém";
+    if (cc >= 5000 && cc <= 5999) return "Mineração Grandes Lagos - Itapura";
+    if (cc >= 4000 && cc <= 4999) return "Mineração Grandes Lagos - Riolândia";
+    if (cc >= 3000 && cc <= 3999) return "Mineração Grandes Lagos - Três Fronteiras";
+    if (cc >= 26000 && cc <= 26999) return "Noromix Concreto S/A - Rinópolis";
+    if (cc >= 2000 && cc <= 2999) return "Mineração Noroeste Paulista - Monções";
+    if (cc >= 32000 && cc <= 32999) return "Noromix Concreto S/A - Assis";
+    if (cc >= 6000 && cc <= 6999) return "Noromix Concreto S/A - Monções (Usina)";
+    if (cc >= 17000 && cc <= 17999) return "Noromix Concreto S/A - Itapura (Usina)";
+    if (cc >= 31000 && cc <= 31999) return "Noromix Concreto S/A - Rinópolis (Usina)";
+    if (cc >= 7000 && cc <= 7999) return "Demop Participações LTDA - Três Fronteiras";
+    if (cc >= 21000 && cc <= 21999) return "Mineração Grandes Lagos - Icém (Usina)";
+    if (cc >= 40000 && cc <= 94999 && cc !== 94901) return "Noromix Construtora";
     return null;
 };
 
@@ -176,7 +194,11 @@ const useToast = () => {
     return [toast, showToast];
 };
 
-// ... (Serviços dbService e aiService mantidos igual) ...
+/**
+ * ------------------------------------------------------------------
+ * 1. SERVIÇO DE DADOS
+ * ------------------------------------------------------------------
+ */
 const dbService = {
   getCollRef: (user, colName) => {
     if (!user) throw new Error("Usuário não autenticado");
@@ -217,10 +239,12 @@ const dbService = {
   getAll: async (user, col) => { const snapshot = await getDocs(dbService.getCollRef(user, col)); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); },
   addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
 };
-const aiService = { analyze: async () => "IA Placeholder" }; // Simplificado para brevidade
 
-// ... (AutomaticImportComponent, LoginScreen, etc. mantidos) ...
-// Vou apenas reinserir os componentes essenciais que mudaram ou são dependências.
+/**
+ * ------------------------------------------------------------------
+ * 2. COMPONENTES UI
+ * ------------------------------------------------------------------
+ */
 
 const KpiCard = ({ title, value, icon: Icon, color }) => {
     const colors = { emerald: 'text-emerald-600 bg-emerald-50', rose: 'text-rose-600 bg-rose-50', indigo: 'text-indigo-600 bg-indigo-50' };
@@ -258,7 +282,9 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 break;
             }
         }
+
         if (headerIndex === -1) return alert("ERRO: Cabeçalho 'PRGER-CCUS' não encontrado.");
+
         const parsed = [];
         for(let i = headerIndex + 1; i < lines.length; i++) {
             const line = lines[i].trim();
@@ -276,11 +302,10 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             let sortDesc = cols[colMap['PR-SORT']]?.trim();
 
             if (!ccCode || !rawValue) continue;
-            const detectedUnit = getUnitByCostCenter(ccCode);
             
+            // 1. DIVISÃO POR 100
             rawValue = rawValue.replace(/\./g, '').replace(',', '.');
-            const value = parseFloat(rawValue) / 100;
-
+            let value = parseFloat(rawValue) / 100;
             if (isNaN(value) || value === 0) continue;
 
             let isoDate = new Date().toISOString().split('T')[0];
@@ -288,10 +313,51 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 const parts = dateStr.split('/');
                 if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
-            if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
+
+            if (!sortDesc || /^0+$/.test(sortDesc)) {
+                sortDesc = "Lançamento SAF";
+            }
 
             const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-            // Se não detectar unidade, usa uma genérica para permitir importação e posterior ajuste
+            
+            // LÓGICA DE SPLIT CC 1042 (Portos)
+            if (ccCode === '01042' || ccCode === '1042') {
+                const splitValue = value / 2;
+                
+                // Lançamento 1: Porto Saara
+                parsed.push({
+                    date: isoDate,
+                    segment: "Porto de Areia Saara - Mira Estrela",
+                    costCenter: `${ccCode} - ${ccDesc}`,
+                    accountPlan: planCode || '00.00',
+                    planDescription: planDesc || 'Indefinido',
+                    description: supplier, 
+                    materialDescription: sortDesc, 
+                    value: splitValue,
+                    type: type,
+                    source: 'automatic_import',
+                    createdAt: new Date().toISOString()
+                });
+                
+                // Lançamento 2: Porto Agua Amarela
+                parsed.push({
+                    date: isoDate,
+                    segment: "Porto Agua Amarela - Riolândia",
+                    costCenter: `${ccCode} - ${ccDesc}`,
+                    accountPlan: planCode || '00.00',
+                    planDescription: planDesc || 'Indefinido',
+                    description: supplier, 
+                    materialDescription: sortDesc, 
+                    value: splitValue,
+                    type: type,
+                    source: 'automatic_import',
+                    createdAt: new Date().toISOString()
+                });
+                
+                continue; // Pula o push padrão
+            }
+
+            const detectedUnit = getUnitByCostCenter(ccCode);
             const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
 
             parsed.push({
@@ -321,19 +387,53 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
-            <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg dark:text-white">Importação Inteligente (TXT)</h3></div>
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="font-bold text-lg dark:text-white">Importação Inteligente (TXT)</h3>
+            </div>
             <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
-                <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} /><p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p><input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
+                <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
+                <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
+                <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
             </div>
             {previewData.length > 0 && (
                 <div className="mt-6 animate-in fade-in">
                     <div className="flex justify-between items-center mb-2">
                         <p className="font-bold text-sm text-emerald-600">{previewData.length} lançamentos</p>
-                        <button onClick={handleConfirmImport} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2">{isProcessing ? <Loader2 className="animate-spin"/> : <CheckCircle size={18}/>} Confirmar Importação</button>
+                        <button onClick={handleConfirmImport} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2">
+                            {isProcessing ? <Loader2 className="animate-spin"/> : <CheckCircle size={18}/>} Confirmar Importação
+                        </button>
                     </div>
                     <div className="max-h-96 overflow-y-auto border dark:border-slate-700 rounded-lg">
-                        <table className="w-full text-xs text-left"><thead className="bg-slate-100 dark:bg-slate-900 sticky top-0"><tr><th className="p-2">Data</th><th className="p-2">Unidade</th><th className="p-2">C. Custo</th><th className="p-2">Cód. Classe</th><th className="p-2">Desc. Classe</th><th className="p-2">Fornecedor</th><th className="p-2">Matéria</th><th className="p-2 text-right">Valor</th></tr></thead>
-                            <tbody className="divide-y dark:divide-slate-700">{previewData.map((row, i) => (<tr key={i} className="dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"><td className="p-2">{new Date(row.date).toLocaleDateString()}</td><td className="p-2 font-bold text-indigo-600 dark:text-indigo-400">{row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}</td><td className="p-2">{row.costCenter}</td><td className="p-2">{row.accountPlan}</td><td className="p-2">{row.planDescription}</td><td className="p-2">{row.description}</td><td className="p-2 text-slate-500">{row.materialDescription}</td><td className={`p-2 text-right font-bold ${row.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>{row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>))}</tbody></table>
+                        <table className="w-full text-xs text-left">
+                            <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0">
+                                <tr>
+                                    <th className="p-2">Data</th>
+                                    <th className="p-2">Unidade</th>
+                                    <th className="p-2">C. Custo</th>
+                                    <th className="p-2">Cód. Classe</th>
+                                    <th className="p-2">Desc. Classe</th>
+                                    <th className="p-2">Fornecedor</th>
+                                    <th className="p-2">Matéria</th>
+                                    <th className="p-2 text-right">Valor</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y dark:divide-slate-700">
+                                {previewData.map((row, i) => (
+                                    <tr key={i} className="dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                        <td className="p-2">{formatDate(row.date)}</td>
+                                        <td className="p-2 font-bold text-indigo-600 dark:text-indigo-400">{row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}</td>
+                                        <td className="p-2">{row.costCenter}</td>
+                                        <td className="p-2">{row.accountPlan}</td>
+                                        <td className="p-2">{row.planDescription}</td>
+                                        <td className="p-2">{row.description}</td>
+                                        <td className="p-2 text-slate-500">{row.materialDescription}</td>
+                                        <td className={`p-2 text-right font-bold ${row.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                            {row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             )}
@@ -341,7 +441,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     );
 };
 
-// COMPONENTE DE CUSTOS E DESPESAS (ATUALIZADO COM REGRAS POR SEGMENTO)
+// COMPONENTE DE CUSTOS E DESPESAS (ATUALIZADO)
 const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -365,27 +465,52 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
     }, [transactions, searchTerm]);
 
     const groupedData = useMemo(() => {
-        // Estrutura Base Dinâmica
-        const hierarchy = {};
+        const hierarchy = {
+            'DESPESAS DA UNIDADE': {
+                total: 0,
+                subgroups: {
+                    'CUSTO OPERACIONAL INDÚSTRIA': { total: 0, classes: {} },
+                    'CUSTO OPERACIONAL ADMINISTRATIVO': { total: 0, classes: {} },
+                    'OUTRAS DESPESAS': { total: 0, classes: {} },
+                    'TRANSPORTE': { total: 0, classes: {} }, // Novo Grupo solicitado
+                    'ADMINISTRATIVO': { total: 0, classes: {} }, // Novo Grupo
+                    'CUSTO COMERCIAL VENDEDORES': { total: 0, classes: {} },
+                    'CUSTO COMERCIAL GERÊNCIA': { total: 0, classes: {} },
+                    'CUSTO IMPOSTOS': { total: 0, classes: {} }
+                }
+            }
+        };
+        
+        // Mapear Grupos "Soltos" para dentro do Pai ou manter fora? 
+        // O user pediu "Grupo Transporte" e "Grupo Administrativo" separados de "Despesas da Unidade".
+        // Vou criar chaves de raiz para eles.
+        
+        const rootHierarchy = {
+            'DESPESAS DA UNIDADE': { total: 0, subgroups: {} },
+            'TRANSPORTE': { total: 0, subgroups: {} },
+            'ADMINISTRATIVO': { total: 0, subgroups: {} },
+            'IMPOSTOS': { total: 0, subgroups: {} },
+            'OUTROS': { total: 0, subgroups: {} }
+        };
 
         filtered.forEach(t => {
-            // Identifica o Segmento Pai (ex: Portos de Areia)
+            // Identifica o Segmento Pai
             const segmentName = getParentSegment(t.segment);
             const rules = COST_CENTER_RULES[segmentName] || {};
             const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
             
-            // Determina Grupo e Subgrupo com base nas regras
-            let groupName = "OUTRAS DESPESAS";
-            let subGroupName = "Outros";
+            let targetRoot = 'OUTROS';
+            let targetSub = 'Geral';
 
             // 1. Tenta casar com regras específicas de CC do Segmento
             let matched = false;
             if (rules) {
-                for (const [gName, subGroups] of Object.entries(rules)) {
-                    for (const [sgName, ccList] of Object.entries(subGroups)) {
+                // rules ex: { "DESPESAS DA UNIDADE": { "CUSTO OPERACIONAL INDÚSTRIA": [13100] } }
+                for (const [rootGroup, subGroups] of Object.entries(rules)) {
+                    for (const [subGroup, ccList] of Object.entries(subGroups)) {
                         if (ccList.includes(ccCode)) {
-                            groupName = gName;
-                            subGroupName = sgName;
+                            targetRoot = rootGroup.toUpperCase();
+                            targetSub = subGroup.toUpperCase();
                             matched = true;
                             break;
                         }
@@ -394,31 +519,37 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                 }
             }
 
-            // 2. Regras especiais globais (Impostos e Rateios)
+            // 2. Fallbacks
             if (!matched) {
                 if (t.accountPlan === '02.01') {
-                    groupName = "IMPOSTOS";
-                    subGroupName = "CUSTO IMPOSTOS";
+                    targetRoot = "IMPOSTOS";
+                    targetSub = "CUSTO IMPOSTOS";
+                } else if (ADMIN_CC_CODES.includes(ccCode)) {
+                    targetRoot = 'DESPESAS DA UNIDADE';
+                    targetSub = 'CUSTO OPERACIONAL ADMINISTRATIVO';
+                } else if (t.accountPlan?.startsWith('03')) {
+                    targetRoot = 'DESPESAS DA UNIDADE';
+                    targetSub = 'CUSTO OPERACIONAL INDÚSTRIA';
+                } else if (t.accountPlan?.startsWith('04')) {
+                    targetRoot = 'DESPESAS DA UNIDADE';
+                    targetSub = 'CUSTO OPERACIONAL ADMINISTRATIVO';
                 } else {
-                     // Fallback genérico se não cair em nenhuma regra específica
-                     groupName = "DESPESAS DA UNIDADE";
-                     if (t.accountPlan?.startsWith('03')) subGroupName = "CUSTO OPERACIONAL INDÚSTRIA";
-                     else if (t.accountPlan?.startsWith('04')) subGroupName = "CUSTO OPERACIONAL ADMINISTRATIVO";
-                     else subGroupName = "OUTRAS";
+                    targetRoot = 'DESPESAS DA UNIDADE';
+                    targetSub = 'OUTRAS DESPESAS';
                 }
             }
 
-            // REGRA DE RATEIO (CC 1087/1089)
+            // RATEIO ESPECIAL 1087/1089
             let finalValue = t.value;
             if (ccCode === 1087 || ccCode === 1089) {
                 finalValue = t.value / 8;
             }
 
-            // Constrói a árvore
-            if (!hierarchy[groupName]) hierarchy[groupName] = { total: 0, subgroups: {} };
-            if (!hierarchy[groupName].subgroups[subGroupName]) hierarchy[groupName].subgroups[subGroupName] = { total: 0, classes: {} };
+            // Garante estrutura
+            if (!rootHierarchy[targetRoot]) rootHierarchy[targetRoot] = { total: 0, subgroups: {} };
+            if (!rootHierarchy[targetRoot].subgroups[targetSub]) rootHierarchy[targetRoot].subgroups[targetSub] = { total: 0, classes: {} };
 
-            const subgroup = hierarchy[groupName].subgroups[subGroupName];
+            const subgroup = rootHierarchy[targetRoot].subgroups[targetSub];
             const classKey = `${t.accountPlan} - ${t.planDescription}`;
 
             if (!subgroup.classes[classKey]) {
@@ -427,13 +558,13 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                 };
             }
 
-            subgroup.classes[classKey].items.push({ ...t, value: finalValue }); // Usa valor calculado (rateio)
+            subgroup.classes[classKey].items.push({ ...t, value: finalValue });
             subgroup.classes[classKey].total += finalValue;
             subgroup.total += finalValue;
-            hierarchy[groupName].total += finalValue;
+            rootHierarchy[targetRoot].total += finalValue;
         });
 
-        return hierarchy;
+        return rootHierarchy;
     }, [filtered]);
 
     const toggleGroup = (id) => setExpandedGroups(prev => ({ ...prev, [id]: !prev[id] }));
@@ -467,26 +598,22 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
             <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300">
-                        <tr>
-                            <th className="p-3 w-10"></th>
-                            <th className="p-3">Estrutura de Contas</th>
-                            <th className="p-3 text-right">Valor Total</th>
-                            <th className="p-3 text-right">Custo p/ {measureUnit}</th>
-                            <th className="p-3 text-right">%</th>
-                        </tr>
+                        <tr><th className="p-3 w-10"></th><th className="p-3">Estrutura de Contas</th><th className="p-3 text-right">Valor Total</th><th className="p-3 text-right">Custo p/ {measureUnit}</th><th className="p-3 text-right">%</th></tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
-                        {Object.entries(groupedData).map(([groupName, groupData]) => (
-                            <React.Fragment key={groupName}>
-                                <tr className="bg-slate-200 dark:bg-slate-800 font-bold cursor-pointer" onClick={() => toggleGroup(groupName)}>
-                                    <td className="p-3 text-center">{expandedGroups[groupName] ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</td>
-                                    <td className="p-3 uppercase text-indigo-800 dark:text-indigo-400">{groupName}</td>
-                                    <td className="p-3 text-right text-rose-600 dark:text-rose-400">{groupData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                        {Object.entries(groupedData).map(([rootName, rootData]) => (
+                            rootData.total > 0 && (
+                            <React.Fragment key={rootName}>
+                                {/* GRUPO RAIZ (Ex: DESPESAS DA UNIDADE, TRANSPORTE) */}
+                                <tr className="bg-slate-200 dark:bg-slate-800 font-bold cursor-pointer" onClick={() => toggleGroup(rootName)}>
+                                    <td className="p-3 text-center">{expandedGroups[rootName] ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</td>
+                                    <td className="p-3 uppercase text-indigo-800 dark:text-indigo-400">{rootName}</td>
+                                    <td className="p-3 text-right text-rose-600 dark:text-rose-400">{rootData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                     <td className="p-3 text-right">-</td>
                                     <td className="p-3 text-right">100%</td>
                                 </tr>
 
-                                {expandedGroups[groupName] && Object.entries(groupData.subgroups)
+                                {expandedGroups[rootName] && Object.entries(rootData.subgroups)
                                     .sort(([, a], [, b]) => b.total - a.total)
                                     .map(([subName, subData]) => (
                                     subData.total > 0 && (
@@ -497,7 +624,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                                 <td className="p-3 text-right text-slate-700 dark:text-slate-200">{subData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                                 <td className="p-3 text-right font-mono text-xs">{totalProduction > 0 ? (subData.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
                                                 <td className="p-3 text-right font-mono text-xs text-slate-500 dark:text-slate-400">
-                                                    {((subData.total / groupData.total) * 100).toFixed(1)}%
+                                                    {((subData.total / rootData.total) * 100).toFixed(1)}%
                                                 </td>
                                             </tr>
                                             
@@ -519,7 +646,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                                             <td className="p-2 pl-16">
                                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                                                     <div>
-                                                                        <p className="font-bold text-slate-600 dark:text-slate-400">{t.description} <span className="font-normal text-[10px] ml-2 text-slate-400">{new Date(t.date).toLocaleDateString()}</span></p>
+                                                                        <p className="font-bold text-slate-600 dark:text-slate-400">{t.description} <span className="font-normal text-[10px] ml-2 text-slate-400">{formatDate(t.date)}</span></p>
                                                                         <p className="text-[10px] text-slate-400">CC: {t.costCenter}</p>
                                                                     </div>
                                                                     <div className="text-slate-500 italic">{t.materialDescription}</div>
@@ -534,9 +661,9 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                             ))}
                                         </React.Fragment>
                                     )
-                                ))
-                            }
+                                ))}
                             </React.Fragment>
+                            )
                         ))}
                     </tbody>
                 </table>
@@ -544,8 +671,6 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
         </div>
     );
 };
-
-// ... (Resto dos Componentes: HierarchicalSelect, PeriodSelector, LoginScreen, etc. mantidos)
 
 // SELETOR HIERÁRQUICO
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
@@ -902,7 +1027,7 @@ export default function App() {
                                  <td className="p-4">
                                      <input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
                                  </td>
-                                 <td className="p-4 dark:text-white">{new Date(t.date).toLocaleDateString()}</td>
+                                 <td className="p-4 dark:text-white">{formatDate(t.date)}</td>
                                  <td className="p-4 dark:text-white">{t.description}</td>
                                  <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
                                  <td className="p-4 text-xs dark:text-slate-300">{t.type === 'metric' ? t.metricType.toUpperCase() : t.accountPlan}</td>
