@@ -8,7 +8,7 @@ import {
   BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart
 } from 'lucide-react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area, Defs, LinearGradient, Stop
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
 } from 'recharts';
 
 import jsPDF from 'jspdf';
@@ -44,40 +44,76 @@ const firebaseConfig = {
 // ⚠️ 2. COLE SUA CHAVE DO GEMINI AQUI ⚠️
 const GEMINI_API_KEY = "SUA_KEY_GEMINI"; 
 
-// Inicialização do Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
 
-// --- DADOS DE INICIALIZAÇÃO (HIERARQUIA) ---
-const SEED_UNITS = [
-    "Portos de Areia: Porto de Areia Saara - Mira Estrela",
-    "Portos de Areia: Porto Agua Amarela - Riolândia",
-    "Noromix Concreteiras: Noromix Concreto S/A - Fernandópolis",
-    "Noromix Concreteiras: Noromix Concreto S/A - Ilha Solteira",
-    "Noromix Concreteiras: Noromix Concreto S/A - Jales",
-    "Noromix Concreteiras: Noromix Concreto S/A - Ouroeste",
-    "Noromix Concreteiras: Noromix Concreto S/A - Paranaíba",
-    "Noromix Concreteiras: Noromix Concreto S/A - Monções",
-    "Noromix Concreteiras: Noromix Concreto S/A - Pereira Barreto",
-    "Noromix Concreteiras: Noromix Concreto S/A - Três Fronteiras",
-    "Noromix Concreteiras: Noromix Concreto S/A - Votuporanga",
-    "Fábrica de Tubos: Noromix Concreto S/A - Votuporanga (Fábrica)",
-    "Pedreiras: Mineração Grandes Lagos - Icém",
-    "Pedreiras: Mineração Grandes Lagos - Itapura",
-    "Pedreiras: Mineração Grandes Lagos - Riolândia",
-    "Pedreiras: Mineração Grandes Lagos - Três Fronteiras",
-    "Pedreiras: Noromix Concreto S/A - Rinópolis",
-    "Pedreiras: Mineração Noroeste Paulista - Monções",
-    "Usinas de Asfalto: Noromix Concreto S/A - Assis",
-    "Usinas de Asfalto: Noromix Concreto S/A - Monções (Usina)",
-    "Usinas de Asfalto: Noromix Concreto S/A - Itapura (Usina)",
-    "Usinas de Asfalto: Noromix Concreto S/A - Rinópolis (Usina)",
-    "Usinas de Asfalto: Demop Participações LTDA - Três Fronteiras",
-    "Usinas de Asfalto: Mineração Grandes Lagos - Icém (Usina)",
-    "Construtora: Noromix Construtora"
-];
+// --- CONFIGURAÇÃO DE NEGÓCIO (HIERARQUIA & UNIDADES) ---
+const BUSINESS_HIERARCHY = {
+    "Portos de Areia": [
+        "Porto de Areia Saara - Mira Estrela",
+        "Porto Agua Amarela - Riolândia"
+    ],
+    "Noromix Concreteiras": [
+        "Noromix Concreto S/A - Fernandópolis",
+        "Noromix Concreto S/A - Ilha Solteira",
+        "Noromix Concreto S/A - Jales",
+        "Noromix Concreto S/A - Ouroeste",
+        "Noromix Concreto S/A - Paranaíba",
+        "Noromix Concreto S/A - Monções",
+        "Noromix Concreto S/A - Pereira Barreto",
+        "Noromix Concreto S/A - Três Fronteiras",
+        "Noromix Concreto S/A - Votuporanga"
+    ],
+    "Fábrica de Tubos": [
+        "Noromix Concreto S/A - Votuporanga (Fábrica)"
+    ],
+    "Pedreiras": [
+        "Mineração Grandes Lagos - Icém",
+        "Mineração Grandes Lagos - Itapura",
+        "Mineração Grandes Lagos - Riolândia",
+        "Mineração Grandes Lagos - Três Fronteiras",
+        "Noromix Concreto S/A - Rinópolis",
+        "Mineração Noroeste Paulista - Monções"
+    ],
+    "Usinas de Asfalto": [
+        "Noromix Concreto S/A - Assis",
+        "Noromix Concreto S/A - Monções (Usina)",
+        "Noromix Concreto S/A - Itapura (Usina)",
+        "Noromix Concreto S/A - Rinópolis (Usina)",
+        "Demop Participações LTDA - Três Fronteiras",
+        "Mineração Grandes Lagos - Icém (Usina)"
+    ],
+    "Construtora": [
+        "Noromix Construtora"
+    ]
+};
+
+// Lista Plana para Seed e Buscas Rápidas
+const SEED_UNITS = Object.values(BUSINESS_HIERARCHY).flat();
+
+// Configuração de Unidades de Medida
+const SEGMENT_CONFIG = {
+    "Construtora": "ton",
+    "Fábrica de Tubos": "m³",
+    "Noromix Concreteiras": "m³",
+    "Pedreiras": "ton",
+    "Portos de Areia": "ton",
+    "Usinas de Asfalto": "ton"
+};
+
+// Helper para descobrir unidade de medida
+const getMeasureUnit = (unitOrSegment) => {
+    // Se for o nome exato de um segmento
+    if (SEGMENT_CONFIG[unitOrSegment]) return SEGMENT_CONFIG[unitOrSegment];
+    
+    // Se for uma unidade, achar o pai
+    for (const [segment, units] of Object.entries(BUSINESS_HIERARCHY)) {
+        if (units.includes(unitOrSegment)) return SEGMENT_CONFIG[segment];
+    }
+    return "un"; // Fallback
+};
 
 // --- ESTRUTURA DRE ---
 const DRE_BLUEPRINT = [
@@ -137,7 +173,6 @@ const dbService = {
         const userRef = doc(db, 'artifacts', appId, 'users', user.uid);
         const snap = await getDoc(userRef);
         let role = 'viewer';
-        
         if (!snap.exists()) {
           const usersColl = collection(db, 'artifacts', appId, 'users');
           const allUsers = await getDocs(usersColl);
@@ -150,17 +185,11 @@ const dbService = {
         if (role === 'admin') {
             const segRef = collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', 'segments');
             const segSnap = await getDocs(segRef);
-            
             const existingNames = segSnap.docs.map(d => d.data().name);
             const missingUnits = SEED_UNITS.filter(seedUnit => !existingNames.includes(seedUnit));
-
             if (missingUnits.length > 0) {
-                console.log(`Adicionando ${missingUnits.length} novas unidades...`);
                 const batch = writeBatch(db);
-                missingUnits.forEach(name => {
-                    const docRef = doc(segRef);
-                    batch.set(docRef, { name });
-                });
+                missingUnits.forEach(name => { const docRef = doc(segRef); batch.set(docRef, { name }); });
                 await batch.commit();
             }
         }
@@ -176,15 +205,8 @@ const dbService = {
     const snap = await getDocs(usersColl);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   },
-  updateUserRole: async (userId, newRole) => {
-    const userRef = doc(db, 'artifacts', appId, 'users', userId);
-    await updateDoc(userRef, { role: newRole });
-  },
-  deleteUserAccess: async (userId) => {
-      const userRef = doc(db, 'artifacts', appId, 'users', userId);
-      await deleteDoc(userRef);
-  },
-
+  updateUserRole: async (userId, newRole) => { const userRef = doc(db, 'artifacts', appId, 'users', userId); await updateDoc(userRef, { role: newRole }); },
+  deleteUserAccess: async (userId) => { const userRef = doc(db, 'artifacts', appId, 'users', userId); await deleteDoc(userRef); },
   add: async (user, col, item) => addDoc(dbService.getCollRef(user, col), item),
   update: async (user, col, id, data) => updateDoc(doc(dbService.getCollRef(user, col), id), data),
   del: async (user, col, id) => deleteDoc(doc(dbService.getCollRef(user, col), id)),
@@ -209,10 +231,8 @@ const aiService = {
     if (!GEMINI_API_KEY || GEMINI_API_KEY.includes("SUA_KEY")) return "Erro: Configure a API Key do Gemini.";
     const revenue = transactions.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
     const expense = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
-    const categories = {};
-    transactions.filter(t => t.type === 'expense').forEach(t => { categories[t.accountPlan] = (categories[t.accountPlan] || 0) + t.value; });
-    const top = Object.entries(categories).sort((a,b) => b[1] - a[1]).slice(0, 3).map(([k,v]) => `${k}: ${v.toFixed(0)}`).join(', ');
-    const prompt = `Analise (${period}): Receita R$${revenue.toFixed(0)}, Despesa R$${expense.toFixed(0)}. Top contas: ${top}. Dê 3 insights de gestão de custos para esta concreteira/mineração.`;
+    const top = "Custos Operacionais e MP";
+    const prompt = `Analise (${period}): Receita R$${revenue.toFixed(0)}, Despesa R$${expense.toFixed(0)}. Top contas: ${top}. Dê 3 insights de gestão de custos.`;
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
@@ -229,27 +249,16 @@ const aiService = {
  * ------------------------------------------------------------------
  */
 
-// COMPONENTE DE SELEÇÃO HIERÁRQUICA
+// SELETOR HIERÁRQUICO (SEGMENTO -> UNIDADE)
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
     const ref = useRef(null);
 
+    // Constrói hierarquia usando o BUSINESS_HIERARCHY como base
     const hierarchy = useMemo(() => {
-        const map = {};
-        options.forEach(opt => {
-            const parts = opt.name.split(':');
-            const segment = parts.length > 1 ? parts[0].trim() : 'Geral';
-            const unitName = parts.length > 1 ? parts[1].trim() : opt.name;
-            if (!map[segment]) map[segment] = [];
-            map[segment].push({ fullValue: opt.name, label: unitName });
-        });
-        // Filtra 'Geral' para não mostrar duplicados
-        return Object.keys(map)
-            .filter(key => key !== 'Geral')
-            .sort()
-            .reduce((obj, key) => { obj[key] = map[key]; return obj; }, {});
-    }, [options]);
+        return BUSINESS_HIERARCHY;
+    }, []);
 
     useEffect(() => {
         const clickOut = (e) => { if (ref.current && !ref.current.contains(e.target)) setIsOpen(false); };
@@ -257,50 +266,70 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
         return () => document.removeEventListener("mousedown", clickOut);
     }, []);
 
-    const toggleFolder = (seg) => setExpanded(prev => ({...prev, [seg]: !prev[seg]}));
-    const handleSelect = (val) => { onChange(val); setIsOpen(false); };
+    // Selecionar Segmento (Pasta)
+    const selectSegment = (segName) => {
+        if (!isFilter) return; // Em lançamentos, não pode selecionar a pasta, só a unidade
+        onChange(segName); // Define o valor como o nome do segmento
+        setIsOpen(false);
+    };
+
+    const selectUnit = (unitName) => {
+        onChange(unitName);
+        setIsOpen(false);
+    };
+
+    const toggleFolder = (seg, e) => {
+        e.stopPropagation();
+        setExpanded(prev => ({...prev, [seg]: !prev[seg]}));
+    };
 
     let displayText = placeholder;
-    if (value === 'ALL' && isFilter) displayText = 'Todas as Unidades';
-    else if (value) {
-        displayText = value.includes(':') ? value.split(':')[1].trim() : value;
+    if (value) {
+        if (BUSINESS_HIERARCHY[value]) displayText = `📁 ${value} (Todo Segmento)`; // É um segmento
+        else if (value.includes(':')) displayText = value.split(':')[1].trim(); // É uma unidade
+        else displayText = value;
     }
 
     return (
         <div className="relative w-full md:w-auto" ref={ref}>
             <button 
                 onClick={() => setIsOpen(!isOpen)} 
-                className={`flex items-center justify-between w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 min-w-[220px] ${isOpen ? 'ring-2 ring-indigo-500' : ''}`}
+                className={`flex items-center justify-between w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 min-w-[280px] ${isOpen ? 'ring-2 ring-indigo-500' : ''}`}
                 type="button"
             >
-                <span className="truncate">{displayText}</span>
+                <span className="truncate font-medium">{displayText}</span>
                 <ChevronDown size={16} className="text-slate-500"/>
             </button>
 
             {isOpen && (
                 <div className="absolute top-full left-0 mt-1 w-[300px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl z-50">
-                    {isFilter && (
-                        <div onClick={() => handleSelect('ALL')} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 font-bold text-sm text-slate-800 dark:text-white">
-                            🏢 Todas as Unidades
-                        </div>
-                    )}
                     {Object.entries(hierarchy).map(([segment, units]) => (
                         <div key={segment}>
-                            <div onClick={() => toggleFolder(segment)} className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200 select-none sticky top-0 bg-white dark:bg-slate-800 z-10 border-b dark:border-slate-700">
-                                {expanded[segment] ? <FolderOpen size={16} className="text-indigo-500"/> : <Folder size={16} className="text-indigo-500"/>} {segment}
+                            <div 
+                                className={`flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold border-b dark:border-slate-700 ${value === segment ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}
+                                onClick={(e) => isFilter ? selectSegment(segment) : toggleFolder(segment, e)}
+                            >
+                                <div onClick={(e) => toggleFolder(segment, e)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded">
+                                    {expanded[segment] ? <FolderOpen size={16} className="text-amber-500"/> : <Folder size={16} className="text-amber-500"/>}
+                                </div>
+                                <span className="flex-1">{segment}</span>
                             </div>
+                            
                             {expanded[segment] && (
                                 <div className="bg-slate-50 dark:bg-slate-900/30 border-l-2 border-slate-200 dark:border-slate-700 ml-3">
                                     {units.map(u => (
-                                        <div key={u.fullValue} onClick={() => handleSelect(u.fullValue)} className={`p-2 pl-4 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 ${value === u.fullValue ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-600' : ''}`}>
-                                            {u.label}
+                                        <div 
+                                            key={u}
+                                            onClick={() => selectUnit(u)}
+                                            className={`p-2 pl-8 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 ${value === u ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-600' : ''}`}
+                                        >
+                                            {u.split(':')[1]?.trim() || u}
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </div>
                     ))}
-                    {options.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Carregando unidades...</div>}
                 </div>
             )}
         </div>
@@ -365,7 +394,7 @@ const UsersScreen = ({ user, myRole, showToast }) => {
             const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPass);
             await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid), { email: newUserEmail, role: 'viewer', createdAt: new Date().toISOString() });
             await signOut(secondaryAuth); showToast("Usuário criado!", 'success'); setNewUserEmail(''); setNewUserPass(''); loadUsers();
-        } catch (e) { showToast("Erro ao criar: " + e.message, 'error'); }
+        } catch (e) { showToast("Erro: " + e.message, 'error'); }
     };
     const handleChangeRole = async (uid, role) => { await dbService.updateUserRole(uid, role); loadUsers(); showToast("Permissão alterada.", 'success'); };
     const handleDelete = async (uid) => { if (!confirm("Remover acesso?")) return; await dbService.deleteUserAccess(uid); loadUsers(); showToast("Acesso revogado.", 'success'); };
@@ -381,7 +410,8 @@ const UsersScreen = ({ user, myRole, showToast }) => {
                 </div>
             </div>
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700">
-                <table className="w-full text-left"><thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead>
+                <table className="w-full text-left">
+                    <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead>
                     <tbody className="divide-y dark:divide-slate-700">{users.map(u => (<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{u.email}</td><td className="p-4"><select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select></td><td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td></tr>))}</tbody>
                 </table>
             </div>
@@ -393,16 +423,56 @@ const DREComponent = ({ transactions }) => {
     const dreData = useMemo(() => {
         const rows = JSON.parse(JSON.stringify(DRE_BLUEPRINT));
         const accMap = {};
-        transactions.forEach(t => { if (!t.accountPlan) return; const match = rows.find(r => t.accountPlan.startsWith(r.code) && !r.formula); if (match) { const val = t.type === 'revenue' ? t.value : -t.value; accMap[match.code] = (accMap[match.code] || 0) + val; } });
+        transactions.forEach(t => {
+            if (!t.accountPlan) return;
+            const match = rows.find(r => t.accountPlan.startsWith(r.code) && !r.formula);
+            if (match) {
+                const val = t.type === 'revenue' ? t.value : -t.value; 
+                accMap[match.code] = (accMap[match.code] || 0) + val;
+            }
+        });
         rows.forEach(row => { if (accMap[row.code]) row.value = accMap[row.code]; });
-        for(let i=0; i<2; i++) { rows.forEach(row => { if (row.parent) { const parent = rows.find(r => r.code === row.parent); if (parent) parent.value = (parent.value || 0) + (row.value || 0); } }); }
-        rows.forEach(row => { if (row.formula) { const parts = row.formula.split(' '); let total = 0; let op = '+'; parts.forEach(part => { if (part === '+' || part === '-') { op = part; return; } const refRow = rows.find(r => r.code === part || r.code === part.replace('LUCRO_BRUTO', 'LUCRO_BRUTO')); const refVal = refRow ? (refRow.value || 0) : 0; if (op === '+') total += refVal; else total -= refVal; }); row.value = total; } });
+        for(let i=0; i<2; i++) {
+            rows.forEach(row => {
+                if (row.parent) {
+                    const parent = rows.find(r => r.code === row.parent);
+                    if (parent) parent.value = (parent.value || 0) + (row.value || 0);
+                }
+            });
+        }
+        rows.forEach(row => {
+            if (row.formula) {
+                const parts = row.formula.split(' ');
+                let total = 0; let op = '+';
+                parts.forEach(part => {
+                    if (part === '+' || part === '-') { op = part; return; }
+                    const refRow = rows.find(r => r.code === part || r.code === part.replace('LUCRO_BRUTO', 'LUCRO_BRUTO')); 
+                    const refVal = refRow ? (refRow.value || 0) : 0;
+                    if (op === '+') total += refVal; else total -= refVal;
+                });
+                row.value = total;
+            }
+        });
         return rows;
     }, [transactions]);
+
     return (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden">
             <div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial</div>
-            <div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{dreData.map((row, i) => (<tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}><td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td><td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>{(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>))}</tbody></table></div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                    <tbody>
+                        {dreData.map((row, i) => (
+                            <tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}>
+                                <td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td>
+                                <td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>
+                                    {(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 };
@@ -413,17 +483,12 @@ const KpiCard = ({ title, value, icon: Icon, color }) => {
 };
 
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
-    // CORREÇÃO: Data agora é YYYY-MM apenas para o input type="month"
-    const [form, setForm] = useState({ 
-        date: new Date().toISOString().slice(0, 7), // YYYY-MM
-        type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' 
-    });
-    
+    const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 7), type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
     const [activeTab, setActiveTab] = useState('expense'); 
 
     useEffect(() => { 
         if (initialData) {
-            setForm({ ...initialData, date: initialData.date.slice(0, 7) }); // Pega apenas YYYY-MM
+            setForm({ ...initialData, date: initialData.date.slice(0, 7) });
             setActiveTab(initialData.type === 'metric' ? 'metric' : initialData.type);
         }
     }, [initialData]);
@@ -434,17 +499,10 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
         if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
 
-        // Adiciona dia 01 para salvar no banco como data completa
         const fullDate = `${form.date}-01`; 
-
         let tx = { 
-            ...form, 
-            date: fullDate,
-            value: val, 
-            costCenter: 'GERAL', 
-            source: 'manual', 
-            createdAt: new Date().toISOString(),
-            type: activeTab 
+            ...form, date: fullDate, value: val, costCenter: 'GERAL', 
+            source: 'manual', createdAt: new Date().toISOString(), type: activeTab 
         };
 
         if (activeTab === 'metric') {
@@ -458,6 +516,9 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
             showToast("Lançamento realizado!", 'success'); onSave(); onClose();
         } catch(e) { showToast("Erro ao salvar.", 'error'); }
     };
+
+    // Identifica unidade de medida da unidade selecionada
+    const unitMeasure = form.segment ? getMeasureUnit(form.segment) : 'un';
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
@@ -474,14 +535,8 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                 </div>
 
                 <div className="space-y-3">
-                    {/* INPUT DE MÊS/ANO */}
                     <label className="block text-xs font-bold text-slate-500 uppercase">Competência</label>
-                    <input 
-                        type="month" 
-                        className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" 
-                        value={form.date} 
-                        onChange={e=>setForm({...form, date: e.target.value})} 
-                    />
+                    <input type="month" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
                     
                     <label className="block text-xs font-bold text-slate-500 uppercase">Unidade</label>
                     <HierarchicalSelect 
@@ -511,8 +566,8 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                     )}
 
                     <div className="relative">
-                        <span className="absolute left-3 top-2 text-slate-400 font-bold">{activeTab === 'metric' ? (form.metricType === 'estoque' ? 'Qtd' : 'm³') : 'R$'}</span>
-                        <input type="number" className="w-full border p-2 pl-10 rounded dark:bg-slate-700 dark:text-white" placeholder="Valor" value={form.value} onChange={e=>setForm({...form, value: e.target.value})} />
+                        <span className="absolute left-3 top-2 text-slate-400 font-bold">{activeTab === 'metric' ? unitMeasure : 'R$'}</span>
+                        <input type="number" className="w-full border p-2 pl-12 rounded dark:bg-slate-700 dark:text-white" placeholder="Valor" value={form.value} onChange={e=>setForm({...form, value: e.target.value})} />
                     </div>
 
                     <button onClick={handleSubmit} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">Salvar Lançamento</button>
@@ -522,15 +577,14 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
     );
 };
 
-const ProductionComponent = ({ transactions }) => {
+const ProductionComponent = ({ transactions, measureUnit }) => {
     const data = useMemo(() => {
         const metrics = transactions
             .filter(t => t.type === 'metric' && (t.metricType === 'producao' || t.metricType === 'vendas'))
-            .sort((a, b) => new Date(a.date) - new Date(b.date)); // ORDEM CRONOLÓGICA
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
 
         const grouped = {};
         metrics.forEach(t => {
-            // Usar mês numérico para ordenar corretamente
             const d = new Date(t.date);
             const key = `${d.getFullYear()}-${d.getMonth()}`; 
             const label = d.toLocaleString('default', { month: 'short' });
@@ -544,7 +598,7 @@ const ProductionComponent = ({ transactions }) => {
 
     return (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6">
-            <h3 className="font-bold text-lg mb-4 dark:text-white">Produção vs Vendas (m³)</h3>
+            <h3 className="font-bold text-lg mb-4 dark:text-white">Produção vs Vendas ({measureUnit})</h3>
             <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data}>
@@ -565,15 +619,15 @@ const ProductionComponent = ({ transactions }) => {
     );
 };
 
-const StockComponent = ({ transactions }) => {
+const StockComponent = ({ transactions, measureUnit }) => {
     const stockData = useMemo(() => {
-        // Filtra e ORDENA CRONOLOGICAMENTE
         const stockTxs = transactions
             .filter(t => t.type === 'metric' && t.metricType === 'estoque')
             .sort((a, b) => new Date(a.date) - new Date(b.date));
 
         const totalStock = stockTxs.reduce((acc, t) => acc + t.value, 0);
         
+        // Cálculo Custo Médio Simplificado
         const mpExpenses = transactions.filter(t => t.type === 'expense' && t.accountPlan === '03.02').reduce((acc, t) => acc + t.value, 0);
         const productionVol = transactions.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
         const avgCost = productionVol > 0 ? mpExpenses / productionVol : 0;
@@ -591,7 +645,7 @@ const StockComponent = ({ transactions }) => {
             <div className="grid grid-cols-3 gap-4">
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
                     <p className="text-slate-500 text-xs font-bold uppercase">Estoque Total</p>
-                    <h3 className="text-2xl font-bold dark:text-white">{stockData.total.toLocaleString()} un/m³</h3>
+                    <h3 className="text-2xl font-bold dark:text-white">{stockData.total.toLocaleString()} {measureUnit}</h3>
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
                     <p className="text-slate-500 text-xs font-bold uppercase">Custo Médio (Período)</p>
@@ -616,9 +670,7 @@ const StockComponent = ({ transactions }) => {
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="date" />
                         <YAxis />
-                        <Tooltip 
-                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
-                        />
+                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
                         <Area type="monotone" dataKey="Estoque" stroke="#8884d8" fillOpacity={1} fill="url(#colorStock)" />
                     </AreaChart>
                 </ResponsiveContainer>
@@ -643,8 +695,9 @@ export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [segments, setSegments] = useState([]);
   
+  // Inicializar Filtro com "Portos de Areia" para não ficar vazio
+  const [globalUnitFilter, setGlobalUnitFilter] = useState('Portos de Areia');
   const [filter, setFilter] = useState({ type: 'month', month: new Date().getMonth(), year: new Date().getFullYear(), quarter: 1, semester: 1 });
-  const [globalUnitFilter, setGlobalUnitFilter] = useState('ALL');
 
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
@@ -667,7 +720,8 @@ export default function App() {
     if (!user) return;
     try {
         const txs = await dbService.getAll(user, 'transactions');
-        const segs = await dbService.getAll(user, 'segments');
+        // Simula carregamento de unidades do banco, mas para o dropdown usamos a constante BUSINESS_HIERARCHY para garantir ordem
+        const segs = SEED_UNITS.map((name, id) => ({ id: String(id), name }));
         setTransactions(txs);
         setSegments(segs);
     } catch (e) { showToast("Erro ao carregar dados.", 'error'); }
@@ -676,52 +730,9 @@ export default function App() {
 
   const handleLogout = async () => await signOut(auth);
 
-  const handleImport = async () => {
-    if (!importText || !importSegment) return showToast("Preencha dados.", 'warning');
-    setIsProcessing(true);
-    try { 
-        const newTxs = parseLegacyFile(importText, importSegment); 
-        await dbService.addBulk(user, 'transactions', newTxs); 
-        setImportText(''); await loadData(); showToast(`${newTxs.length} importados!`, 'success'); 
-    } catch(e) { showToast("Erro ao importar.", 'error'); } 
-    finally { setIsProcessing(false); }
-  };
-  
-  const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
-
-  const parseLegacyFile = (fileContent, selectedSegment) => {
-    const rawLines = fileContent.split('\n');
-    const cleanTransactions = [];
-    let buffer = [];
-    const normalizedLines = [];
-    rawLines.forEach((line) => {
-        const trimmed = line.trim(); if (!trimmed) return;
-        if (/^\d{3,};/.test(trimmed)) { if (buffer.length > 0) normalizedLines.push(buffer.join(' ')); buffer = [trimmed]; } else { buffer.push(trimmed); }
-    });
-    if (buffer.length > 0) normalizedLines.push(buffer.join(' '));
-    normalizedLines.forEach((fullLine) => {
-        try {
-        const cols = fullLine.split(';');
-        let rawValue = cols[11] || "0"; 
-        if (!/^\d+$/.test(rawValue)) { const potentialValue = cols.find(c => /0000\d+/.test(c) && c.length > 8); if (potentialValue) rawValue = potentialValue; }
-        let value = parseInt(rawValue, 10) / 100;
-        if (isNaN(value)) return;
-        const dateMatch = fullLine.match(/(\d{2}\/\d{2}\/\d{4})/);
-        const dateStr = dateMatch ? dateMatch[0] : new Date().toLocaleDateString();
-        const [dd, mm, yyyy] = dateStr.split('/');
-        const isoDate = `${yyyy}-${mm}-${dd}`;
-        const supplier = cols[5]?.replace(/"/g, '').trim() || 'Diversos';
-        const planDescription = cols[8]?.replace(/"/g, '').trim() || 'Conta Diversa'; 
-        const type = (cols[7]?.startsWith('1.') || cols[7]?.startsWith('4.') || planDescription.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-        if (value > 0) { cleanTransactions.push({ date: isoDate, segment: selectedSegment, costCenter: 'GERAL', accountPlan: cols[7] || '00.00', planDescription, description: supplier, value, type, source: 'file', createdAt: new Date().toISOString() }); }
-        } catch (err) { console.error(err); }
-    });
-    return cleanTransactions;
-  };
-
-  // --- FILTRAGEM & ORDENAÇÃO CRONOLÓGICA ---
+  // --- FILTRAGEM ---
   const filteredData = useMemo(() => {
-      const data = transactions.filter(t => {
+      return transactions.filter(t => {
           const d = new Date(t.date);
           const y = d.getFullYear();
           const m = d.getMonth();
@@ -736,12 +747,16 @@ export default function App() {
           })();
 
           if (!dateMatch) return false;
-          if (globalUnitFilter !== 'ALL' && t.segment !== globalUnitFilter) return false;
-          return true;
+          
+          // Lógica de Filtro de Unidade (Segmento ou Unidade)
+          if (BUSINESS_HIERARCHY[globalUnitFilter]) {
+              // Se o filtro for um Segmento (ex: Portos de Areia), aceita todas as unidades desse segmento
+              return BUSINESS_HIERARCHY[globalUnitFilter].includes(t.segment);
+          } else {
+              // Se for unidade específica
+              return t.segment === globalUnitFilter;
+          }
       });
-
-      // ORDENAR POR DATA (CRESCENTE: Antigo -> Novo)
-      return data.sort((a, b) => new Date(a.date) - new Date(b.date));
   }, [transactions, filter, globalUnitFilter, activeTab]);
 
   const kpis = useMemo(() => {
@@ -749,6 +764,9 @@ export default function App() {
       const exp = filteredData.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
       return { revenue: rev, expense: exp, balance: rev - exp };
   }, [filteredData]);
+
+  // Determina unidade de medida do filtro atual para passar aos componentes
+  const currentMeasureUnit = getMeasureUnit(globalUnitFilter);
 
   if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
   if (!user) return <LoginScreen showToast={showToast} />;
@@ -775,7 +793,14 @@ export default function App() {
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div className="flex gap-2 w-full md:w-auto items-center">
              {activeTab !== 'lancamentos' && <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
-             <HierarchicalSelect value={globalUnitFilter} onChange={setGlobalUnitFilter} options={segments} isFilter={true} />
+             
+             <HierarchicalSelect 
+                value={globalUnitFilter} 
+                onChange={setGlobalUnitFilter} 
+                options={segments} 
+                isFilter={true}
+                placeholder="Selecione Unidade ou Segmento"
+             />
           </div>
           <div className="flex gap-2">
              <button onClick={() => setShowAIModal(true)} className="p-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg shadow-lg"><Sparkles size={20} /></button>
@@ -819,6 +844,7 @@ export default function App() {
                     <table className="w-full text-sm">
                         <thead className="bg-slate-100 dark:bg-slate-700"><tr><th className="p-2 text-left">Conta</th><th className="p-2 text-right">Valor</th></tr></thead>
                         <tbody>
+                            {/* Simples agrupamento por conta para demo */}
                             {Object.entries(filteredData.filter(t=>t.type==='expense').reduce((acc, t) => {acc[t.accountPlan] = (acc[t.accountPlan]||0)+t.value; return acc}, {})).map(([k,v]) => (
                                 <tr key={k} className="border-b dark:border-slate-700"><td className="p-2 dark:text-white">{k}</td><td className="p-2 text-right dark:text-white">{v.toFixed(2)}</td></tr>
                             ))}
@@ -828,9 +854,9 @@ export default function App() {
             </div>
         )}
 
-        {activeTab === 'estoque' && <StockComponent transactions={filteredData} />}
+        {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         
-        {activeTab === 'producao' && <ProductionComponent transactions={filteredData} />}
+        {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
 
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
 
@@ -838,6 +864,7 @@ export default function App() {
             <div className="max-w-3xl mx-auto bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
                <h2 className="text-xl font-bold mb-6 text-slate-800 dark:text-white">Importação de TXT</h2>
                <div className="space-y-6">
+                  {/* USO DO SELECT HIERÁRQUICO AQUI TAMBÉM */}
                   <div>
                       <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Para qual Unidade?</label>
                       <HierarchicalSelect value={importSegment} onChange={setImportSegment} options={segments} placeholder="Selecione..." />
