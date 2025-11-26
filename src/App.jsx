@@ -5,7 +5,7 @@ import {
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, 
   AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown,
-  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
+  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search, CheckSquare, Square
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
@@ -40,7 +40,6 @@ const firebaseConfig = {
   messagingSenderId: "693431907072",
   appId: "1:693431907072:web:2dbc529e5ef65476feb9e5"
 };
-
 // ⚠️ 2. COLE SUA CHAVE DO GEMINI AQUI ⚠️
 const GEMINI_API_KEY = "SUA_KEY_GEMINI"; 
 
@@ -73,7 +72,7 @@ const ADMIN_CC_CODES = [
     10000, // Fabrica
     20000, 5000, 4000, 3000, 26000, 2000, // Pedreiras
     32000, 6000, 17000, 31000, 7000, 21000, // Usinas
-    40000 // Construtora (Base)
+    40000 // Construtora
 ];
 
 const getMeasureUnit = (unitOrSegment) => {
@@ -198,7 +197,17 @@ const dbService = {
   add: async (user, col, item) => addDoc(dbService.getCollRef(user, col), item),
   update: async (user, col, id, data) => updateDoc(doc(dbService.getCollRef(user, col), id), data),
   del: async (user, col, id) => deleteDoc(doc(dbService.getCollRef(user, col), id)),
-  deleteBulk: async (user, col, ids) => { const batch = writeBatch(db); ids.forEach(id => { const docRef = doc(dbService.getCollRef(user, col), id); batch.delete(docRef); }); await batch.commit(); },
+  
+  // EXCLUSÃO EM LOTE
+  deleteBulk: async (user, col, ids) => {
+      const batch = writeBatch(db);
+      ids.forEach(id => {
+          const docRef = doc(dbService.getCollRef(user, col), id);
+          batch.delete(docRef);
+      });
+      await batch.commit();
+  },
+
   getAll: async (user, col) => { const snapshot = await getDocs(dbService.getCollRef(user, col)); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); },
   addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
 };
@@ -209,7 +218,12 @@ const dbService = {
  * ------------------------------------------------------------------
  */
 
-// COMPONENTE DE IMPORTAÇÃO
+// --- KPI CARD REINSERIDO ---
+const KpiCard = ({ title, value, icon: Icon, color }) => {
+    const colors = { emerald: 'text-emerald-600 bg-emerald-50', rose: 'text-rose-600 bg-rose-50', indigo: 'text-indigo-600 bg-indigo-50' };
+    return (<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold text-slate-500 uppercase mb-2">{title}</p><h3 className="text-2xl font-bold dark:text-white">{value}</h3></div><div className={`p-3 rounded-xl ${colors[color]}`}><Icon size={24}/></div></div></div>);
+};
+
 const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const [fileText, setFileText] = useState('');
     const [previewData, setPreviewData] = useState([]);
@@ -360,7 +374,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     );
 };
 
-// COMPONENTE DE CUSTOS E DESPESAS (ATUALIZADO COM ORDENAÇÃO E UNITARIO)
+// COMPONENTE DE CUSTOS E DESPESAS (AGRUPADO HIERARQUICAMENTE)
 const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -397,8 +411,6 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
 
         filtered.forEach(t => {
             let subgroupName = 'OUTRAS DESPESAS';
-            
-            // Lógica de Classificação Admin por CC
             const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
             
             if (ADMIN_CC_CODES.includes(ccCode)) {
@@ -457,19 +469,15 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
             <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300">
-                        <tr>
-                            <th className="p-3 w-10"></th>
-                            <th className="p-3">Estrutura de Contas</th>
-                            <th className="p-3 text-right">Custo p/ {measureUnit}</th>
-                            <th className="p-3 text-right">Valor Total</th>
-                        </tr>
+                        <tr><th className="p-3 w-10"></th><th className="p-3">Estrutura de Contas</th><th className="p-3 text-right">Valor Total</th><th className="p-3 text-right">Custo p/ {measureUnit}</th><th className="p-3 text-right">%</th></tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
                         <tr className="bg-slate-200 dark:bg-slate-800 font-bold cursor-pointer" onClick={() => toggleGroup('DESPESAS DA UNIDADE')}>
                             <td className="p-3 text-center">{expandedGroups['DESPESAS DA UNIDADE'] ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</td>
                             <td className="p-3 uppercase text-indigo-800 dark:text-indigo-400">DESPESAS DA UNIDADE</td>
-                            <td className="p-3 text-right">-</td>
                             <td className="p-3 text-right text-rose-600 dark:text-rose-400">{groupedData['DESPESAS DA UNIDADE'].total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                            <td className="p-3 text-right">-</td>
+                            <td className="p-3 text-right">100%</td>
                         </tr>
                         {expandedGroups['DESPESAS DA UNIDADE'] && Object.entries(groupedData['DESPESAS DA UNIDADE'].subgroups).map(([subName, subData]) => (
                             subData.total > 0 && (
@@ -477,22 +485,18 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                     <tr className="bg-slate-100 dark:bg-slate-700/50 font-semibold cursor-pointer border-l-4 border-indigo-500" onClick={() => toggleGroup(subName)}>
                                         <td className="p-3 text-center pl-6">{expandedGroups[subName] ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}</td>
                                         <td className="p-3 text-slate-700 dark:text-slate-200">{subName}</td>
-                                        <td className="p-3 text-right font-mono text-xs">
-                                            {totalProduction > 0 ? (subData.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
-                                        </td>
                                         <td className="p-3 text-right text-slate-700 dark:text-slate-200">{subData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                                        <td className="p-3 text-right font-mono text-xs">{totalProduction > 0 ? (subData.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
+                                        <td className="p-3 text-right font-mono text-xs">{((subData.total / groupedData['DESPESAS DA UNIDADE'].total) * 100).toFixed(1)}%</td>
                                     </tr>
-                                    
-                                    {/* ORDENAÇÃO POR VALOR DO MAIOR PARA O MENOR */}
                                     {expandedGroups[subName] && Object.values(subData.classes).sort((a,b) => b.total - a.total).map(classe => (
                                         <React.Fragment key={classe.id}>
                                             <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer" onClick={() => toggleGroup(classe.id)}>
                                                 <td className="p-3 text-center pl-10">{expandedGroups[classe.id] ? <ChevronDown size={14} className="text-slate-400"/> : <ChevronRight size={14} className="text-slate-400"/>}</td>
                                                 <td className="p-3 dark:text-slate-300"><span className="font-mono text-xs bg-slate-200 dark:bg-slate-600 px-1 rounded mr-2">{classe.code}</span>{classe.name}</td>
-                                                <td className="p-3 text-right font-mono text-xs dark:text-slate-400">
-                                                    {totalProduction > 0 ? (classe.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
-                                                </td>
                                                 <td className="p-3 text-right dark:text-slate-300">{classe.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                                                <td className="p-3 text-right font-mono text-xs dark:text-slate-400">{totalProduction > 0 ? (classe.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
+                                                <td className="p-3 text-right font-mono text-xs dark:text-slate-400">{((classe.total / subData.total) * 100).toFixed(1)}%</td>
                                             </tr>
                                             {expandedGroups[classe.id] && classe.items.map(t => (
                                                 <tr key={t.id} className="bg-white dark:bg-slate-900 text-xs border-b dark:border-slate-800">
@@ -506,8 +510,9 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                                             <div className="text-slate-500 italic">{t.materialDescription}</div>
                                                         </div>
                                                     </td>
-                                                    <td className="p-2 text-right">-</td>
                                                     <td className="p-2 text-right text-rose-500">{t.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                                                    <td className="p-2 text-right">-</td>
+                                                    <td className="p-2 text-right text-slate-400">{((t.value / classe.total) * 100).toFixed(1)}%</td>
                                                 </tr>
                                             ))}
                                         </React.Fragment>
@@ -522,6 +527,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
     );
 };
 
+// SELETOR HIERÁRQUICO
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -615,7 +621,6 @@ const DREComponent = ({ transactions }) => {
     }, [transactions]);
     return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden"><div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial</div><div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{dreData.map((row, i) => (<tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}><td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td><td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>{(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>))}</tbody></table></div></div>);
 };
-const KpiCard = ({ title, value, icon: Icon, color }) => { const colors = { emerald: 'text-emerald-600 bg-emerald-50', rose: 'text-rose-600 bg-rose-50', indigo: 'text-indigo-600 bg-indigo-50' }; return (<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold text-slate-500 uppercase mb-2">{title}</p><h3 className="text-2xl font-bold dark:text-white">{value}</h3></div><div className={`p-3 rounded-xl ${colors[color]}`}><Icon size={24}/></div></div></div>); };
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
     const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 7), type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
     const [activeTab, setActiveTab] = useState('expense'); 
@@ -628,7 +633,6 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         
         // CORREÇÃO: Data para último dia do mês
         const [year, month] = form.date.split('-');
-        // Mês em JS é 0-indexado, mas aqui 'month' é "11", então new Date(y, m, 0) pega o último dia do mês
         const lastDay = new Date(year, month, 0).getDate();
         const fullDate = `${form.date}-${lastDay}`;
 
@@ -788,7 +792,6 @@ export default function App() {
 
   const currentMeasureUnit = getMeasureUnit(globalUnitFilter);
   
-  // CÁLCULO DE PRODUÇÃO TOTAL PARA O CUSTO UNITÁRIO
   const totalProduction = useMemo(() => {
       return filteredData
         .filter(t => t.type === 'metric' && t.metricType === 'producao')
