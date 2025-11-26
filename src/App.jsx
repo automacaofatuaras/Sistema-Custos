@@ -110,6 +110,7 @@ const getParentSegment = (unitName) => {
     return "Geral";
 };
 
+// CORREÇÃO DE FUSO HORÁRIO NA EXIBIÇÃO
 const formatDate = (dateString) => {
     if (!dateString) return '-';
     const parts = dateString.split('-'); 
@@ -122,21 +123,20 @@ const getUnitByCostCenter = (ccCode) => {
     const cc = parseInt(ccCode, 10);
     if (isNaN(cc)) return null;
     
-    // Rateios Especiais (Serão tratados na importação para split, aqui é fallback)
-    if (cc === 1087 || cc === 1089 || cc === 1042) return "Porto de Areia Saara - Mira Estrela"; 
+    if (cc === 1087 || cc === 1089 || cc === 1042) return "Porto de Areia Saara - Mira Estrela";
 
     if (cc >= 13000 && cc <= 13999) return "Porto de Areia Saara - Mira Estrela";
     if (cc >= 14000 && cc <= 14999) return "Porto Agua Amarela - Riolândia";
-    if (cc >= 27000 && cc <= 27999) return "Noromix Concreto S/A - Fernandópolis";
-    if (cc >= 22000 && cc <= 22999) return "Noromix Concreto S/A - Ilha Solteira";
-    if (cc >= 25000 && cc <= 25999) return "Noromix Concreto S/A - Jales";
-    if (cc >= 33000 && cc <= 33999) return "Noromix Concreto S/A - Ouroeste";
-    if (cc >= 38000 && cc <= 38999) return "Noromix Concreto S/A - Paranaíba";
-    if (cc >= 34000 && cc <= 34999) return "Noromix Concreto S/A - Monções";
-    if (cc >= 29000 && cc <= 29999) return "Noromix Concreto S/A - Pereira Barreto";
-    if (cc >= 9000 && cc <= 9999) return "Noromix Concreto S/A - Três Fronteiras";
-    if (cc >= 8000 && cc <= 8999) return "Noromix Concreto S/A - Votuporanga";
-    if (cc >= 10000 && cc <= 10999) return "Noromix Concreto S/A - Votuporanga (Fábrica)";
+    if (cc >= 27000 && cc <= 27999) return "Noromix Concreteiras: Noromix Concreto S/A - Fernandópolis";
+    if (cc >= 22000 && cc <= 22999) return "Noromix Concreteiras: Noromix Concreto S/A - Ilha Solteira";
+    if (cc >= 25000 && cc <= 25999) return "Noromix Concreteiras: Noromix Concreto S/A - Jales";
+    if (cc >= 33000 && cc <= 33999) return "Noromix Concreteiras: Noromix Concreto S/A - Ouroeste";
+    if (cc >= 38000 && cc <= 38999) return "Noromix Concreteiras: Noromix Concreto S/A - Paranaíba";
+    if (cc >= 34000 && cc <= 34999) return "Noromix Concreteiras: Noromix Concreto S/A - Monções";
+    if (cc >= 29000 && cc <= 29999) return "Noromix Concreteiras: Noromix Concreto S/A - Pereira Barreto";
+    if (cc >= 9000 && cc <= 9999) return "Noromix Concreteiras: Noromix Concreto S/A - Três Fronteiras";
+    if (cc >= 8000 && cc <= 8999) return "Noromix Concreteiras: Noromix Concreto S/A - Votuporanga";
+    if (cc >= 10000 && cc <= 10999) return "Fábrica de Tubos: Noromix Concreto S/A - Votuporanga (Fábrica)";
     if (cc >= 20000 && cc <= 20999) return "Mineração Grandes Lagos - Icém";
     if (cc >= 5000 && cc <= 5999) return "Mineração Grandes Lagos - Itapura";
     if (cc >= 4000 && cc <= 4999) return "Mineração Grandes Lagos - Riolândia";
@@ -235,25 +235,7 @@ const dbService = {
   getAll: async (user, col) => { const snapshot = await getDocs(dbService.getCollRef(user, col)); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); },
   addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
 };
-
-const aiService = {
-  analyze: async (transactions, period) => {
-    if (!GEMINI_API_KEY || GEMINI_API_KEY.includes("SUA_KEY")) return "Erro: Configure a API Key do Gemini.";
-    const revenue = transactions.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
-    const expense = transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
-    const categories = {};
-    transactions.filter(t => t.type === 'expense').forEach(t => { categories[t.accountPlan] = (categories[t.accountPlan] || 0) + t.value; });
-    const top = Object.entries(categories).sort((a,b) => b[1] - a[1]).slice(0, 3).map(([k,v]) => `${k}: ${v.toFixed(0)}`).join(', ');
-    const prompt = `Analise (${period}): Receita R$${revenue.toFixed(0)}, Despesa R$${expense.toFixed(0)}. Top contas: ${top}. Dê 3 insights de gestão de custos.`;
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-      const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || "Sem resposta.";
-    } catch (error) { return "Erro na IA."; }
-  }
-};
+const aiService = { analyze: async () => "IA Placeholder" };
 
 /**
  * ------------------------------------------------------------------
@@ -333,7 +315,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
             
-            // LÓGICA CC 1042 (SPLIT / 2)
+            // LÓGICA SPLIT CC 1042
             if (ccCode === '01042' || ccCode === '1042') {
                 const splitValue = value / 2;
                 const baseObj = {
@@ -346,7 +328,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 continue;
             }
 
-            // LÓGICA CC 1087 e 1089 (SPLIT / 8 / 2)
+            // LÓGICA SPLIT CC 1087/1089
             if (ccCode === '01087' || ccCode === '1087' || ccCode === '01089' || ccCode === '1089') {
                 const splitValue = (value / 8) / 2;
                 const baseObj = {
@@ -409,7 +391,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     );
 };
 
-// COMPONENTE DE CUSTOS (CORRIGIDO E COMPLETADO)
 const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -474,6 +455,8 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                 else { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'OUTRAS DESPESAS'; }
             }
 
+            let finalValue = t.value;
+            
             if (!hierarchy[targetRoot]) hierarchy[targetRoot] = { total: 0, subgroups: {} };
             if (!hierarchy[targetRoot].subgroups[targetSub]) hierarchy[targetRoot].subgroups[targetSub] = { total: 0, classes: {} };
 
@@ -485,9 +468,9 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
             }
 
             subgroup.classes[classKey].items.push(t);
-            subgroup.classes[classKey].total += t.value;
-            subgroup.total += t.value;
-            hierarchy[targetRoot].total += t.value;
+            subgroup.classes[classKey].total += finalValue;
+            subgroup.total += finalValue;
+            hierarchy[targetRoot].total += finalValue;
         });
 
         return { hierarchy, grandTotal };
@@ -525,7 +508,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                     <td className="p-3 uppercase text-indigo-800 dark:text-indigo-400">{rootName}</td>
                                     <td className="p-3 text-right text-rose-600 dark:text-rose-400">{rootData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                     <td className="p-3 text-right">-</td>
-                                    <td className="p-3 text-right font-mono">{((rootData.total / groupedData.grandTotal) * 100).toFixed(1)}%</td>
+                                    <td className="p-3 text-right font-mono">{groupedData.grandTotal > 0 ? ((rootData.total / groupedData.grandTotal) * 100).toFixed(1) : 0}%</td>
                                 </tr>
                                 {expandedGroups[rootName] && Object.entries(rootData.subgroups).sort(([, a], [, b]) => b.total - a.total).map(([subName, subData]) => {
                                     if (subData.total === 0) return null;
@@ -536,7 +519,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                                 <td className="p-3 text-slate-700 dark:text-slate-200">{subName}</td>
                                                 <td className="p-3 text-right text-slate-700 dark:text-slate-200">{subData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                                 <td className="p-3 text-right font-mono text-xs">{totalProduction > 0 ? (subData.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
-                                                <td className="p-3 text-right font-mono text-xs text-slate-500 dark:text-slate-400">{((subData.total / groupedData.grandTotal) * 100).toFixed(1)}%</td>
+                                                <td className="p-3 text-right font-mono text-xs text-slate-500 dark:text-slate-400">{groupedData.grandTotal > 0 ? ((subData.total / groupedData.grandTotal) * 100).toFixed(1) : 0}%</td>
                                             </tr>
                                             {expandedGroups[subName] && Object.values(subData.classes).sort((a,b) => b.total - a.total).map(classe => (
                                                 <React.Fragment key={classe.id}>
@@ -545,7 +528,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                                         <td className="p-3 dark:text-slate-300"><span className="font-mono text-xs bg-slate-200 dark:bg-slate-600 px-1 rounded mr-2">{classe.code}</span>{classe.name}</td>
                                                         <td className="p-3 text-right dark:text-slate-300">{classe.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                                         <td className="p-3 text-right font-mono text-xs dark:text-slate-400">{totalProduction > 0 ? (classe.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
-                                                        <td className="p-3 text-right font-mono text-xs dark:text-slate-400">{((classe.total / subData.total) * 100).toFixed(1)}%</td>
+                                                        <td className="p-3 text-right font-mono text-xs dark:text-slate-400">{subData.total > 0 ? ((classe.total / subData.total) * 100).toFixed(1) : 0}%</td>
                                                     </tr>
                                                     {expandedGroups[classe.id] && classe.items.map(t => (
                                                         <tr key={t.id} className="bg-white dark:bg-slate-900 text-xs border-b dark:border-slate-800">
@@ -558,7 +541,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                                             </td>
                                                             <td className="p-2 text-right text-rose-500">{t.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                                                             <td className="p-2 text-right">-</td>
-                                                            <td className="p-2 text-right text-slate-400">{((t.value / classe.total) * 100).toFixed(1)}%</td>
+                                                            <td className="p-2 text-right text-slate-400">{classe.total > 0 ? ((t.value / classe.total) * 100).toFixed(1) : 0}%</td>
                                                         </tr>
                                                     ))}
                                                 </React.Fragment>
@@ -581,8 +564,6 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
         </div>
     );
 };
-
-// ... (HierarchicalSelect, PeriodSelector, LoginScreen, UsersScreen, DREComponent, ManualEntryModal, ProductionComponent, StockComponent, App - MANTIDOS)
 
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
@@ -791,10 +772,31 @@ export default function App() {
   
   const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
 
-  const handleSelectAll = (e) => { if (e.target.checked) { setSelectedIds(filteredData.map(t => t.id)); } else { setSelectedIds([]); } };
-  const handleSelectOne = (id) => { setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); };
-  const handleBatchDelete = async () => { if (!confirm(`Tem certeza que deseja excluir ${selectedIds.length} lançamentos?`)) return; try { await dbService.deleteBulk(user, 'transactions', selectedIds); await loadData(); showToast(`${selectedIds.length} itens excluídos.`, 'success'); } catch (e) { showToast("Erro ao excluir.", 'error'); } };
+  // --- LÓGICA DE EXCLUSÃO EM LOTE ---
+  const handleSelectAll = (e) => {
+      if (e.target.checked) {
+          setSelectedIds(filteredData.map(t => t.id));
+      } else {
+          setSelectedIds([]);
+      }
+  };
 
+  const handleSelectOne = (id) => {
+      setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleBatchDelete = async () => {
+      if (!confirm(`Tem certeza que deseja excluir ${selectedIds.length} lançamentos?`)) return;
+      try {
+          await dbService.deleteBulk(user, 'transactions', selectedIds);
+          await loadData();
+          showToast(`${selectedIds.length} itens excluídos.`, 'success');
+      } catch (e) {
+          showToast("Erro ao excluir.", 'error');
+      }
+  };
+
+  // --- FILTRAGEM CORRIGIDA (PREFIXO) ---
   const filteredData = useMemo(() => {
       return transactions.filter(t => {
           const d = new Date(t.date);
