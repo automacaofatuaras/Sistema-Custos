@@ -66,6 +66,16 @@ const SEGMENT_CONFIG = {
     "Construtora": "ton", "Fábrica de Tubos": "m³", "Noromix Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "ton", "Usinas de Asfalto": "ton"
 };
 
+// LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE)
+const ADMIN_CC_CODES = [
+    13000, 14000, // Portos
+    27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, // Concreteiras
+    10000, // Fabrica
+    20000, 5000, 4000, 3000, 26000, 2000, // Pedreiras
+    32000, 6000, 17000, 31000, 7000, 21000, // Usinas
+    40000 // Construtora (Base)
+];
+
 const getMeasureUnit = (unitOrSegment) => {
     if (SEGMENT_CONFIG[unitOrSegment]) return SEGMENT_CONFIG[unitOrSegment];
     for (const [segment, units] of Object.entries(BUSINESS_HIERARCHY)) {
@@ -188,17 +198,7 @@ const dbService = {
   add: async (user, col, item) => addDoc(dbService.getCollRef(user, col), item),
   update: async (user, col, id, data) => updateDoc(doc(dbService.getCollRef(user, col), id), data),
   del: async (user, col, id) => deleteDoc(doc(dbService.getCollRef(user, col), id)),
-  
-  // EXCLUSÃO EM LOTE
-  deleteBulk: async (user, col, ids) => {
-      const batch = writeBatch(db);
-      ids.forEach(id => {
-          const docRef = doc(dbService.getCollRef(user, col), id);
-          batch.delete(docRef);
-      });
-      await batch.commit();
-  },
-
+  deleteBulk: async (user, col, ids) => { const batch = writeBatch(db); ids.forEach(id => { const docRef = doc(dbService.getCollRef(user, col), id); batch.delete(docRef); }); await batch.commit(); },
   getAll: async (user, col) => { const snapshot = await getDocs(dbService.getCollRef(user, col)); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); },
   addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
 };
@@ -209,7 +209,7 @@ const dbService = {
  * ------------------------------------------------------------------
  */
 
-// COMPONENTE DE IMPORTAÇÃO (ATUALIZADO)
+// COMPONENTE DE IMPORTAÇÃO
 const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const [fileText, setFileText] = useState('');
     const [previewData, setPreviewData] = useState([]);
@@ -263,7 +263,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             if (!ccCode || !rawValue) continue;
             const detectedUnit = getUnitByCostCenter(ccCode);
             
-            // 1. DIVISÃO POR 100
             rawValue = rawValue.replace(/\./g, '').replace(',', '.');
             const value = parseFloat(rawValue) / 100;
 
@@ -275,7 +274,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
 
-            // 2. TRATAMENTO DE PR-SORT
             if (!sortDesc || /^0+$/.test(sortDesc)) {
                 sortDesc = "Lançamento SAF";
             }
@@ -362,8 +360,8 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     );
 };
 
-// COMPONENTE DE CUSTOS E DESPESAS
-const CustosComponent = ({ transactions, showToast }) => {
+// COMPONENTE DE CUSTOS E DESPESAS (ATUALIZADO COM ORDENAÇÃO E UNITARIO)
+const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedGroups, setExpandedGroups] = useState({
@@ -399,8 +397,17 @@ const CustosComponent = ({ transactions, showToast }) => {
 
         filtered.forEach(t => {
             let subgroupName = 'OUTRAS DESPESAS';
-            if (t.accountPlan?.startsWith('03') || t.accountPlan?.startsWith('3.')) subgroupName = 'CUSTO OPERACIONAL INDÚSTRIA';
-            else if (t.accountPlan?.startsWith('04') || t.accountPlan?.startsWith('4.')) subgroupName = 'CUSTO OPERACIONAL ADMINISTRAÇÃO';
+            
+            // Lógica de Classificação Admin por CC
+            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
+            
+            if (ADMIN_CC_CODES.includes(ccCode)) {
+                subgroupName = 'CUSTO OPERACIONAL ADMINISTRAÇÃO';
+            } else if (t.accountPlan?.startsWith('03') || t.accountPlan?.startsWith('3.')) {
+                subgroupName = 'CUSTO OPERACIONAL INDÚSTRIA';
+            } else if (t.accountPlan?.startsWith('04') || t.accountPlan?.startsWith('4.')) {
+                subgroupName = 'CUSTO OPERACIONAL ADMINISTRAÇÃO';
+            }
 
             const subgroup = hierarchy['DESPESAS DA UNIDADE'].subgroups[subgroupName];
             const classKey = `${t.accountPlan} - ${t.planDescription}`;
@@ -450,12 +457,18 @@ const CustosComponent = ({ transactions, showToast }) => {
             <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300">
-                        <tr><th className="p-3 w-10"></th><th className="p-3">Estrutura de Contas</th><th className="p-3 text-right">Valor Total</th></tr>
+                        <tr>
+                            <th className="p-3 w-10"></th>
+                            <th className="p-3">Estrutura de Contas</th>
+                            <th className="p-3 text-right">Custo p/ {measureUnit}</th>
+                            <th className="p-3 text-right">Valor Total</th>
+                        </tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
                         <tr className="bg-slate-200 dark:bg-slate-800 font-bold cursor-pointer" onClick={() => toggleGroup('DESPESAS DA UNIDADE')}>
                             <td className="p-3 text-center">{expandedGroups['DESPESAS DA UNIDADE'] ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</td>
                             <td className="p-3 uppercase text-indigo-800 dark:text-indigo-400">DESPESAS DA UNIDADE</td>
+                            <td className="p-3 text-right">-</td>
                             <td className="p-3 text-right text-rose-600 dark:text-rose-400">{groupedData['DESPESAS DA UNIDADE'].total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                         </tr>
                         {expandedGroups['DESPESAS DA UNIDADE'] && Object.entries(groupedData['DESPESAS DA UNIDADE'].subgroups).map(([subName, subData]) => (
@@ -464,13 +477,21 @@ const CustosComponent = ({ transactions, showToast }) => {
                                     <tr className="bg-slate-100 dark:bg-slate-700/50 font-semibold cursor-pointer border-l-4 border-indigo-500" onClick={() => toggleGroup(subName)}>
                                         <td className="p-3 text-center pl-6">{expandedGroups[subName] ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}</td>
                                         <td className="p-3 text-slate-700 dark:text-slate-200">{subName}</td>
+                                        <td className="p-3 text-right font-mono text-xs">
+                                            {totalProduction > 0 ? (subData.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
+                                        </td>
                                         <td className="p-3 text-right text-slate-700 dark:text-slate-200">{subData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                     </tr>
-                                    {expandedGroups[subName] && Object.values(subData.classes).sort((a,b) => a.code.localeCompare(b.code)).map(classe => (
+                                    
+                                    {/* ORDENAÇÃO POR VALOR DO MAIOR PARA O MENOR */}
+                                    {expandedGroups[subName] && Object.values(subData.classes).sort((a,b) => b.total - a.total).map(classe => (
                                         <React.Fragment key={classe.id}>
                                             <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer" onClick={() => toggleGroup(classe.id)}>
                                                 <td className="p-3 text-center pl-10">{expandedGroups[classe.id] ? <ChevronDown size={14} className="text-slate-400"/> : <ChevronRight size={14} className="text-slate-400"/>}</td>
                                                 <td className="p-3 dark:text-slate-300"><span className="font-mono text-xs bg-slate-200 dark:bg-slate-600 px-1 rounded mr-2">{classe.code}</span>{classe.name}</td>
+                                                <td className="p-3 text-right font-mono text-xs dark:text-slate-400">
+                                                    {totalProduction > 0 ? (classe.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
+                                                </td>
                                                 <td className="p-3 text-right dark:text-slate-300">{classe.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                             </tr>
                                             {expandedGroups[classe.id] && classe.items.map(t => (
@@ -485,6 +506,7 @@ const CustosComponent = ({ transactions, showToast }) => {
                                                             <div className="text-slate-500 italic">{t.materialDescription}</div>
                                                         </div>
                                                     </td>
+                                                    <td className="p-2 text-right">-</td>
                                                     <td className="p-2 text-right text-rose-500">{t.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                                                 </tr>
                                             ))}
@@ -500,7 +522,6 @@ const CustosComponent = ({ transactions, showToast }) => {
     );
 };
 
-// SELETOR HIERÁRQUICO
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -604,7 +625,13 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
         if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
-        const fullDate = `${form.date}-01`; 
+        
+        // CORREÇÃO: Data para último dia do mês
+        const [year, month] = form.date.split('-');
+        // Mês em JS é 0-indexado, mas aqui 'month' é "11", então new Date(y, m, 0) pega o último dia do mês
+        const lastDay = new Date(year, month, 0).getDate();
+        const fullDate = `${form.date}-${lastDay}`;
+
         let tx = { ...form, date: fullDate, value: val, costCenter: 'GERAL', source: 'manual', createdAt: new Date().toISOString(), type: activeTab };
         if (activeTab === 'metric') { tx.description = `Lançamento de ${form.metricType === 'producao' ? 'Produção' : (form.metricType === 'vendas' ? 'Vendas' : 'Estoque')}`; tx.accountPlan = 'METRICS'; }
         try { if(initialData?.id) await dbService.update(user, 'transactions', initialData.id, tx); else await dbService.add(user, 'transactions', tx); showToast("Lançamento realizado!", 'success'); onSave(); onClose(); } catch(e) { showToast("Erro ao salvar.", 'error'); }
@@ -743,7 +770,6 @@ export default function App() {
           if (globalUnitFilter !== 'ALL') {
               if (BUSINESS_HIERARCHY[globalUnitFilter]) {
                  const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                 // Usa .some para verificar se alguma das unidades do segmento contém o nome da unidade da transação
                  const isInSegment = BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
                  return isInSegment;
               } else {
@@ -761,6 +787,13 @@ export default function App() {
   }, [filteredData]);
 
   const currentMeasureUnit = getMeasureUnit(globalUnitFilter);
+  
+  // CÁLCULO DE PRODUÇÃO TOTAL PARA O CUSTO UNITÁRIO
+  const totalProduction = useMemo(() => {
+      return filteredData
+        .filter(t => t.type === 'metric' && t.metricType === 'producao')
+        .reduce((acc, t) => acc + t.value, 0);
+  }, [filteredData]);
 
   if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
   if (!user) return <LoginScreen showToast={showToast} />;
@@ -864,7 +897,7 @@ export default function App() {
         )}
 
         {activeTab === 'dre' && <DREComponent transactions={filteredData} />}
-        {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} />}
+        {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
         {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
