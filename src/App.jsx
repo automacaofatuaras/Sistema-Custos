@@ -5,10 +5,10 @@ import {
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, 
   AlertTriangle, CheckCircle, Zap, Filter, ChevronRight, ChevronDown,
-  BarChart3 as BarChartIcon
+  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart
 } from 'lucide-react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
 } from 'recharts';
 
 import jsPDF from 'jspdf';
@@ -33,12 +33,12 @@ import {
 
 // ⚠️ 1. COLE SUAS CHAVES DO FIREBASE AQUI ⚠️
 const firebaseConfig = {
-  apiKey: "AIzaSyBmgCmtJnVRkmO2SzvyVmG5e7QCEhxDcy4",
-  authDomain: "sistema-custos.firebaseapp.com",
-  projectId: "sistema-custos",
-  storageBucket: "sistema-custos.firebasestorage.app",
-  messagingSenderId: "693431907072",
-  appId: "1:693431907072:web:2dbc529e5ef65476feb9e5"
+  apiKey: "SUA_KEY_FIREBASE",
+  authDomain: "SEU_PROJETO.firebaseapp.com",
+  projectId: "SEU_PROJETO",
+  storageBucket: "SEU_PROJETO.firebasestorage.app",
+  messagingSenderId: "SEU_ID",
+  appId: "SEU_APP_ID"
 };
 
 // ⚠️ 2. COLE SUA CHAVE DO GEMINI AQUI ⚠️
@@ -50,28 +50,56 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
 
-// --- DADOS DE INICIALIZAÇÃO (SEU NEGÓCIO) ---
-const SEED_UNITS = [
-    "Portos de Areia: Porto Saara - Mira Estrela",
-    "Portos de Areia: Porto Agua Amarela - Riolândia",
-    "Concreteiras: Fernandópolis", "Concreteiras: Ilha Solteira", "Concreteiras: Jales",
-    "Concreteiras: Ouroeste", "Concreteiras: Paranaíba", "Concreteiras: Monções",
-    "Concreteiras: Pereira Barreto", "Concreteiras: Três Fronteiras", "Concreteiras: Votuporanga",
-    "Fábrica de Tubos: Votuporanga",
-    "Pedreiras: Mineração Grandes Lagos - Icém", "Pedreiras: Mineração Grandes Lagos - Itapura",
-    "Pedreiras: Mineração Grandes Lagos - Riolândia", "Pedreiras: Mineração Grandes Lagos - Três Fronteiras",
-    "Pedreiras: Noromix - Rinópolis", "Pedreiras: Mineração Noroeste - Monções",
-    "Usinas Asfalto: Assis", "Usinas Asfalto: Monções", "Usinas Asfalto: Itapura",
-    "Usinas Asfalto: Rinópolis", "Usinas Asfalto: Demop - Três Fronteiras", "Usinas Asfalto: Grandes Lagos - Icém",
-    "Construtora: Noromix Construtora"
-];
+// --- DADOS DE INICIALIZAÇÃO (HIERARQUIA DE SEGMENTOS) ---
+const BUSINESS_HIERARCHY = {
+    "Portos de Areia": [
+        "Porto de Areia Saara - Mira Estrela",
+        "Porto Agua Amarela - Riolândia"
+    ],
+    "Noromix Concreteiras": [
+        "Noromix Concreto S/A - Fernandópolis",
+        "Noromix Concreto S/A - Ilha Solteira",
+        "Noromix Concreto S/A - Jales",
+        "Noromix Concreto S/A - Ouroeste",
+        "Noromix Concreto S/A - Paranaíba",
+        "Noromix Concreto S/A - Monções",
+        "Noromix Concreto S/A - Pereira Barreto",
+        "Noromix Concreto S/A - Três Fronteiras",
+        "Noromix Concreto S/A - Votuporanga"
+    ],
+    "Fábrica de Tubos": [
+        "Noromix Concreto S/A - Votuporanga (Fábrica)"
+    ],
+    "Pedreiras": [
+        "Mineração Grandes Lagos - Icém",
+        "Mineração Grandes Lagos - Itapura",
+        "Mineração Grandes Lagos - Riolândia",
+        "Mineração Grandes Lagos - Três Fronteiras",
+        "Noromix Concreto S/A - Rinópolis",
+        "Mineração Noroeste Paulista - Monções"
+    ],
+    "Usinas de Asfalto": [
+        "Noromix Concreto S/A - Assis",
+        "Noromix Concreto S/A - Monções (Usina)",
+        "Noromix Concreto S/A - Itapura (Usina)",
+        "Noromix Concreto S/A - Rinópolis (Usina)",
+        "Demop Participações LTDA - Três Fronteiras",
+        "Mineração Grandes Lagos - Icém (Usina)"
+    ],
+    "Construtora": [
+        "Noromix Construtora"
+    ]
+};
 
-// --- ESTRUTURA DRE (Baseada no PDF) ---
+// Converter para lista plana para uso interno (seed)
+const SEED_UNITS = Object.values(BUSINESS_HIERARCHY).flat();
+
+// --- ESTRUTURA DRE ---
 const DRE_BLUEPRINT = [
     { code: '01', name: '(+) RECEITA BRUTA', type: 'revenue', level: 1 },
     { code: '01.01', name: 'Receita de Vendas/Serviços', parent: '01', level: 2 },
     { code: '02', name: '(-) DEDUÇÕES', type: 'deduction', level: 1 },
-    { code: '02.01', name: 'Impostos s/ Venda (ICMS/ISS/PIS/COFINS)', parent: '02', level: 2 },
+    { code: '02.01', name: 'Impostos s/ Venda', parent: '02', level: 2 },
     { code: 'RESULT_LIQ', name: '= RECEITA LÍQUIDA', formula: '01 - 02', level: 1, bold: true },
     { code: '03', name: '(-) CUSTOS (CPV/CSV)', type: 'cost', level: 1 },
     { code: '03.01', name: 'Custos Mão-de-Obra', parent: '03', level: 2 },
@@ -89,7 +117,6 @@ const DRE_BLUEPRINT = [
     { code: 'RESULT_FINAL', name: '= RESULTADO LÍQUIDO', formula: 'LUCRO_BRUTO - 04 - 05', level: 1, bold: true, color: true },
 ];
 
-// Hooks de Utilidade
 const useTheme = () => {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   useEffect(() => {
@@ -111,7 +138,7 @@ const useToast = () => {
 
 /**
  * ------------------------------------------------------------------
- * 1. SERVIÇO DE DADOS (DB)
+ * 1. SERVIÇO DE DADOS
  * ------------------------------------------------------------------
  */
 const dbService = {
@@ -139,7 +166,7 @@ const dbService = {
             const segRef = collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', 'segments');
             const segSnap = await getDocs(segRef);
             if (segSnap.empty) {
-                console.log("Inicializando unidades do negócio...");
+                console.log("Seed inicial...");
                 const batch = writeBatch(db);
                 SEED_UNITS.forEach(name => {
                     const docRef = doc(segRef);
@@ -213,6 +240,78 @@ const aiService = {
  * ------------------------------------------------------------------
  */
 
+const UnitSelector = ({ selectedUnit, onChange, hierarchy }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [expandedSegments, setExpandedSegments] = useState({});
+    const dropdownRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const toggleSegment = (seg) => {
+        setExpandedSegments(prev => ({ ...prev, [seg]: !prev[seg] }));
+    };
+
+    const handleSelect = (unit) => {
+        onChange(unit);
+        setIsOpen(false);
+    };
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <button 
+                onClick={() => setIsOpen(!isOpen)}
+                className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 min-w-[250px] justify-between"
+            >
+                <span className="truncate">{selectedUnit === 'ALL' ? 'Todas as Unidades' : selectedUnit}</span>
+                <ChevronDown size={16} />
+            </button>
+
+            {isOpen && (
+                <div className="absolute top-full left-0 mt-1 w-[300px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50">
+                    <div 
+                        className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer font-bold text-sm text-slate-800 dark:text-white border-b dark:border-slate-700"
+                        onClick={() => handleSelect('ALL')}
+                    >
+                        🏢 Todas as Unidades
+                    </div>
+                    {Object.entries(hierarchy).map(([segment, units]) => (
+                        <div key={segment}>
+                            <div 
+                                className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold text-slate-600 dark:text-slate-300"
+                                onClick={() => toggleSegment(segment)}
+                            >
+                                {expandedSegments[segment] ? <FolderOpen size={16} className="text-indigo-500"/> : <Folder size={16} className="text-indigo-500"/>}
+                                {segment}
+                            </div>
+                            {expandedSegments[segment] && (
+                                <div className="pl-6 bg-slate-50/50 dark:bg-slate-900/20">
+                                    {units.map(unit => (
+                                        <div 
+                                            key={unit}
+                                            className={`p-2 text-xs hover:bg-indigo-50 dark:hover:bg-indigo-900/30 cursor-pointer text-slate-600 dark:text-slate-400 border-l-2 border-transparent hover:border-indigo-500 ${selectedUnit === unit ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-700 dark:text-indigo-300' : ''}`}
+                                            onClick={() => handleSelect(unit)}
+                                        >
+                                            {unit}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const PeriodSelector = ({ filter, setFilter, years }) => {
     return (
         <div className="flex bg-white dark:bg-slate-800 p-1 rounded-lg border dark:border-slate-700 shadow-sm">
@@ -231,10 +330,10 @@ const PeriodSelector = ({ filter, setFilter, years }) => {
 
             {(filter.type === 'quarter') && (
                 <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.quarter} onChange={e => setFilter({...filter, quarter: parseInt(e.target.value)})}>
-                    <option value={1}>1º Trim (Jan-Mar)</option>
-                    <option value={2}>2º Trim (Abr-Jun)</option>
-                    <option value={3}>3º Trim (Jul-Set)</option>
-                    <option value={4}>4º Trim (Out-Dez)</option>
+                    <option value={1}>1º Trim</option>
+                    <option value={2}>2º Trim</option>
+                    <option value={3}>3º Trim</option>
+                    <option value={4}>4º Trim</option>
                 </select>
             )}
 
@@ -263,18 +362,18 @@ const LoginScreen = ({ showToast }) => {
       try {
         if (isReset) {
             await sendPasswordResetEmail(auth, email);
-            showToast("Link enviado para o email.", 'success');
+            showToast("Link enviado.", 'success');
             setIsReset(false);
         } else {
             await signInWithEmailAndPassword(auth, email, password);
         }
-      } catch (err) { showToast("Erro de acesso. Verifique credenciais.", 'error'); } finally { setLoading(false); }
+      } catch (err) { showToast("Erro de acesso.", 'error'); } finally { setLoading(false); }
     };
   
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
         <div className="bg-white dark:bg-slate-800 w-full max-w-md p-8 rounded-2xl shadow-2xl">
-          <div className="text-center mb-6"><Building2 className="text-indigo-600 mx-auto mb-2" size={40}/><h1 className="text-2xl font-bold dark:text-white">Acesso Restrito</h1><p className="text-slate-500 text-sm">Sistema de Custos Noromix</p></div>
+          <div className="text-center mb-6"><Building2 className="text-indigo-600 mx-auto mb-2" size={40}/><h1 className="text-2xl font-bold dark:text-white">Acesso Restrito</h1><p className="text-slate-500 text-sm">Fechamento Custos</p></div>
           <form onSubmit={handleAuth} className="space-y-4">
             <input className="w-full border p-3 rounded dark:bg-slate-700 dark:text-white" placeholder="Email Corporativo" value={email} onChange={e => setEmail(e.target.value)} />
             {!isReset && <input type="password" className="w-full border p-3 rounded dark:bg-slate-700 dark:text-white" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} />}
@@ -286,7 +385,6 @@ const LoginScreen = ({ showToast }) => {
     );
 };
 
-// ESTE FOI O COMPONENTE QUE CORTOU DA ÚLTIMA VEZ
 const UsersScreen = ({ user, myRole, showToast }) => {
     const [users, setUsers] = useState([]);
     const [newUserEmail, setNewUserEmail] = useState('');
@@ -308,7 +406,7 @@ const UsersScreen = ({ user, myRole, showToast }) => {
                 email: newUserEmail, role: 'viewer', createdAt: new Date().toISOString()
             });
             await signOut(secondaryAuth); 
-            showToast("Usuário criado com sucesso!", 'success');
+            showToast("Usuário criado!", 'success');
             setNewUserEmail(''); setNewUserPass('');
             loadUsers();
         } catch (e) {
@@ -316,18 +414,8 @@ const UsersScreen = ({ user, myRole, showToast }) => {
         }
     };
 
-    const handleChangeRole = async (uid, role) => {
-        await dbService.updateUserRole(uid, role);
-        loadUsers();
-        showToast("Permissão alterada.", 'success');
-    };
-
-    const handleDelete = async (uid) => {
-        if (!confirm("Remover acesso deste usuário?")) return;
-        await dbService.deleteUserAccess(uid);
-        loadUsers();
-        showToast("Acesso revogado.", 'success');
-    };
+    const handleChangeRole = async (uid, role) => { await dbService.updateUserRole(uid, role); loadUsers(); showToast("Permissão alterada.", 'success'); };
+    const handleDelete = async (uid) => { if (!confirm("Remover acesso?")) return; await dbService.deleteUserAccess(uid); loadUsers(); showToast("Acesso revogado.", 'success'); };
 
     return (
         <div className="p-6 max-w-4xl mx-auto">
@@ -348,15 +436,9 @@ const UsersScreen = ({ user, myRole, showToast }) => {
                             <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                 <td className="p-4 dark:text-white">{u.email}</td>
                                 <td className="p-4">
-                                    <select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white">
-                                        <option value="viewer">Visualizador</option>
-                                        <option value="editor">Editor</option>
-                                        <option value="admin">Administrador</option>
-                                    </select>
+                                    <select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select>
                                 </td>
-                                <td className="p-4">
-                                    {u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}
-                                </td>
+                                <td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -390,8 +472,7 @@ const DREComponent = ({ transactions }) => {
         rows.forEach(row => {
             if (row.formula) {
                 const parts = row.formula.split(' ');
-                let total = 0;
-                let op = '+';
+                let total = 0; let op = '+';
                 parts.forEach(part => {
                     if (part === '+' || part === '-') { op = part; return; }
                     const refRow = rows.find(r => r.code === part || r.code === part.replace('LUCRO_BRUTO', 'LUCRO_BRUTO')); 
@@ -431,43 +512,183 @@ const KpiCard = ({ title, value, icon: Icon, color }) => {
 };
 
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
-    const [form, setForm] = useState({ date: new Date().toISOString().split('T')[0], type: 'expense', description: '', value: '', segment: '', accountPlan: '' });
+    const [form, setForm] = useState({ date: new Date().toISOString().split('T')[0], type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
+    
+    // Tabs de lançamento: Receita, Despesa, Métricas
+    const [activeTab, setActiveTab] = useState('expense'); // 'revenue', 'expense', 'metric'
+
     useEffect(() => { 
-        if (initialData) setForm({ ...initialData, date: initialData.date });
+        if (initialData) {
+            setForm({ ...initialData, date: initialData.date });
+            setActiveTab(initialData.type === 'metric' ? 'metric' : initialData.type);
+        }
     }, [initialData]);
+
     const handleSubmit = async () => {
         const val = parseFloat(form.value);
-        if (!form.description || isNaN(val) || !form.segment || !form.accountPlan) return showToast("Preencha tudo, inclusive a conta.", 'error');
-        const tx = { ...form, value: val, costCenter: 'GERAL', source: 'manual', createdAt: new Date().toISOString() };
+        if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
+        if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
+        if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
+
+        let tx = { 
+            ...form, 
+            value: val, 
+            costCenter: 'GERAL', 
+            source: 'manual', 
+            createdAt: new Date().toISOString(),
+            type: activeTab // revenue, expense ou metric
+        };
+
+        if (activeTab === 'metric') {
+            tx.description = `Lançamento de ${form.metricType === 'producao' ? 'Produção' : (form.metricType === 'vendas' ? 'Vendas' : 'Estoque')}`;
+            tx.accountPlan = 'METRICS'; // Não vai pro DRE financeiro
+        }
+        
         try {
             if(initialData?.id) await dbService.update(user, 'transactions', initialData.id, tx);
             else await dbService.add(user, 'transactions', tx);
-            showToast("Salvo!", 'success'); onSave(); onClose();
+            showToast("Lançamento realizado!", 'success'); onSave(); onClose();
         } catch(e) { showToast("Erro ao salvar.", 'error'); }
     };
+
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6 dark:border-slate-700 border">
-                <h3 className="text-lg font-bold mb-4 dark:text-white">{initialData ? 'Editar' : 'Novo'} Lançamento</h3>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold dark:text-white">{initialData ? 'Editar' : 'Novo'} Lançamento</h3>
+                    <button onClick={onClose}><X size={20} className="text-slate-400"/></button>
+                </div>
+                
+                {/* Tabs de Tipo */}
+                <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg mb-4">
+                    <button onClick={() => setActiveTab('revenue')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'revenue' ? 'bg-white dark:bg-slate-700 shadow text-emerald-600' : 'text-slate-500'}`}>Receita</button>
+                    <button onClick={() => setActiveTab('expense')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'expense' ? 'bg-white dark:bg-slate-700 shadow text-rose-600' : 'text-slate-500'}`}>Despesa</button>
+                    <button onClick={() => setActiveTab('metric')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'metric' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-500'}`}>Métricas</button>
+                </div>
+
                 <div className="space-y-3">
-                    <div className="flex gap-2">
-                        <button onClick={()=>setForm({...form, type:'revenue'})} className={`flex-1 py-2 rounded font-bold ${form.type==='revenue'?'bg-emerald-100 text-emerald-700':'bg-slate-100'}`}>Receita</button>
-                        <button onClick={()=>setForm({...form, type:'expense'})} className={`flex-1 py-2 rounded font-bold ${form.type==='expense'?'bg-rose-100 text-rose-700':'bg-slate-100'}`}>Despesa</button>
-                    </div>
+                    {/* Campos Comuns */}
                     <input type="date" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
-                    <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
-                    <input type="number" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Valor" value={form.value} onChange={e=>setForm({...form, value: e.target.value})} />
+                    
                     <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.segment} onChange={e=>setForm({...form, segment: e.target.value})}>
                         <option value="">Selecione a Unidade...</option>
                         {segments.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                     </select>
-                    <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.accountPlan} onChange={e=>setForm({...form, accountPlan: e.target.value})}>
-                        <option value="">Selecione a Conta (Plano)...</option>
-                        {DRE_BLUEPRINT.filter(r => r.level === 2).map(r => <option key={r.code} value={r.code}>{r.code} - {r.name}</option>)}
-                    </select>
-                    <button onClick={handleSubmit} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">Salvar</button>
-                    <button onClick={onClose} className="w-full text-slate-500 mt-2">Cancelar</button>
+
+                    {/* Campos Específicos Financeiros */}
+                    {activeTab !== 'metric' && (
+                        <>
+                            <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição (Ex: Pgto Fornecedor)" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
+                            <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.accountPlan} onChange={e=>setForm({...form, accountPlan: e.target.value})}>
+                                <option value="">Conta do DRE...</option>
+                                {DRE_BLUEPRINT.filter(r => r.level === 2).map(r => <option key={r.code} value={r.code}>{r.code} - {r.name}</option>)}
+                            </select>
+                        </>
+                    )}
+
+                    {/* Campos Específicos Métricas */}
+                    {activeTab === 'metric' && (
+                        <div className="grid grid-cols-3 gap-2">
+                            <button onClick={()=>setForm({...form, metricType:'producao'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='producao'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Factory className="mx-auto mb-1" size={16}/> Produção</button>
+                            <button onClick={()=>setForm({...form, metricType:'vendas'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='vendas'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><ShoppingCart className="mx-auto mb-1" size={16}/> Vendas</button>
+                            <button onClick={()=>setForm({...form, metricType:'estoque'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='estoque'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Package className="mx-auto mb-1" size={16}/> Estoque</button>
+                        </div>
+                    )}
+
+                    <div className="relative">
+                        <span className="absolute left-3 top-2 text-slate-400 font-bold">{activeTab === 'metric' ? (form.metricType === 'estoque' ? 'Qtd' : 'm³') : 'R$'}</span>
+                        <input type="number" className="w-full border p-2 pl-10 rounded dark:bg-slate-700 dark:text-white" placeholder="Valor" value={form.value} onChange={e=>setForm({...form, value: e.target.value})} />
+                    </div>
+
+                    <button onClick={handleSubmit} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">Salvar Lançamento</button>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+const ProductionComponent = ({ transactions }) => {
+    // Filtra apenas transações de produção e vendas
+    const data = useMemo(() => {
+        const metrics = transactions.filter(t => t.type === 'metric' && (t.metricType === 'producao' || t.metricType === 'vendas'));
+        // Agrupar por mês
+        const grouped = {};
+        metrics.forEach(t => {
+            const month = new Date(t.date).toLocaleString('default', { month: 'short' });
+            if (!grouped[month]) grouped[month] = { name: month, Produção: 0, Vendas: 0 };
+            if (t.metricType === 'producao') grouped[month].Produção += t.value;
+            if (t.metricType === 'vendas') grouped[month].Vendas += t.value;
+        });
+        return Object.values(grouped);
+    }, [transactions]);
+
+    return (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6">
+            <h3 className="font-bold text-lg mb-4 dark:text-white">Produção vs Vendas (m³)</h3>
+            <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Line type="monotone" dataKey="Produção" stroke="#8884d8" strokeWidth={2} />
+                        <Line type="monotone" dataKey="Vendas" stroke="#82ca9d" strokeWidth={2} />
+                    </LineChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+};
+
+const StockComponent = ({ transactions }) => {
+    const stockData = useMemo(() => {
+        const stockTxs = transactions.filter(t => t.type === 'metric' && t.metricType === 'estoque');
+        const totalStock = stockTxs.reduce((acc, t) => acc + t.value, 0);
+        
+        // Calcular Custo Médio (Simulado com base nas despesas de MP divididas pela produção)
+        const mpExpenses = transactions.filter(t => t.type === 'expense' && t.accountPlan === '03.02').reduce((acc, t) => acc + t.value, 0);
+        const productionVol = transactions.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
+        const avgCost = productionVol > 0 ? mpExpenses / productionVol : 0;
+
+        // Dados para gráfico de evolução (simulado por mês)
+        const evolution = stockTxs.map(t => ({
+            date: new Date(t.date).toLocaleDateString(),
+            Estoque: t.value
+        }));
+
+        return { total: totalStock, avgCost, totalValue: totalStock * avgCost, evolution };
+    }, [transactions]);
+
+    return (
+        <div className="space-y-6">
+            <div className="grid grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
+                    <p className="text-slate-500 text-xs font-bold uppercase">Estoque Total</p>
+                    <h3 className="text-2xl font-bold dark:text-white">{stockData.total.toLocaleString()} un/m³</h3>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
+                    <p className="text-slate-500 text-xs font-bold uppercase">Custo Médio (Período)</p>
+                    <h3 className="text-2xl font-bold dark:text-white">R$ {stockData.avgCost.toFixed(2)}</h3>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
+                    <p className="text-slate-500 text-xs font-bold uppercase">Valor Total Estoque</p>
+                    <h3 className="text-2xl font-bold text-emerald-600">R$ {stockData.totalValue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</h3>
+                </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80">
+                <h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque</h3>
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={stockData.evolution}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" />
+                        <YAxis />
+                        <Tooltip />
+                        <Area type="monotone" dataKey="Estoque" stroke="#6366f1" fill="#818cf8" />
+                    </AreaChart>
+                </ResponsiveContainer>
             </div>
         </div>
     );
@@ -487,7 +708,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [transactions, setTransactions] = useState([]);
-  const [segments, setSegments] = useState([]);
+  const [segments, setSegments] = useState([]); // Agora usado como lista plana para dropdowns
   
   const [filter, setFilter] = useState({ type: 'month', month: new Date().getMonth(), year: new Date().getFullYear(), quarter: 1, semester: 1 });
   const [globalUnitFilter, setGlobalUnitFilter] = useState('ALL');
@@ -495,6 +716,12 @@ export default function App() {
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
+
+  // Upload states (mantidos para compatibilidade, mas feature menos usada agora)
+  const [importText, setImportText] = useState('');
+  const [importSegment, setImportSegment] = useState(''); 
+  const [isProcessing, setIsProcessing] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
@@ -517,21 +744,18 @@ export default function App() {
 
   const handleLogout = async () => await signOut(auth);
 
+  // --- FILTRAGEM ---
   const filteredData = useMemo(() => {
       return transactions.filter(t => {
           const d = new Date(t.date);
           const y = d.getFullYear();
           const m = d.getMonth();
+          
           if (y !== filter.year) return false;
           if (filter.type === 'month' && m !== filter.month) return false;
-          if (filter.type === 'quarter') {
-              const q = Math.floor(m / 3) + 1;
-              if (q !== filter.quarter) return false;
-          }
-          if (filter.type === 'semester') {
-              const s = m < 6 ? 1 : 2;
-              if (s !== filter.semester) return false;
-          }
+          if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
+          if (filter.type === 'semester' && (m < 6 ? 1 : 2) !== filter.semester) return false;
+          
           if (globalUnitFilter !== 'ALL' && t.segment !== globalUnitFilter) return false;
           return true;
       });
@@ -551,7 +775,7 @@ export default function App() {
       {toast && <div className={`fixed top-4 right-4 z-50 p-4 rounded shadow-xl flex gap-2 ${toast.type==='success'?'bg-emerald-500 text-white':'bg-rose-500 text-white'}`}>{toast.type==='success'?<CheckCircle/>:<AlertTriangle/>}{toast.message}</div>}
       
       <aside className="w-20 lg:w-64 bg-slate-900 dark:bg-slate-950 text-white flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800">
-        <div className="p-6 border-b border-slate-800 flex items-center gap-3"><div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center"><Building2 size={18} /></div><span className="text-xl font-bold hidden lg:block">FinSaaS</span></div>
+        <div className="p-6 border-b border-slate-800 flex items-center gap-3"><div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center"><Building2 size={18} /></div><span className="text-xl font-bold hidden lg:block">Fechamento Custos</span></div>
         <nav className="flex-1 p-4 space-y-2">
           <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /><span className="hidden lg:block">Visão Geral</span></button>
           <button onClick={() => setActiveTab('lancamentos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'lancamentos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><List size={20} /><span className="hidden lg:block">Lançamentos</span></button>
@@ -568,19 +792,15 @@ export default function App() {
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div className="flex gap-2 w-full md:w-auto items-center">
              <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
-             <select className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-white text-sm rounded-lg p-2" value={globalUnitFilter} onChange={(e) => setGlobalUnitFilter(e.target.value)}>
-                <option value="ALL">Todas Unidades</option>
-                {segments.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-             </select>
+             <UnitSelector selectedUnit={globalUnitFilter} onChange={setGlobalUnitFilter} hierarchy={BUSINESS_HIERARCHY} />
           </div>
           <div className="flex gap-2">
+             <button onClick={() => setShowAIModal(true)} className="p-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg shadow-lg"><Sparkles size={20} /></button>
              <button onClick={toggleTheme} className="p-2 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg">{theme === 'dark' ? <Sun size={20}/> : <Moon size={20}/>}</button>
              <button onClick={handleLogout} className="bg-white dark:bg-slate-800 border dark:border-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2 rounded-lg"><LogOut size={20} /></button>
           </div>
         </header>
 
-        {/* CONTEÚDO DAS ABAS */}
-        
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -601,7 +821,7 @@ export default function App() {
                  <h3 className="font-bold text-lg dark:text-white">Lançamentos</h3>
                  {['admin', 'editor'].includes(userRole) && <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>}
              </div>
-             <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400"><tr><th className="p-4">Data</th><th className="p-4">Descrição</th><th className="p-4">Unidade</th><th className="p-4">Conta</th><th className="p-4 text-right">Valor</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{filteredData.map(t => (<tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{new Date(t.date).toLocaleDateString()}</td><td className="p-4 dark:text-white">{t.description}</td><td className="p-4 text-xs dark:text-slate-300">{t.segment}</td><td className="p-4 text-xs dark:text-slate-300">{t.accountPlan}</td><td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':'text-rose-500'}`}>{t.value.toFixed(2)}</td><td className="p-4 flex gap-2">{['admin', 'editor'].includes(userRole) && <><button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>{userRole==='admin'&&<button onClick={()=>dbService.del(user, 'transactions', t.id).then(loadData)} className="text-rose-500"><Trash2 size={16}/></button>}</>}</td></tr>))}</tbody></table></div>
+             <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400"><tr><th className="p-4">Data</th><th className="p-4">Descrição</th><th className="p-4">Unidade</th><th className="p-4">Conta/Tipo</th><th className="p-4 text-right">Valor</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{filteredData.map(t => (<tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{new Date(t.date).toLocaleDateString()}</td><td className="p-4 dark:text-white">{t.description}</td><td className="p-4 text-xs dark:text-slate-300">{t.segment}</td><td className="p-4 text-xs dark:text-slate-300">{t.type === 'metric' ? t.metricType.toUpperCase() : t.accountPlan}</td><td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>{t.value.toLocaleString()}</td><td className="p-4 flex gap-2">{['admin', 'editor'].includes(userRole) && <><button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>{userRole==='admin'&&<button onClick={()=>dbService.del(user, 'transactions', t.id).then(loadData)} className="text-rose-500"><Trash2 size={16}/></button>}</>}</td></tr>))}</tbody></table></div>
           </div>
         )}
 
@@ -624,15 +844,16 @@ export default function App() {
             </div>
         )}
 
-        {activeTab === 'estoque' && <div className="p-8 text-center dark:text-white bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700"><h3>Módulo de Estoque</h3><p className="text-sm text-slate-500">Implementação de kardex e custo médio em breve.</p></div>}
+        {activeTab === 'estoque' && <StockComponent transactions={filteredData} />}
         
-        {activeTab === 'producao' && <div className="p-8 text-center dark:text-white bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700"><h3>Produção vs Vendas</h3><p className="text-sm text-slate-500">Gráficos comparativos de m³ produzido vs vendido.</p></div>}
+        {activeTab === 'producao' && <ProductionComponent transactions={filteredData} />}
 
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
 
       </main>
 
       {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
+      {showAIModal && user && <AIReportModal onClose={() => setShowAIModal(false)} transactions={filteredData} period={`${filter.month+1}/${filter.year}`} />}
     </div>
   );
 }
