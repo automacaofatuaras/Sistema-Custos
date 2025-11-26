@@ -50,19 +50,32 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
 
-// --- DADOS DE INICIALIZAÇÃO (HIERARQUIA) ---
+// --- DADOS DE INICIALIZAÇÃO (SEGMENTOS E UNIDADES) ---
 const SEED_UNITS = [
-    "Portos de Areia: Porto Saara - Mira Estrela",
+    "Portos de Areia: Porto de Areia Saara - Mira Estrela",
     "Portos de Areia: Porto Agua Amarela - Riolândia",
-    "Noromix Concreteiras: Fernandópolis", "Noromix Concreteiras: Ilha Solteira", "Noromix Concreteiras: Jales",
-    "Noromix Concreteiras: Ouroeste", "Noromix Concreteiras: Paranaíba", "Noromix Concreteiras: Monções",
-    "Noromix Concreteiras: Pereira Barreto", "Noromix Concreteiras: Três Fronteiras", "Noromix Concreteiras: Votuporanga",
-    "Fábrica de Tubos: Votuporanga",
-    "Pedreiras: Mineração Grandes Lagos - Icém", "Pedreiras: Mineração Grandes Lagos - Itapura",
-    "Pedreiras: Mineração Grandes Lagos - Riolândia", "Pedreiras: Mineração Grandes Lagos - Três Fronteiras",
-    "Pedreiras: Noromix - Rinópolis", "Pedreiras: Mineração Noroeste - Monções",
-    "Usinas de Asfalto: Assis", "Usinas de Asfalto: Monções", "Usinas de Asfalto: Itapura",
-    "Usinas de Asfalto: Rinópolis", "Usinas de Asfalto: Demop - Três Fronteiras", "Usinas de Asfalto: Grandes Lagos - Icém",
+    "Noromix Concreteiras: Noromix Concreto S/A - Fernandópolis",
+    "Noromix Concreteiras: Noromix Concreto S/A - Ilha Solteira",
+    "Noromix Concreteiras: Noromix Concreto S/A - Jales",
+    "Noromix Concreteiras: Noromix Concreto S/A - Ouroeste",
+    "Noromix Concreteiras: Noromix Concreto S/A - Paranaíba",
+    "Noromix Concreteiras: Noromix Concreto S/A - Monções",
+    "Noromix Concreteiras: Noromix Concreto S/A - Pereira Barreto",
+    "Noromix Concreteiras: Noromix Concreto S/A - Três Fronteiras",
+    "Noromix Concreteiras: Noromix Concreto S/A - Votuporanga",
+    "Fábrica de Tubos: Noromix Concreto S/A - Votuporanga (Fábrica)",
+    "Pedreiras: Mineração Grandes Lagos - Icém",
+    "Pedreiras: Mineração Grandes Lagos - Itapura",
+    "Pedreiras: Mineração Grandes Lagos - Riolândia",
+    "Pedreiras: Mineração Grandes Lagos - Três Fronteiras",
+    "Pedreiras: Noromix Concreto S/A - Rinópolis",
+    "Pedreiras: Mineração Noroeste Paulista - Monções",
+    "Usinas de Asfalto: Noromix Concreto S/A - Assis",
+    "Usinas de Asfalto: Noromix Concreto S/A - Monções (Usina)",
+    "Usinas de Asfalto: Noromix Concreto S/A - Itapura (Usina)",
+    "Usinas de Asfalto: Noromix Concreto S/A - Rinópolis (Usina)",
+    "Usinas de Asfalto: Demop Participações LTDA - Três Fronteiras",
+    "Usinas de Asfalto: Mineração Grandes Lagos - Icém (Usina)",
     "Construtora: Noromix Construtora"
 ];
 
@@ -121,10 +134,10 @@ const dbService = {
 
   syncSystem: async (user) => {
     try {
+        // 1. Perfil
         const userRef = doc(db, 'artifacts', appId, 'users', user.uid);
         const snap = await getDoc(userRef);
         let role = 'viewer';
-        
         if (!snap.exists()) {
           const usersColl = collection(db, 'artifacts', appId, 'users');
           const allUsers = await getDocs(usersColl);
@@ -134,13 +147,21 @@ const dbService = {
           role = snap.data().role;
         }
 
+        // 2. SEED FORÇADO (Garante que todas as unidades existem)
         if (role === 'admin') {
             const segRef = collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', 'segments');
             const segSnap = await getDocs(segRef);
-            if (segSnap.empty) {
-                console.log("Inicializando unidades...");
+            
+            // Pega nomes já existentes
+            const existingNames = segSnap.docs.map(d => d.data().name);
+            
+            // Filtra quais do SEED ainda não estão no banco
+            const missingUnits = SEED_UNITS.filter(seedUnit => !existingNames.includes(seedUnit));
+
+            if (missingUnits.length > 0) {
+                console.log(`Adicionando ${missingUnits.length} novas unidades...`);
                 const batch = writeBatch(db);
-                SEED_UNITS.forEach(name => {
+                missingUnits.forEach(name => {
                     const docRef = doc(segRef);
                     batch.set(docRef, { name });
                 });
@@ -212,8 +233,7 @@ const aiService = {
  * ------------------------------------------------------------------
  */
 
-// COMPONENTE DE SELEÇÃO HIERÁRQUICA (PASTAS -> UNIDADES)
-// Usado tanto no Filtro Global quanto no Formulário de Lançamento
+// COMPONENTE DE SELEÇÃO HIERÁRQUICA (Pastas e Sub-itens)
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -230,7 +250,6 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
             if (!map[segment]) map[segment] = [];
             map[segment].push({ fullValue: opt.name, label: unitName });
         });
-        // Ordena segmentos alfabeticamente
         return Object.keys(map).sort().reduce((obj, key) => {
             obj[key] = map[key];
             return obj;
@@ -244,13 +263,8 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
     }, []);
 
     const toggleFolder = (seg) => setExpanded(prev => ({...prev, [seg]: !prev[seg]}));
-    
-    const handleSelect = (val) => {
-        onChange(val);
-        setIsOpen(false);
-    };
+    const handleSelect = (val) => { onChange(val); setIsOpen(false); };
 
-    // Texto a exibir no botão fechado
     let displayText = placeholder;
     if (value === 'ALL' && isFilter) displayText = 'Todas as Unidades';
     else if (value) {
@@ -258,18 +272,18 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
     }
 
     return (
-        <div className="relative w-full" ref={ref}>
+        <div className="relative w-full md:w-auto" ref={ref}>
             <button 
                 onClick={() => setIsOpen(!isOpen)} 
-                className={`flex items-center justify-between w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 ${isOpen ? 'ring-2 ring-indigo-500' : ''}`}
-                type="button" // Importante para não submeter form
+                className={`flex items-center justify-between w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 min-w-[220px] ${isOpen ? 'ring-2 ring-indigo-500' : ''}`}
+                type="button"
             >
                 <span className="truncate">{displayText}</span>
                 <ChevronDown size={16} className="text-slate-500"/>
             </button>
 
             {isOpen && (
-                <div className="absolute top-full left-0 mt-1 w-full max-h-60 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl z-50">
+                <div className="absolute top-full left-0 mt-1 w-[300px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50">
                     {isFilter && (
                         <div onClick={() => handleSelect('ALL')} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 font-bold text-sm text-slate-800 dark:text-white">
                             🏢 Todas as Unidades
@@ -278,23 +292,21 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
                     
                     {Object.entries(hierarchy).map(([segment, units]) => (
                         <div key={segment}>
-                            {/* Pasta do Segmento */}
                             <div 
                                 onClick={() => toggleFolder(segment)}
-                                className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200 select-none"
+                                className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200 select-none sticky top-0 bg-white dark:bg-slate-800 z-10 border-b dark:border-slate-700"
                             >
-                                {expanded[segment] ? <FolderOpen size={16} className="text-amber-500"/> : <Folder size={16} className="text-amber-500"/>}
+                                {expanded[segment] ? <FolderOpen size={16} className="text-indigo-500"/> : <Folder size={16} className="text-indigo-500"/>}
                                 {segment}
                             </div>
                             
-                            {/* Unidades dentro da pasta */}
                             {expanded[segment] && (
-                                <div className="bg-slate-50 dark:bg-slate-900/30 border-l-2 border-slate-200 dark:border-slate-700 ml-3">
+                                <div className="bg-slate-50 dark:bg-slate-900/30">
                                     {units.map(u => (
                                         <div 
                                             key={u.fullValue}
                                             onClick={() => handleSelect(u.fullValue)}
-                                            className={`p-2 pl-4 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 ${value === u.fullValue ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-600' : ''}`}
+                                            className={`p-2 pl-8 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 border-l-4 border-transparent hover:border-indigo-500 ${value === u.fullValue ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-600 border-indigo-500' : ''}`}
                                         >
                                             {u.label}
                                         </div>
@@ -303,8 +315,7 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
                             )}
                         </div>
                     ))}
-                    
-                    {options.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Nenhuma unidade carregada.</div>}
+                    {options.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Carregando unidades...</div>}
                 </div>
             )}
         </div>
@@ -568,7 +579,7 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                 <div className="space-y-3">
                     <input type="date" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
                     
-                    {/* Seletor de Unidade Hierárquico (Pastas) */}
+                    {/* SELEÇÃO HIERÁRQUICA NO MODAL */}
                     <HierarchicalSelect 
                         value={form.segment} 
                         onChange={(val) => setForm({...form, segment: val})} 
@@ -712,6 +723,7 @@ export default function App() {
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
 
+  // ESTADOS ESSENCIAIS
   const [importText, setImportText] = useState('');
   const [importSegment, setImportSegment] = useState(''); 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -738,21 +750,75 @@ export default function App() {
 
   const handleLogout = async () => await signOut(auth);
 
+  const handleImport = async () => {
+    if (!importText || !importSegment) return showToast("Preencha dados.", 'warning');
+    setIsProcessing(true);
+    try { 
+        const newTxs = parseLegacyFile(importText, importSegment); // parseLegacyFile não definido neste bloco mas deve estar no arquivo
+        await dbService.addBulk(user, 'transactions', newTxs); 
+        setImportText(''); await loadData(); showToast(`${newTxs.length} importados!`, 'success'); 
+    } catch(e) { showToast("Erro ao importar.", 'error'); } 
+    finally { setIsProcessing(false); }
+  };
+  
+  const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
+
+  // Funcao auxiliar que estava faltando no ultimo bloco enviado
+  const parseLegacyFile = (fileContent, selectedSegment) => {
+    const rawLines = fileContent.split('\n');
+    const cleanTransactions = [];
+    let buffer = [];
+    const normalizedLines = [];
+    rawLines.forEach((line) => {
+        const trimmed = line.trim(); if (!trimmed) return;
+        if (/^\d{3,};/.test(trimmed)) { if (buffer.length > 0) normalizedLines.push(buffer.join(' ')); buffer = [trimmed]; } else { buffer.push(trimmed); }
+    });
+    if (buffer.length > 0) normalizedLines.push(buffer.join(' '));
+    normalizedLines.forEach((fullLine) => {
+        try {
+        const cols = fullLine.split(';');
+        let rawValue = cols[11] || "0"; 
+        if (!/^\d+$/.test(rawValue)) { const potentialValue = cols.find(c => /0000\d+/.test(c) && c.length > 8); if (potentialValue) rawValue = potentialValue; }
+        let value = parseInt(rawValue, 10) / 100;
+        if (isNaN(value)) return;
+        const dateMatch = fullLine.match(/(\d{2}\/\d{2}\/\d{4})/);
+        const dateStr = dateMatch ? dateMatch[0] : new Date().toLocaleDateString();
+        const [dd, mm, yyyy] = dateStr.split('/');
+        const isoDate = `${yyyy}-${mm}-${dd}`;
+        const supplier = cols[5]?.replace(/"/g, '').trim() || 'Diversos';
+        const planDescription = cols[8]?.replace(/"/g, '').trim() || 'Conta Diversa'; 
+        const type = (cols[7]?.startsWith('1.') || cols[7]?.startsWith('4.') || planDescription.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
+        if (value > 0) { cleanTransactions.push({ date: isoDate, segment: selectedSegment, costCenter: 'GERAL', accountPlan: cols[7] || '00.00', planDescription, description: supplier, value, type, source: 'file', createdAt: new Date().toISOString() }); }
+        } catch (err) { console.error(err); }
+    });
+    return cleanTransactions;
+  };
+
+  // --- FILTRAGEM ---
   const filteredData = useMemo(() => {
       return transactions.filter(t => {
           const d = new Date(t.date);
           const y = d.getFullYear();
           const m = d.getMonth();
           
-          if (y !== filter.year) return false;
-          if (filter.type === 'month' && m !== filter.month) return false;
-          if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
-          if (filter.type === 'semester' && (m < 6 ? 1 : 2) !== filter.semester) return false;
+          // Filtro de Data (Só aplica se NÃO for aba lançamentos, mas para simplificar o código e manter consistência visual, vamos aplicar sempre que o filtro estiver visível ou for relevante. 
+          // O PeriodSelector está escondido na aba lançamentos, mas o ESTADO filter ainda existe. 
+          // Se quisermos mostrar TODOS os lançamentos na aba lançamentos, devemos ignorar o filtro de data LÁ.)
+          const dateMatch = (() => {
+              if (activeTab === 'lancamentos') return true; // MOSTRA TUDO na aba lançamentos
+              if (y !== filter.year) return false;
+              if (filter.type === 'month' && m !== filter.month) return false;
+              if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
+              if (filter.type === 'semester' && (m < 6 ? 1 : 2) !== filter.semester) return false;
+              return true;
+          })();
+
+          if (!dateMatch) return false;
           
           if (globalUnitFilter !== 'ALL' && t.segment !== globalUnitFilter) return false;
           return true;
       });
-  }, [transactions, filter, globalUnitFilter]);
+  }, [transactions, filter, globalUnitFilter, activeTab]);
 
   const kpis = useMemo(() => {
       const rev = filteredData.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
@@ -853,6 +919,21 @@ export default function App() {
 
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
 
+        {activeTab === 'ingestion' && (
+            <div className="max-w-3xl mx-auto bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
+               <h2 className="text-xl font-bold mb-6 text-slate-800 dark:text-white">Importação de TXT</h2>
+               <div className="space-y-6">
+                  {/* USO DO SELECT HIERÁRQUICO AQUI TAMBÉM */}
+                  <div>
+                      <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Para qual Unidade?</label>
+                      <HierarchicalSelect value={importSegment} onChange={setImportSegment} options={segments} placeholder="Selecione..." />
+                  </div>
+                  <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-6 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50" onClick={() => fileInputRef.current?.click()}><FileUp className="mx-auto text-slate-400 mb-2" size={32} /><p className="text-sm text-slate-600 dark:text-slate-400">Clique para selecionar arquivo .TXT</p><input type="file" ref={fileInputRef} className="hidden" accept=".txt" onChange={handleFileUpload} /></div>
+                  <textarea className="w-full h-32 border dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white rounded p-2 text-xs font-mono" placeholder="Ou cole o conteúdo aqui..." value={importText} onChange={e => setImportText(e.target.value)} />
+                  <button onClick={handleImport} disabled={isProcessing} className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 disabled:opacity-50">{isProcessing ? 'Processando...' : 'Processar Importação'}</button>
+               </div>
+            </div>
+        )}
       </main>
 
       {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
