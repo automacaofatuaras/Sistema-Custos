@@ -8,7 +8,7 @@ import {
   BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart
 } from 'lucide-react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area, Defs, LinearGradient, Stop
 } from 'recharts';
 
 import jsPDF from 'jspdf';
@@ -229,32 +229,26 @@ const aiService = {
  * ------------------------------------------------------------------
  */
 
-// COMPONENTE DE SELEÇÃO HIERÁRQUICA (CORRIGIDO PARA REMOVER 'GERAL')
+// COMPONENTE DE SELEÇÃO HIERÁRQUICA
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
     const ref = useRef(null);
 
-    // Agrupa unidades por pasta (segmento)
     const hierarchy = useMemo(() => {
         const map = {};
         options.forEach(opt => {
             const parts = opt.name.split(':');
             const segment = parts.length > 1 ? parts[0].trim() : 'Geral';
             const unitName = parts.length > 1 ? parts[1].trim() : opt.name;
-            
             if (!map[segment]) map[segment] = [];
             map[segment].push({ fullValue: opt.name, label: unitName });
         });
-        
-        // FILTRA 'Geral' E ORDENA
+        // Filtra 'Geral' para não mostrar duplicados
         return Object.keys(map)
-            .filter(key => key !== 'Geral') // <--- REMOVE A PASTA GERAL
+            .filter(key => key !== 'Geral')
             .sort()
-            .reduce((obj, key) => {
-                obj[key] = map[key];
-                return obj;
-            }, {});
+            .reduce((obj, key) => { obj[key] = map[key]; return obj; }, {});
     }, [options]);
 
     useEffect(() => {
@@ -290,25 +284,15 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
                             🏢 Todas as Unidades
                         </div>
                     )}
-                    
                     {Object.entries(hierarchy).map(([segment, units]) => (
                         <div key={segment}>
-                            <div 
-                                onClick={() => toggleFolder(segment)}
-                                className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200 select-none sticky top-0 bg-white dark:bg-slate-800 z-10 border-b dark:border-slate-700"
-                            >
-                                {expanded[segment] ? <FolderOpen size={16} className="text-indigo-500"/> : <Folder size={16} className="text-indigo-500"/>}
-                                {segment}
+                            <div onClick={() => toggleFolder(segment)} className="flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200 select-none sticky top-0 bg-white dark:bg-slate-800 z-10 border-b dark:border-slate-700">
+                                {expanded[segment] ? <FolderOpen size={16} className="text-indigo-500"/> : <Folder size={16} className="text-indigo-500"/>} {segment}
                             </div>
-                            
                             {expanded[segment] && (
                                 <div className="bg-slate-50 dark:bg-slate-900/30 border-l-2 border-slate-200 dark:border-slate-700 ml-3">
                                     {units.map(u => (
-                                        <div 
-                                            key={u.fullValue}
-                                            onClick={() => handleSelect(u.fullValue)}
-                                            className={`p-2 pl-4 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 ${value === u.fullValue ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-600' : ''}`}
-                                        >
+                                        <div key={u.fullValue} onClick={() => handleSelect(u.fullValue)} className={`p-2 pl-4 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 ${value === u.fullValue ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-600' : ''}`}>
                                             {u.label}
                                         </div>
                                     ))}
@@ -316,7 +300,6 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
                             )}
                         </div>
                     ))}
-                    
                     {options.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Carregando unidades...</div>}
                 </div>
             )}
@@ -333,32 +316,10 @@ const PeriodSelector = ({ filter, setFilter, years }) => {
                 <option value="semester">Semestral</option>
                 <option value="year">Anual</option>
             </select>
-            
-            {filter.type === 'month' && (
-                <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.month} onChange={e => setFilter({...filter, month: parseInt(e.target.value)})}>
-                    {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map((m, i) => <option key={i} value={i}>{m}</option>)}
-                </select>
-            )}
-
-            {(filter.type === 'quarter') && (
-                <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.quarter} onChange={e => setFilter({...filter, quarter: parseInt(e.target.value)})}>
-                    <option value={1}>1º Trim</option>
-                    <option value={2}>2º Trim</option>
-                    <option value={3}>3º Trim</option>
-                    <option value={4}>4º Trim</option>
-                </select>
-            )}
-
-            {(filter.type === 'semester') && (
-                <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.semester} onChange={e => setFilter({...filter, semester: parseInt(e.target.value)})}>
-                    <option value={1}>1º Semestre</option>
-                    <option value={2}>2º Semestre</option>
-                </select>
-            )}
-
-            <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 font-bold dark:text-white" value={filter.year} onChange={e => setFilter({...filter, year: parseInt(e.target.value)})}>
-                {years.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
+            {filter.type === 'month' && <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.month} onChange={e => setFilter({...filter, month: parseInt(e.target.value)})}>{['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map((m, i) => <option key={i} value={i}>{m}</option>)}</select>}
+            {filter.type === 'quarter' && <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.quarter} onChange={e => setFilter({...filter, quarter: parseInt(e.target.value)})}> <option value={1}>1º Trim</option><option value={2}>2º Trim</option><option value={3}>3º Trim</option><option value={4}>4º Trim</option></select>}
+            {filter.type === 'semester' && <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.semester} onChange={e => setFilter({...filter, semester: parseInt(e.target.value)})}> <option value={1}>1º Semestre</option><option value={2}>2º Semestre</option></select>}
+            <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 font-bold dark:text-white" value={filter.year} onChange={e => setFilter({...filter, year: parseInt(e.target.value)})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select>
         </div>
     );
 };
@@ -368,20 +329,13 @@ const LoginScreen = ({ showToast }) => {
     const [password, setPassword] = useState('');
     const [isReset, setIsReset] = useState(false);
     const [loading, setLoading] = useState(false);
-  
     const handleAuth = async (e) => {
       e.preventDefault(); setLoading(true);
       try {
-        if (isReset) {
-            await sendPasswordResetEmail(auth, email);
-            showToast("Link enviado.", 'success');
-            setIsReset(false);
-        } else {
-            await signInWithEmailAndPassword(auth, email, password);
-        }
+        if (isReset) { await sendPasswordResetEmail(auth, email); showToast("Link enviado.", 'success'); setIsReset(false); } 
+        else { await signInWithEmailAndPassword(auth, email, password); }
       } catch (err) { showToast("Erro de acesso.", 'error'); } finally { setLoading(false); }
     };
-  
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
         <div className="bg-white dark:bg-slate-800 w-full max-w-md p-8 rounded-2xl shadow-2xl">
@@ -401,34 +355,20 @@ const UsersScreen = ({ user, myRole, showToast }) => {
     const [users, setUsers] = useState([]);
     const [newUserEmail, setNewUserEmail] = useState('');
     const [newUserPass, setNewUserPass] = useState('');
-    
-    const loadUsers = async () => {
-        const list = await dbService.getAllUsers();
-        setUsers(list);
-    };
+    const loadUsers = async () => { const list = await dbService.getAllUsers(); setUsers(list); };
     useEffect(() => { loadUsers(); }, []);
-
     const handleCreateUser = async () => {
         if (myRole !== 'admin') return;
         try {
             const secondaryApp = initializeApp(firebaseConfig, "Secondary");
             const secondaryAuth = getAuth(secondaryApp);
             const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPass);
-            await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid), {
-                email: newUserEmail, role: 'viewer', createdAt: new Date().toISOString()
-            });
-            await signOut(secondaryAuth); 
-            showToast("Usuário criado!", 'success');
-            setNewUserEmail(''); setNewUserPass('');
-            loadUsers();
-        } catch (e) {
-            showToast("Erro ao criar: " + e.message, 'error');
-        }
+            await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid), { email: newUserEmail, role: 'viewer', createdAt: new Date().toISOString() });
+            await signOut(secondaryAuth); showToast("Usuário criado!", 'success'); setNewUserEmail(''); setNewUserPass(''); loadUsers();
+        } catch (e) { showToast("Erro ao criar: " + e.message, 'error'); }
     };
-
     const handleChangeRole = async (uid, role) => { await dbService.updateUserRole(uid, role); loadUsers(); showToast("Permissão alterada.", 'success'); };
     const handleDelete = async (uid) => { if (!confirm("Remover acesso?")) return; await dbService.deleteUserAccess(uid); loadUsers(); showToast("Acesso revogado.", 'success'); };
-
     return (
         <div className="p-6 max-w-4xl mx-auto">
             <h2 className="text-2xl font-bold mb-6 dark:text-white">Gestão de Acessos</h2>
@@ -441,19 +381,8 @@ const UsersScreen = ({ user, myRole, showToast }) => {
                 </div>
             </div>
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700">
-                <table className="w-full text-left">
-                    <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead>
-                    <tbody className="divide-y dark:divide-slate-700">
-                        {users.map(u => (
-                            <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                <td className="p-4 dark:text-white">{u.email}</td>
-                                <td className="p-4">
-                                    <select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select>
-                                </td>
-                                <td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td>
-                            </tr>
-                        ))}
-                    </tbody>
+                <table className="w-full text-left"><thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead>
+                    <tbody className="divide-y dark:divide-slate-700">{users.map(u => (<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{u.email}</td><td className="p-4"><select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select></td><td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td></tr>))}</tbody>
                 </table>
             </div>
         </div>
@@ -464,56 +393,16 @@ const DREComponent = ({ transactions }) => {
     const dreData = useMemo(() => {
         const rows = JSON.parse(JSON.stringify(DRE_BLUEPRINT));
         const accMap = {};
-        transactions.forEach(t => {
-            if (!t.accountPlan) return;
-            const match = rows.find(r => t.accountPlan.startsWith(r.code) && !r.formula);
-            if (match) {
-                const val = t.type === 'revenue' ? t.value : -t.value; 
-                accMap[match.code] = (accMap[match.code] || 0) + val;
-            }
-        });
+        transactions.forEach(t => { if (!t.accountPlan) return; const match = rows.find(r => t.accountPlan.startsWith(r.code) && !r.formula); if (match) { const val = t.type === 'revenue' ? t.value : -t.value; accMap[match.code] = (accMap[match.code] || 0) + val; } });
         rows.forEach(row => { if (accMap[row.code]) row.value = accMap[row.code]; });
-        for(let i=0; i<2; i++) {
-            rows.forEach(row => {
-                if (row.parent) {
-                    const parent = rows.find(r => r.code === row.parent);
-                    if (parent) parent.value = (parent.value || 0) + (row.value || 0);
-                }
-            });
-        }
-        rows.forEach(row => {
-            if (row.formula) {
-                const parts = row.formula.split(' ');
-                let total = 0; let op = '+';
-                parts.forEach(part => {
-                    if (part === '+' || part === '-') { op = part; return; }
-                    const refRow = rows.find(r => r.code === part || r.code === part.replace('LUCRO_BRUTO', 'LUCRO_BRUTO')); 
-                    const refVal = refRow ? (refRow.value || 0) : 0;
-                    if (op === '+') total += refVal; else total -= refVal;
-                });
-                row.value = total;
-            }
-        });
+        for(let i=0; i<2; i++) { rows.forEach(row => { if (row.parent) { const parent = rows.find(r => r.code === row.parent); if (parent) parent.value = (parent.value || 0) + (row.value || 0); } }); }
+        rows.forEach(row => { if (row.formula) { const parts = row.formula.split(' '); let total = 0; let op = '+'; parts.forEach(part => { if (part === '+' || part === '-') { op = part; return; } const refRow = rows.find(r => r.code === part || r.code === part.replace('LUCRO_BRUTO', 'LUCRO_BRUTO')); const refVal = refRow ? (refRow.value || 0) : 0; if (op === '+') total += refVal; else total -= refVal; }); row.value = total; } });
         return rows;
     }, [transactions]);
-
     return (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden">
             <div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial</div>
-            <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                    <tbody>
-                        {dreData.map((row, i) => (
-                            <tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}>
-                                <td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td>
-                                <td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>
-                                    {(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+            <div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{dreData.map((row, i) => (<tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}><td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td><td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>{(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>))}</tbody></table></div>
         </div>
     );
 };
@@ -524,14 +413,17 @@ const KpiCard = ({ title, value, icon: Icon, color }) => {
 };
 
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
-    const [form, setForm] = useState({ date: new Date().toISOString().split('T')[0], type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
+    // CORREÇÃO: Data agora é YYYY-MM apenas para o input type="month"
+    const [form, setForm] = useState({ 
+        date: new Date().toISOString().slice(0, 7), // YYYY-MM
+        type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' 
+    });
     
-    // Tabs de lançamento: Receita, Despesa, Métricas
     const [activeTab, setActiveTab] = useState('expense'); 
 
     useEffect(() => { 
         if (initialData) {
-            setForm({ ...initialData, date: initialData.date });
+            setForm({ ...initialData, date: initialData.date.slice(0, 7) }); // Pega apenas YYYY-MM
             setActiveTab(initialData.type === 'metric' ? 'metric' : initialData.type);
         }
     }, [initialData]);
@@ -542,8 +434,12 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
         if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
 
+        // Adiciona dia 01 para salvar no banco como data completa
+        const fullDate = `${form.date}-01`; 
+
         let tx = { 
             ...form, 
+            date: fullDate,
             value: val, 
             costCenter: 'GERAL', 
             source: 'manual', 
@@ -571,7 +467,6 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                     <button onClick={onClose}><X size={20} className="text-slate-400"/></button>
                 </div>
                 
-                {/* Tabs */}
                 <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg mb-4">
                     <button onClick={() => setActiveTab('revenue')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'revenue' ? 'bg-white dark:bg-slate-700 shadow text-emerald-600' : 'text-slate-500'}`}>Receita</button>
                     <button onClick={() => setActiveTab('expense')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'expense' ? 'bg-white dark:bg-slate-700 shadow text-rose-600' : 'text-slate-500'}`}>Despesa</button>
@@ -579,9 +474,16 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                 </div>
 
                 <div className="space-y-3">
-                    <input type="date" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
+                    {/* INPUT DE MÊS/ANO */}
+                    <label className="block text-xs font-bold text-slate-500 uppercase">Competência</label>
+                    <input 
+                        type="month" 
+                        className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" 
+                        value={form.date} 
+                        onChange={e=>setForm({...form, date: e.target.value})} 
+                    />
                     
-                    {/* SELEÇÃO HIERÁRQUICA NO MODAL */}
+                    <label className="block text-xs font-bold text-slate-500 uppercase">Unidade</label>
                     <HierarchicalSelect 
                         value={form.segment} 
                         onChange={(val) => setForm({...form, segment: val})} 
@@ -591,6 +493,7 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
 
                     {activeTab !== 'metric' && (
                         <>
+                            <label className="block text-xs font-bold text-slate-500 uppercase">Detalhes</label>
                             <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição (Ex: Pgto Fornecedor)" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
                             <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.accountPlan} onChange={e=>setForm({...form, accountPlan: e.target.value})}>
                                 <option value="">Conta do DRE...</option>
@@ -621,15 +524,22 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
 
 const ProductionComponent = ({ transactions }) => {
     const data = useMemo(() => {
-        const metrics = transactions.filter(t => t.type === 'metric' && (t.metricType === 'producao' || t.metricType === 'vendas'));
+        const metrics = transactions
+            .filter(t => t.type === 'metric' && (t.metricType === 'producao' || t.metricType === 'vendas'))
+            .sort((a, b) => new Date(a.date) - new Date(b.date)); // ORDEM CRONOLÓGICA
+
         const grouped = {};
         metrics.forEach(t => {
-            const month = new Date(t.date).toLocaleString('default', { month: 'short' });
-            if (!grouped[month]) grouped[month] = { name: month, Produção: 0, Vendas: 0 };
-            if (t.metricType === 'producao') grouped[month].Produção += t.value;
-            if (t.metricType === 'vendas') grouped[month].Vendas += t.value;
+            // Usar mês numérico para ordenar corretamente
+            const d = new Date(t.date);
+            const key = `${d.getFullYear()}-${d.getMonth()}`; 
+            const label = d.toLocaleString('default', { month: 'short' });
+            
+            if (!grouped[key]) grouped[key] = { name: label, Produção: 0, Vendas: 0, sortKey: d.getTime() };
+            if (t.metricType === 'producao') grouped[key].Produção += t.value;
+            if (t.metricType === 'vendas') grouped[key].Vendas += t.value;
         });
-        return Object.values(grouped);
+        return Object.values(grouped).sort((a,b) => a.sortKey - b.sortKey);
     }, [transactions]);
 
     return (
@@ -637,15 +547,18 @@ const ProductionComponent = ({ transactions }) => {
             <h3 className="font-bold text-lg mb-4 dark:text-white">Produção vs Vendas (m³)</h3>
             <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={data}>
-                        <CartesianGrid strokeDasharray="3 3" />
+                    <BarChart data={data}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="name" />
                         <YAxis />
-                        <Tooltip />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
+                            itemStyle={{ color: '#fff' }}
+                        />
                         <Legend />
-                        <Line type="monotone" dataKey="Produção" stroke="#8884d8" strokeWidth={2} />
-                        <Line type="monotone" dataKey="Vendas" stroke="#82ca9d" strokeWidth={2} />
-                    </LineChart>
+                        <Bar dataKey="Produção" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="Vendas" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    </BarChart>
                 </ResponsiveContainer>
             </div>
         </div>
@@ -654,7 +567,11 @@ const ProductionComponent = ({ transactions }) => {
 
 const StockComponent = ({ transactions }) => {
     const stockData = useMemo(() => {
-        const stockTxs = transactions.filter(t => t.type === 'metric' && t.metricType === 'estoque');
+        // Filtra e ORDENA CRONOLOGICAMENTE
+        const stockTxs = transactions
+            .filter(t => t.type === 'metric' && t.metricType === 'estoque')
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
         const totalStock = stockTxs.reduce((acc, t) => acc + t.value, 0);
         
         const mpExpenses = transactions.filter(t => t.type === 'expense' && t.accountPlan === '03.02').reduce((acc, t) => acc + t.value, 0);
@@ -662,7 +579,7 @@ const StockComponent = ({ transactions }) => {
         const avgCost = productionVol > 0 ? mpExpenses / productionVol : 0;
 
         const evolution = stockTxs.map(t => ({
-            date: new Date(t.date).toLocaleDateString(),
+            date: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
             Estoque: t.value
         }));
 
@@ -690,11 +607,19 @@ const StockComponent = ({ transactions }) => {
                 <h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque</h3>
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={stockData.evolution}>
-                        <CartesianGrid strokeDasharray="3 3" />
+                        <defs>
+                            <linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
+                                <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="date" />
                         <YAxis />
-                        <Tooltip />
-                        <Area type="monotone" dataKey="Estoque" stroke="#6366f1" fill="#818cf8" />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }}
+                        />
+                        <Area type="monotone" dataKey="Estoque" stroke="#8884d8" fillOpacity={1} fill="url(#colorStock)" />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
@@ -794,15 +719,15 @@ export default function App() {
     return cleanTransactions;
   };
 
-  // --- FILTRAGEM ---
+  // --- FILTRAGEM & ORDENAÇÃO CRONOLÓGICA ---
   const filteredData = useMemo(() => {
-      return transactions.filter(t => {
+      const data = transactions.filter(t => {
           const d = new Date(t.date);
           const y = d.getFullYear();
           const m = d.getMonth();
           
           const dateMatch = (() => {
-              if (activeTab === 'lancamentos') return true; // MOSTRA TUDO na aba lançamentos
+              if (activeTab === 'lancamentos') return true; 
               if (y !== filter.year) return false;
               if (filter.type === 'month' && m !== filter.month) return false;
               if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
@@ -811,10 +736,12 @@ export default function App() {
           })();
 
           if (!dateMatch) return false;
-          
           if (globalUnitFilter !== 'ALL' && t.segment !== globalUnitFilter) return false;
           return true;
       });
+
+      // ORDENAR POR DATA (CRESCENTE: Antigo -> Novo)
+      return data.sort((a, b) => new Date(a.date) - new Date(b.date));
   }, [transactions, filter, globalUnitFilter, activeTab]);
 
   const kpis = useMemo(() => {
@@ -847,16 +774,8 @@ export default function App() {
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div className="flex gap-2 w-full md:w-auto items-center">
-             {/* LÓGICA: O filtro de período some na aba lançamentos */}
              {activeTab !== 'lancamentos' && <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
-             
-             {/* FILTRO DE UNIDADES HIERÁRQUICO */}
-             <HierarchicalSelect 
-                value={globalUnitFilter} 
-                onChange={setGlobalUnitFilter} 
-                options={segments} 
-                isFilter={true}
-             />
+             <HierarchicalSelect value={globalUnitFilter} onChange={setGlobalUnitFilter} options={segments} isFilter={true} />
           </div>
           <div className="flex gap-2">
              <button onClick={() => setShowAIModal(true)} className="p-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg shadow-lg"><Sparkles size={20} /></button>
@@ -900,7 +819,6 @@ export default function App() {
                     <table className="w-full text-sm">
                         <thead className="bg-slate-100 dark:bg-slate-700"><tr><th className="p-2 text-left">Conta</th><th className="p-2 text-right">Valor</th></tr></thead>
                         <tbody>
-                            {/* Simples agrupamento por conta para demo */}
                             {Object.entries(filteredData.filter(t=>t.type==='expense').reduce((acc, t) => {acc[t.accountPlan] = (acc[t.accountPlan]||0)+t.value; return acc}, {})).map(([k,v]) => (
                                 <tr key={k} className="border-b dark:border-slate-700"><td className="p-2 dark:text-white">{k}</td><td className="p-2 text-right dark:text-white">{v.toFixed(2)}</td></tr>
                             ))}
@@ -920,7 +838,6 @@ export default function App() {
             <div className="max-w-3xl mx-auto bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
                <h2 className="text-xl font-bold mb-6 text-slate-800 dark:text-white">Importação de TXT</h2>
                <div className="space-y-6">
-                  {/* USO DO SELECT HIERÁRQUICO AQUI TAMBÉM */}
                   <div>
                       <label className="block text-sm font-medium mb-2 text-slate-700 dark:text-slate-300">Para qual Unidade?</label>
                       <HierarchicalSelect value={importSegment} onChange={setImportSegment} options={segments} placeholder="Selecione..." />
