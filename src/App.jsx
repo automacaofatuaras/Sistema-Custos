@@ -50,7 +50,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
 
-// --- DADOS DE INICIALIZAÇÃO (SEGMENTOS E UNIDADES) ---
+// --- DADOS DE INICIALIZAÇÃO (HIERARQUIA) ---
 const SEED_UNITS = [
     "Portos de Areia: Porto de Areia Saara - Mira Estrela",
     "Portos de Areia: Porto Agua Amarela - Riolândia",
@@ -134,10 +134,10 @@ const dbService = {
 
   syncSystem: async (user) => {
     try {
-        // 1. Perfil
         const userRef = doc(db, 'artifacts', appId, 'users', user.uid);
         const snap = await getDoc(userRef);
         let role = 'viewer';
+        
         if (!snap.exists()) {
           const usersColl = collection(db, 'artifacts', appId, 'users');
           const allUsers = await getDocs(usersColl);
@@ -147,15 +147,11 @@ const dbService = {
           role = snap.data().role;
         }
 
-        // 2. SEED FORÇADO (Garante que todas as unidades existem)
         if (role === 'admin') {
             const segRef = collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', 'segments');
             const segSnap = await getDocs(segRef);
             
-            // Pega nomes já existentes
             const existingNames = segSnap.docs.map(d => d.data().name);
-            
-            // Filtra quais do SEED ainda não estão no banco
             const missingUnits = SEED_UNITS.filter(seedUnit => !existingNames.includes(seedUnit));
 
             if (missingUnits.length > 0) {
@@ -233,7 +229,7 @@ const aiService = {
  * ------------------------------------------------------------------
  */
 
-// COMPONENTE DE SELEÇÃO HIERÁRQUICA (Pastas e Sub-itens)
+// COMPONENTE DE SELEÇÃO HIERÁRQUICA (CORRIGIDO PARA REMOVER 'GERAL')
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -250,10 +246,15 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
             if (!map[segment]) map[segment] = [];
             map[segment].push({ fullValue: opt.name, label: unitName });
         });
-        return Object.keys(map).sort().reduce((obj, key) => {
-            obj[key] = map[key];
-            return obj;
-        }, {});
+        
+        // FILTRA 'Geral' E ORDENA
+        return Object.keys(map)
+            .filter(key => key !== 'Geral') // <--- REMOVE A PASTA GERAL
+            .sort()
+            .reduce((obj, key) => {
+                obj[key] = map[key];
+                return obj;
+            }, {});
     }, [options]);
 
     useEffect(() => {
@@ -275,7 +276,7 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
         <div className="relative w-full md:w-auto" ref={ref}>
             <button 
                 onClick={() => setIsOpen(!isOpen)} 
-                className={`flex items-center justify-between w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 min-w-[220px] ${isOpen ? 'ring-2 ring-indigo-500' : ''}`}
+                className={`flex items-center justify-between w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 min-w-[220px] ${isOpen ? 'ring-2 ring-indigo-500' : ''}`}
                 type="button"
             >
                 <span className="truncate">{displayText}</span>
@@ -283,7 +284,7 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
             </button>
 
             {isOpen && (
-                <div className="absolute top-full left-0 mt-1 w-[300px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50">
+                <div className="absolute top-full left-0 mt-1 w-[300px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl z-50">
                     {isFilter && (
                         <div onClick={() => handleSelect('ALL')} className="p-3 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer border-b dark:border-slate-700 font-bold text-sm text-slate-800 dark:text-white">
                             🏢 Todas as Unidades
@@ -301,12 +302,12 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
                             </div>
                             
                             {expanded[segment] && (
-                                <div className="bg-slate-50 dark:bg-slate-900/30">
+                                <div className="bg-slate-50 dark:bg-slate-900/30 border-l-2 border-slate-200 dark:border-slate-700 ml-3">
                                     {units.map(u => (
                                         <div 
                                             key={u.fullValue}
                                             onClick={() => handleSelect(u.fullValue)}
-                                            className={`p-2 pl-8 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 border-l-4 border-transparent hover:border-indigo-500 ${value === u.fullValue ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-600 border-indigo-500' : ''}`}
+                                            className={`p-2 pl-4 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 ${value === u.fullValue ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-600' : ''}`}
                                         >
                                             {u.label}
                                         </div>
@@ -315,6 +316,7 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
                             )}
                         </div>
                     ))}
+                    
                     {options.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Carregando unidades...</div>}
                 </div>
             )}
@@ -723,7 +725,6 @@ export default function App() {
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
 
-  // ESTADOS ESSENCIAIS
   const [importText, setImportText] = useState('');
   const [importSegment, setImportSegment] = useState(''); 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -754,7 +755,7 @@ export default function App() {
     if (!importText || !importSegment) return showToast("Preencha dados.", 'warning');
     setIsProcessing(true);
     try { 
-        const newTxs = parseLegacyFile(importText, importSegment); // parseLegacyFile não definido neste bloco mas deve estar no arquivo
+        const newTxs = parseLegacyFile(importText, importSegment); 
         await dbService.addBulk(user, 'transactions', newTxs); 
         setImportText(''); await loadData(); showToast(`${newTxs.length} importados!`, 'success'); 
     } catch(e) { showToast("Erro ao importar.", 'error'); } 
@@ -763,7 +764,6 @@ export default function App() {
   
   const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
 
-  // Funcao auxiliar que estava faltando no ultimo bloco enviado
   const parseLegacyFile = (fileContent, selectedSegment) => {
     const rawLines = fileContent.split('\n');
     const cleanTransactions = [];
@@ -801,9 +801,6 @@ export default function App() {
           const y = d.getFullYear();
           const m = d.getMonth();
           
-          // Filtro de Data (Só aplica se NÃO for aba lançamentos, mas para simplificar o código e manter consistência visual, vamos aplicar sempre que o filtro estiver visível ou for relevante. 
-          // O PeriodSelector está escondido na aba lançamentos, mas o ESTADO filter ainda existe. 
-          // Se quisermos mostrar TODOS os lançamentos na aba lançamentos, devemos ignorar o filtro de data LÁ.)
           const dateMatch = (() => {
               if (activeTab === 'lancamentos') return true; // MOSTRA TUDO na aba lançamentos
               if (y !== filter.year) return false;
