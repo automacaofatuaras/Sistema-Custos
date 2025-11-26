@@ -5,7 +5,7 @@ import {
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, 
   AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown,
-  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
+  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search, CheckSquare, Square
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
@@ -44,7 +44,6 @@ const firebaseConfig = {
 // ⚠️ 2. COLE SUA CHAVE DO GEMINI AQUI ⚠️
 const GEMINI_API_KEY = "SUA_KEY_GEMINI"; 
 
-// Inicialização do Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -188,6 +187,17 @@ const dbService = {
   add: async (user, col, item) => addDoc(dbService.getCollRef(user, col), item),
   update: async (user, col, id, data) => updateDoc(doc(dbService.getCollRef(user, col), id), data),
   del: async (user, col, id) => deleteDoc(doc(dbService.getCollRef(user, col), id)),
+  
+  // EXCLUSÃO EM LOTE
+  deleteBulk: async (user, col, ids) => {
+      const batch = writeBatch(db);
+      ids.forEach(id => {
+          const docRef = doc(dbService.getCollRef(user, col), id);
+          batch.delete(docRef);
+      });
+      await batch.commit();
+  },
+
   getAll: async (user, col) => { const snapshot = await getDocs(dbService.getCollRef(user, col)); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); },
   addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
 };
@@ -198,13 +208,7 @@ const dbService = {
  * ------------------------------------------------------------------
  */
 
-// --- COMPONENTE FALTANTE: KPI CARD ---
-const KpiCard = ({ title, value, icon: Icon, color }) => {
-    const colors = { emerald: 'text-emerald-600 bg-emerald-50', rose: 'text-rose-600 bg-rose-50', indigo: 'text-indigo-600 bg-indigo-50' };
-    return (<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold text-slate-500 uppercase mb-2">{title}</p><h3 className="text-2xl font-bold dark:text-white">{value}</h3></div><div className={`p-3 rounded-xl ${colors[color]}`}><Icon size={24}/></div></div></div>);
-};
-// -------------------------------------
-
+// COMPONENTE DE IMPORTAÇÃO (ATUALIZADO)
 const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const [fileText, setFileText] = useState('');
     const [previewData, setPreviewData] = useState([]);
@@ -258,7 +262,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             if (!ccCode || !rawValue) continue;
             const detectedUnit = getUnitByCostCenter(ccCode);
             
-            // 1. DIVISÃO POR 100 (CORRIGIDO)
+            // 1. DIVISÃO POR 100
             rawValue = rawValue.replace(/\./g, '').replace(',', '.');
             const value = parseFloat(rawValue) / 100;
 
@@ -357,7 +361,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     );
 };
 
-// COMPONENTE DE CUSTOS E DESPESAS (AGRUPADO HIERARQUICAMENTE)
+// COMPONENTE DE CUSTOS E DESPESAS
 const CustosComponent = ({ transactions, showToast }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -380,9 +384,7 @@ const CustosComponent = ({ transactions, showToast }) => {
         setFiltered(data);
     }, [transactions, searchTerm]);
 
-    // Agrupamento em 3 Níveis: Grupo Principal -> Subgrupo -> Classe -> Itens
     const groupedData = useMemo(() => {
-        // Estrutura Base
         const hierarchy = {
             'DESPESAS DA UNIDADE': {
                 total: 0,
@@ -399,35 +401,24 @@ const CustosComponent = ({ transactions, showToast }) => {
             if (t.accountPlan?.startsWith('03') || t.accountPlan?.startsWith('3.')) subgroupName = 'CUSTO OPERACIONAL INDÚSTRIA';
             else if (t.accountPlan?.startsWith('04') || t.accountPlan?.startsWith('4.')) subgroupName = 'CUSTO OPERACIONAL ADMINISTRAÇÃO';
 
-            // Referência ao Subgrupo
             const subgroup = hierarchy['DESPESAS DA UNIDADE'].subgroups[subgroupName];
-            
-            // Chave da Classe (Ex: 3.01.01 - Mão de Obra)
             const classKey = `${t.accountPlan} - ${t.planDescription}`;
             
             if (!subgroup.classes[classKey]) {
                 subgroup.classes[classKey] = {
-                    id: classKey,
-                    code: t.accountPlan,
-                    name: t.planDescription,
-                    total: 0,
-                    items: []
+                    id: classKey, code: t.accountPlan, name: t.planDescription, total: 0, items: []
                 };
             }
 
-            // Acumular Valores
             subgroup.classes[classKey].items.push(t);
             subgroup.classes[classKey].total += t.value;
             subgroup.total += t.value;
             hierarchy['DESPESAS DA UNIDADE'].total += t.value;
         });
-
         return hierarchy;
     }, [filtered]);
 
-    const toggleGroup = (id) => {
-        setExpandedGroups(prev => ({ ...prev, [id]: !prev[id] }));
-    };
+    const toggleGroup = (id) => setExpandedGroups(prev => ({ ...prev, [id]: !prev[id] }));
 
     const exportData = (type) => {
         const data = filtered.map(t => ({ 
@@ -450,12 +441,7 @@ const CustosComponent = ({ transactions, showToast }) => {
                 <div className="flex gap-2 w-full md:w-auto">
                     <div className="relative flex-1 md:w-64">
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={16}/>
-                        <input 
-                            className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
-                            placeholder="Pesquisar classe ou fornecedor..." 
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
+                        <input className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Pesquisar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                     </div>
                     <button onClick={() => exportData('xlsx')} className="text-emerald-500 flex items-center gap-1 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg hover:bg-emerald-100"><Download size={16}/> Excel</button>
                 </div>
@@ -463,43 +449,29 @@ const CustosComponent = ({ transactions, showToast }) => {
             <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300">
-                        <tr>
-                            <th className="p-3 w-10"></th>
-                            <th className="p-3">Estrutura de Contas</th>
-                            <th className="p-3 text-right">Valor Total</th>
-                        </tr>
+                        <tr><th className="p-3 w-10"></th><th className="p-3">Estrutura de Contas</th><th className="p-3 text-right">Valor Total</th></tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
-                        {/* GRUPO PRINCIPAL: DESPESAS DA UNIDADE */}
                         <tr className="bg-slate-200 dark:bg-slate-800 font-bold cursor-pointer" onClick={() => toggleGroup('DESPESAS DA UNIDADE')}>
                             <td className="p-3 text-center">{expandedGroups['DESPESAS DA UNIDADE'] ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</td>
                             <td className="p-3 uppercase text-indigo-800 dark:text-indigo-400">DESPESAS DA UNIDADE</td>
                             <td className="p-3 text-right text-rose-600 dark:text-rose-400">{groupedData['DESPESAS DA UNIDADE'].total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                         </tr>
-
                         {expandedGroups['DESPESAS DA UNIDADE'] && Object.entries(groupedData['DESPESAS DA UNIDADE'].subgroups).map(([subName, subData]) => (
                             subData.total > 0 && (
                                 <React.Fragment key={subName}>
-                                    {/* SUBGRUPOS: INDÚSTRIA / ADM */}
                                     <tr className="bg-slate-100 dark:bg-slate-700/50 font-semibold cursor-pointer border-l-4 border-indigo-500" onClick={() => toggleGroup(subName)}>
                                         <td className="p-3 text-center pl-6">{expandedGroups[subName] ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}</td>
                                         <td className="p-3 text-slate-700 dark:text-slate-200">{subName}</td>
                                         <td className="p-3 text-right text-slate-700 dark:text-slate-200">{subData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                     </tr>
-
-                                    {/* CLASSES DE CUSTO */}
                                     {expandedGroups[subName] && Object.values(subData.classes).sort((a,b) => a.code.localeCompare(b.code)).map(classe => (
                                         <React.Fragment key={classe.id}>
                                             <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer" onClick={() => toggleGroup(classe.id)}>
                                                 <td className="p-3 text-center pl-10">{expandedGroups[classe.id] ? <ChevronDown size={14} className="text-slate-400"/> : <ChevronRight size={14} className="text-slate-400"/>}</td>
-                                                <td className="p-3 dark:text-slate-300">
-                                                    <span className="font-mono text-xs bg-slate-200 dark:bg-slate-600 px-1 rounded mr-2">{classe.code}</span>
-                                                    {classe.name}
-                                                </td>
+                                                <td className="p-3 dark:text-slate-300"><span className="font-mono text-xs bg-slate-200 dark:bg-slate-600 px-1 rounded mr-2">{classe.code}</span>{classe.name}</td>
                                                 <td className="p-3 text-right dark:text-slate-300">{classe.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                             </tr>
-
-                                            {/* ITENS (LANÇAMENTOS) */}
                                             {expandedGroups[classe.id] && classe.items.map(t => (
                                                 <tr key={t.id} className="bg-white dark:bg-slate-900 text-xs border-b dark:border-slate-800">
                                                     <td></td>
@@ -621,6 +593,7 @@ const DREComponent = ({ transactions }) => {
     }, [transactions]);
     return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden"><div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial</div><div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{dreData.map((row, i) => (<tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}><td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td><td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>{(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>))}</tbody></table></div></div>);
 };
+const KpiCard = ({ title, value, icon: Icon, color }) => { const colors = { emerald: 'text-emerald-600 bg-emerald-50', rose: 'text-rose-600 bg-rose-50', indigo: 'text-indigo-600 bg-indigo-50' }; return (<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold text-slate-500 uppercase mb-2">{title}</p><h3 className="text-2xl font-bold dark:text-white">{value}</h3></div><div className={`p-3 rounded-xl ${colors[color]}`}><Icon size={24}/></div></div></div>); };
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
     const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 7), type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
     const [activeTab, setActiveTab] = useState('expense'); 
@@ -684,6 +657,7 @@ export default function App() {
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]); // Para exclusão em lote
 
   const [importText, setImportText] = useState('');
   const [importSegment, setImportSegment] = useState(''); 
@@ -705,6 +679,7 @@ export default function App() {
         const segs = await dbService.getAll(user, 'segments');
         setTransactions(txs);
         setSegments(segs);
+        setSelectedIds([]); // Limpa seleção ao recarregar
     } catch (e) { showToast("Erro ao carregar dados.", 'error'); }
   };
   useEffect(() => { if (user) loadData(); }, [user]);
@@ -722,7 +697,31 @@ export default function App() {
   
   const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
 
-  // --- FILTRAGEM ---
+  // --- LÓGICA DE EXCLUSÃO EM LOTE ---
+  const handleSelectAll = (e) => {
+      if (e.target.checked) {
+          setSelectedIds(filteredData.map(t => t.id));
+      } else {
+          setSelectedIds([]);
+      }
+  };
+
+  const handleSelectOne = (id) => {
+      setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const handleBatchDelete = async () => {
+      if (!confirm(`Tem certeza que deseja excluir ${selectedIds.length} lançamentos?`)) return;
+      try {
+          await dbService.deleteBulk(user, 'transactions', selectedIds);
+          await loadData();
+          showToast(`${selectedIds.length} itens excluídos.`, 'success');
+      } catch (e) {
+          showToast("Erro ao excluir.", 'error');
+      }
+  };
+
+  // --- FILTRAGEM CORRIGIDA (PREFIXO) ---
   const filteredData = useMemo(() => {
       return transactions.filter(t => {
           const d = new Date(t.date);
@@ -740,11 +739,21 @@ export default function App() {
 
           if (!dateMatch) return false;
           
-          if (BUSINESS_HIERARCHY[globalUnitFilter]) {
-              return BUSINESS_HIERARCHY[globalUnitFilter].includes(t.segment);
-          } else {
-              return t.segment === globalUnitFilter;
+          if (globalUnitFilter !== 'ALL') {
+              // CORREÇÃO AQUI: Verifica se a unidade é um segmento (pasta)
+              if (BUSINESS_HIERARCHY[globalUnitFilter]) {
+                 // Se for segmento, verifica se a unidade do lançamento (limpa) está na lista desse segmento
+                 // O banco pode ter "Portos: Unidade" ou só "Unidade". Vamos limpar antes de comparar.
+                 const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                 // Verifica se a unidade limpa está na lista do segmento selecionado
+                 const is inSegment = BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName)); // Includes é mais seguro caso haja pequenas variações
+                 return is inSegment;
+              } else {
+                  // Se for unidade específica, compara direto
+                  return t.segment === globalUnitFilter || t.segment.endsWith(globalUnitFilter);
+              }
           }
+          return true;
       });
   }, [transactions, filter, globalUnitFilter, activeTab]);
 
@@ -810,10 +819,50 @@ export default function App() {
         {activeTab === 'lancamentos' && (
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border dark:border-slate-700">
              <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center">
-                 <h3 className="font-bold text-lg dark:text-white">Lançamentos</h3>
+                 <div className="flex gap-4 items-center">
+                    <h3 className="font-bold text-lg dark:text-white">Lançamentos</h3>
+                    {selectedIds.length > 0 && userRole === 'admin' && (
+                        <button onClick={handleBatchDelete} className="bg-rose-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-rose-700 transition-colors">
+                            Excluir ({selectedIds.length})
+                        </button>
+                    )}
+                 </div>
                  {['admin', 'editor'].includes(userRole) && <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>}
              </div>
-             <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400"><tr><th className="p-4">Data</th><th className="p-4">Descrição</th><th className="p-4">Unidade</th><th className="p-4">Conta/Tipo</th><th className="p-4 text-right">Valor</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{filteredData.map(t => (<tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{new Date(t.date).toLocaleDateString()}</td><td className="p-4 dark:text-white">{t.description}</td><td className="p-4 text-xs dark:text-slate-300">{t.segment}</td><td className="p-4 text-xs dark:text-slate-300">{t.type === 'metric' ? t.metricType.toUpperCase() : t.accountPlan}</td><td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>{t.value.toLocaleString()}</td><td className="p-4 flex gap-2">{['admin', 'editor'].includes(userRole) && <><button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>{userRole==='admin'&&<button onClick={()=>dbService.del(user, 'transactions', t.id).then(loadData)} className="text-rose-500"><Trash2 size={16}/></button>}</>}</td></tr>))}</tbody></table></div>
+             <div className="overflow-x-auto">
+                 <table className="w-full text-left text-sm">
+                     <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400">
+                         <tr>
+                             <th className="p-4 w-10">
+                                 <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length === filteredData.length && filteredData.length > 0} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                             </th>
+                             <th className="p-4">Data</th>
+                             <th className="p-4">Descrição</th>
+                             <th className="p-4">Unidade</th>
+                             <th className="p-4">Conta/Tipo</th>
+                             <th className="p-4 text-right">Valor</th>
+                             <th className="p-4">Ações</th>
+                         </tr>
+                     </thead>
+                     <tbody className="divide-y dark:divide-slate-700">
+                         {filteredData.map(t => (
+                             <tr key={t.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${selectedIds.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
+                                 <td className="p-4">
+                                     <input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                 </td>
+                                 <td className="p-4 dark:text-white">{new Date(t.date).toLocaleDateString()}</td>
+                                 <td className="p-4 dark:text-white">{t.description}</td>
+                                 <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
+                                 <td className="p-4 text-xs dark:text-slate-300">{t.type === 'metric' ? t.metricType.toUpperCase() : t.accountPlan}</td>
+                                 <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>{t.value.toLocaleString()}</td>
+                                 <td className="p-4 flex gap-2">
+                                     {['admin', 'editor'].includes(userRole) && <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>}
+                                 </td>
+                             </tr>
+                         ))}
+                     </tbody>
+                 </table>
+             </div>
           </div>
         )}
 
