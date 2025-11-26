@@ -5,7 +5,7 @@ import {
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, 
   AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown,
-  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search, CheckSquare, Square
+  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
@@ -40,6 +40,7 @@ const firebaseConfig = {
   messagingSenderId: "693431907072",
   appId: "1:693431907072:web:2dbc529e5ef65476feb9e5"
 };
+
 // ⚠️ 2. COLE SUA CHAVE DO GEMINI AQUI ⚠️
 const GEMINI_API_KEY = "SUA_KEY_GEMINI"; 
 
@@ -374,7 +375,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     );
 };
 
-// COMPONENTE DE CUSTOS E DESPESAS (AGRUPADO HIERARQUICAMENTE)
+// COMPONENTE DE CUSTOS E DESPESAS (AGRUPADO HIERARQUICAMENTE + ORDENAÇÃO POR VALOR + %)
 const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -469,7 +470,13 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
             <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm">
                     <thead className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300">
-                        <tr><th className="p-3 w-10"></th><th className="p-3">Estrutura de Contas</th><th className="p-3 text-right">Valor Total</th><th className="p-3 text-right">Custo p/ {measureUnit}</th><th className="p-3 text-right">%</th></tr>
+                        <tr>
+                            <th className="p-3 w-10"></th>
+                            <th className="p-3">Estrutura de Contas</th>
+                            <th className="p-3 text-right">Valor Total</th>
+                            <th className="p-3 text-right">Custo p/ {measureUnit}</th>
+                            <th className="p-3 text-right">%</th>
+                        </tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
                         <tr className="bg-slate-200 dark:bg-slate-800 font-bold cursor-pointer" onClick={() => toggleGroup('DESPESAS DA UNIDADE')}>
@@ -479,7 +486,11 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                             <td className="p-3 text-right">-</td>
                             <td className="p-3 text-right">100%</td>
                         </tr>
-                        {expandedGroups['DESPESAS DA UNIDADE'] && Object.entries(groupedData['DESPESAS DA UNIDADE'].subgroups).map(([subName, subData]) => (
+                        
+                        {/* SUB-GRUPOS ORDENADOS DO MAIOR PARA O MENOR */}
+                        {expandedGroups['DESPESAS DA UNIDADE'] && Object.entries(groupedData['DESPESAS DA UNIDADE'].subgroups)
+                            .sort(([, a], [, b]) => b.total - a.total) // <--- ORDENAÇÃO DE SUBGRUPOS AQUI
+                            .map(([subName, subData]) => (
                             subData.total > 0 && (
                                 <React.Fragment key={subName}>
                                     <tr className="bg-slate-100 dark:bg-slate-700/50 font-semibold cursor-pointer border-l-4 border-indigo-500" onClick={() => toggleGroup(subName)}>
@@ -487,8 +498,13 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                         <td className="p-3 text-slate-700 dark:text-slate-200">{subName}</td>
                                         <td className="p-3 text-right text-slate-700 dark:text-slate-200">{subData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                         <td className="p-3 text-right font-mono text-xs">{totalProduction > 0 ? (subData.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
-                                        <td className="p-3 text-right font-mono text-xs">{((subData.total / groupedData['DESPESAS DA UNIDADE'].total) * 100).toFixed(1)}%</td>
+                                        {/* % DO SUB-GRUPO SOBRE O TOTAL GERAL */}
+                                        <td className="p-3 text-right font-mono text-xs text-slate-500 dark:text-slate-400">
+                                            {((subData.total / groupedData['DESPESAS DA UNIDADE'].total) * 100).toFixed(1)}%
+                                        </td>
                                     </tr>
+                                    
+                                    {/* CLASSES DE CUSTO ORDENADAS POR VALOR */}
                                     {expandedGroups[subName] && Object.values(subData.classes).sort((a,b) => b.total - a.total).map(classe => (
                                         <React.Fragment key={classe.id}>
                                             <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer" onClick={() => toggleGroup(classe.id)}>
@@ -496,8 +512,13 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                                 <td className="p-3 dark:text-slate-300"><span className="font-mono text-xs bg-slate-200 dark:bg-slate-600 px-1 rounded mr-2">{classe.code}</span>{classe.name}</td>
                                                 <td className="p-3 text-right dark:text-slate-300">{classe.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                                 <td className="p-3 text-right font-mono text-xs dark:text-slate-400">{totalProduction > 0 ? (classe.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
-                                                <td className="p-3 text-right font-mono text-xs dark:text-slate-400">{((classe.total / subData.total) * 100).toFixed(1)}%</td>
+                                                {/* % DA CLASSE SOBRE O SUB-GRUPO */}
+                                                <td className="p-3 text-right font-mono text-xs dark:text-slate-400">
+                                                    {((classe.total / subData.total) * 100).toFixed(1)}%
+                                                </td>
                                             </tr>
+                                            
+                                            {/* ITENS (LANÇAMENTOS) */}
                                             {expandedGroups[classe.id] && classe.items.map(t => (
                                                 <tr key={t.id} className="bg-white dark:bg-slate-900 text-xs border-b dark:border-slate-800">
                                                     <td></td>
@@ -512,7 +533,10 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                                                     </td>
                                                     <td className="p-2 text-right text-rose-500">{t.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                                                     <td className="p-2 text-right">-</td>
-                                                    <td className="p-2 text-right text-slate-400">{((t.value / classe.total) * 100).toFixed(1)}%</td>
+                                                    {/* % DO ITEM SOBRE A CLASSE */}
+                                                    <td className="p-2 text-right text-slate-400">
+                                                        {((t.value / classe.total) * 100).toFixed(1)}%
+                                                    </td>
                                                 </tr>
                                             ))}
                                         </React.Fragment>
@@ -792,6 +816,7 @@ export default function App() {
 
   const currentMeasureUnit = getMeasureUnit(globalUnitFilter);
   
+  // CÁLCULO DE PRODUÇÃO TOTAL PARA O CUSTO UNITÁRIO
   const totalProduction = useMemo(() => {
       return filteredData
         .filter(t => t.type === 'metric' && t.metricType === 'producao')
