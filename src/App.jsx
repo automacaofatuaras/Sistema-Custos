@@ -1276,6 +1276,7 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
 const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentFilter }) => {
     const stockData = useMemo(() => {
         // 1. CÁLCULO DO ANO TODO (Para garantir o saldo acumulado correto)
+        // Usa transactions (que agora está recebendo stockDataRaw do App.js)
         const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
         const avgCost = globalCostPerUnit || 0;
 
@@ -1320,22 +1321,23 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
             }
         });
 
-        // 2. RECORTA O GRÁFICO PARA O MÊS SELECIONADO
+        // 2. RECORTA O GRÁFICO PARA O PERÍODO SELECIONADO (Mês, Trimestre, etc)
         // O cálculo acima rodou o ano todo. Agora filtramos só o que será exibido no gráfico.
         let filteredEvolution = fullEvolution;
         
-        if (currentFilter.type === 'month') {
+        if (currentFilter && currentFilter.type === 'month') {
             filteredEvolution = fullEvolution.filter(item => item.dateObj.getMonth() === currentFilter.month);
-        } else if (currentFilter.type === 'quarter') {
+        } else if (currentFilter && currentFilter.type === 'quarter') {
             const startMonth = (currentFilter.quarter - 1) * 3;
             const endMonth = startMonth + 2;
             filteredEvolution = fullEvolution.filter(item => item.dateObj.getMonth() >= startMonth && item.dateObj.getMonth() <= endMonth);
-        } else if (currentFilter.type === 'semester') {
+        } else if (currentFilter && currentFilter.type === 'semester') {
              const isFirstSem = currentFilter.semester === 1;
              filteredEvolution = fullEvolution.filter(item => isFirstSem ? item.dateObj.getMonth() < 6 : item.dateObj.getMonth() >= 6);
         }
+        // Se for filtro 'year', ele mostra tudo (fullEvolution)
 
-        // Pega os saldos FINAIS (acumulados até o último dia processado)
+        // Pega os saldos FINAIS (acumulados até o último dia processado no ano)
         const totalFinal = Object.values(balances).reduce((a, b) => a + b, 0);
 
         return { 
