@@ -289,7 +289,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
             // Adiciona hora fixa para evitar regressão de dia em browsers
-            const safeDateWithTime = `${isoDate}T10:00:00`;
+            const safeDateWithTime = `${isoDate}T12:00:00`;
 
             if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
 
@@ -748,9 +748,18 @@ export default function App() {
 
   const filteredData = useMemo(() => {
       return transactions.filter(t => {
-          const d = new Date(t.date);
-          const y = d.getFullYear();
-          const m = d.getMonth();
+          // --- CORREÇÃO 2: LEITURA SEGURA DE DATA (SEM FUSO) ---
+          let y, m;
+          // Se for string ISO (2024-10-01...), lemos direto da string para evitar recuo de dia por fuso
+          if (typeof t.date === 'string' && t.date.length >= 10) {
+              y = parseInt(t.date.substring(0, 4));
+              m = parseInt(t.date.substring(5, 7)) - 1; // Mês 0-indexado
+          } else {
+              // Fallback para objetos Date antigos
+              const d = new Date(t.date);
+              y = d.getFullYear();
+              m = d.getMonth();
+          }
           
           const dateMatch = (() => {
               if (activeTab === 'lancamentos') return true; 
@@ -763,13 +772,19 @@ export default function App() {
 
           if (!dateMatch) return false;
           
+          // --- CORREÇÃO 1: FILTRO DE UNIDADE ---
           if (globalUnitFilter !== 'ALL') {
+              // Se for um Segmento Pai (ex: "Noromix Concreteiras")
               if (BUSINESS_HIERARCHY[globalUnitFilter]) {
                  const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
                  const isInSegment = BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
                  return isInSegment;
               } else {
-                  return t.segment === globalUnitFilter || t.segment.endsWith(globalUnitFilter);
+                  // Se for uma Unidade Específica
+                  // Normalizamos ambos os lados para garantir o match (remove prefixos antes do :)
+                  const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                  const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
+                  return txUnit === filterUnit;
               }
           }
           return true;
