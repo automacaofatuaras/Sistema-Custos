@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { 
   LayoutDashboard, UploadCloud, TrendingUp, TrendingDown, 
   DollarSign, Trash2, Building2, PlusCircle, Settings, Edit2, 
-  Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
-  Users, Sun, Moon, Lock, Sparkles, FileText, Download, 
+  Save, X, Calendar, Loader2, List, FileUp, UserCircle, 
+  Users, Sun, Moon, Sparkles, FileText, Download, 
   AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown,
   BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
 } from 'lucide-react';
@@ -16,13 +16,10 @@ import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { 
-  getAuth, onAuthStateChanged, signInWithEmailAndPassword, 
-  signOut, sendPasswordResetEmail, createUserWithEmailAndPassword
-} from 'firebase/auth';
+// REMOVIDO: Imports de Auth não são mais necessários para login manual
 import { 
   getFirestore, collection, addDoc, getDocs, deleteDoc, 
-  doc, updateDoc, writeBatch, setDoc, getDoc, query, where
+  doc, updateDoc, writeBatch, setDoc, getDoc
 } from 'firebase/firestore';
 
 /**
@@ -46,9 +43,15 @@ const GEMINI_API_KEY = "SUA_KEY_GEMINI";
 
 // Inicialização do Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
+// const auth = getAuth(app); // Auth desativado
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
+
+// USUÁRIO PADRÃO (MOCK) - Para o sistema achar que tem alguém logado
+const MOCK_USER = {
+    uid: "admin_principal",
+    email: "admin@noromix.com.br"
+};
 
 // --- DADOS DE INICIALIZAÇÃO ---
 const BUSINESS_HIERARCHY = {
@@ -125,7 +128,6 @@ const getUnitByCostCenter = (ccCode) => {
 
     if (cc >= 13000 && cc <= 13999) return "Porto de Areia Saara - Mira Estrela";
     if (cc >= 14000 && cc <= 14999) return "Porto Agua Amarela - Riolândia";
-    // ... (Outras unidades conforme lógica anterior, simplificado aqui para não estourar limite, mas mantenha sua lógica completa)
     if (cc >= 27000 && cc <= 27999) return "Noromix Concreteiras: Noromix Concreto S/A - Fernandópolis";
     if (cc >= 22000 && cc <= 22999) return "Noromix Concreteiras: Noromix Concreto S/A - Ilha Solteira";
     if (cc >= 25000 && cc <= 25999) return "Noromix Concreteiras: Noromix Concreto S/A - Jales";
@@ -193,39 +195,20 @@ const useToast = () => {
     return [toast, showToast];
 };
 
+// --- SERVIÇOS (MODIFICADO PARA NÃO PRECISAR DE AUTH) ---
 const dbService = {
   getCollRef: (user, colName) => {
-    if (!user) throw new Error("Usuário não autenticado");
+    // Removed user check
     return collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', colName);
   },
   syncSystem: async (user) => {
-    try {
-        const userRef = doc(db, 'artifacts', appId, 'users', user.uid);
-        const snap = await getDoc(userRef);
-        let role = 'viewer';
-        if (!snap.exists()) {
-          const usersColl = collection(db, 'artifacts', appId, 'users');
-          const allUsers = await getDocs(usersColl);
-          role = allUsers.empty ? 'admin' : 'viewer'; 
-          await setDoc(userRef, { email: user.email, role, createdAt: new Date().toISOString() });
-        } else { role = snap.data().role; }
-        if (role === 'admin') {
-            const segRef = collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', 'segments');
-            const segSnap = await getDocs(segRef);
-            const existingNames = segSnap.docs.map(d => d.data().name);
-            const missingUnits = SEED_UNITS.filter(seedUnit => !existingNames.includes(seedUnit));
-            if (missingUnits.length > 0) {
-                const batch = writeBatch(db);
-                missingUnits.forEach(name => { const docRef = doc(segRef); batch.set(docRef, { name }); });
-                await batch.commit();
-            }
-        }
-        return role;
-    } catch (e) { console.error(e); return 'viewer'; }
+      // Bypass total
+      return 'admin';
   },
-  getAllUsers: async () => { const usersColl = collection(db, 'artifacts', appId, 'users'); const snap = await getDocs(usersColl); return snap.docs.map(d => ({ id: d.id, ...d.data() })); },
-  updateUserRole: async (userId, newRole) => { const userRef = doc(db, 'artifacts', appId, 'users', userId); await updateDoc(userRef, { role: newRole }); },
-  deleteUserAccess: async (userId) => { const userRef = doc(db, 'artifacts', appId, 'users', userId); await deleteDoc(userRef); },
+  getAllUsers: async () => { return []; }, // Desativado
+  updateUserRole: async () => {}, // Desativado
+  deleteUserAccess: async () => {}, // Desativado
+  
   add: async (user, col, item) => addDoc(dbService.getCollRef(user, col), item),
   update: async (user, col, id, data) => updateDoc(doc(dbService.getCollRef(user, col), id), data),
   del: async (user, col, id) => deleteDoc(doc(dbService.getCollRef(user, col), id)),
@@ -234,13 +217,14 @@ const dbService = {
   addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
 };
 
+const aiService = { analyze: async () => "IA Placeholder" };
+
 /**
  * ------------------------------------------------------------------
  * 2. COMPONENTES UI
  * ------------------------------------------------------------------
  */
 
-// ⚠️ KPI CARD DEFINIDO ANTES DO APP PARA EVITAR ERRO
 const KpiCard = ({ title, value, icon: Icon, color }) => {
     const colors = { emerald: 'text-emerald-600 bg-emerald-50', rose: 'text-rose-600 bg-rose-50', indigo: 'text-indigo-600 bg-indigo-50' };
     return (<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold text-slate-500 uppercase mb-2">{title}</p><h3 className="text-2xl font-bold dark:text-white">{value}</h3></div><div className={`p-3 rounded-xl ${colors[color]}`}><Icon size={24}/></div></div></div>);
@@ -298,12 +282,11 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             if (!ccCode || !rawValue) continue;
             
-            // 1. DIVISÃO POR 100
             rawValue = rawValue.replace(/\./g, '').replace(',', '.');
             let value = parseFloat(rawValue) / 100;
+
             if (isNaN(value) || value === 0) continue;
 
-            // 2. CORREÇÃO DE DATA (FUSO)
             let isoDate = new Date().toISOString().split('T')[0];
             if (dateStr && dateStr.length === 10) {
                 const parts = dateStr.split('/');
@@ -314,8 +297,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
             
-            // REGRAS DE SPLIT
-            // CC 1042 (Divide por 2)
             if (ccCode === '01042' || ccCode === '1042') {
                 const splitValue = value / 2;
                 const baseObj = {
@@ -328,7 +309,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 continue;
             }
 
-            // CC 1087/1089 (Divide por 8 e depois por 2)
             if (ccCode === '01087' || ccCode === '1087' || ccCode === '01089' || ccCode === '1089') {
                 const splitValue = (value / 8) / 2;
                 const baseObj = {
@@ -384,7 +364,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     );
 };
 
-// CUSTOS COMPONENT (CORRIGIDO E COMPLETADO)
 const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -559,8 +538,6 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
     );
 };
 
-// ... (Resto dos Componentes: HierarchicalSelect, PeriodSelector, LoginScreen, UsersScreen, DREComponent, ManualEntryModal, ProductionComponent, StockComponent, App - MANTIDOS)
-// Reinserindo App para garantir integridade
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -630,19 +607,7 @@ const PeriodSelector = ({ filter, setFilter, years }) => {
         </div>
     );
 };
-const LoginScreen = ({ showToast }) => {
-    const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [isReset, setIsReset] = useState(false); const [loading, setLoading] = useState(false);
-    const handleAuth = async (e) => { e.preventDefault(); setLoading(true); try { if (isReset) { await sendPasswordResetEmail(auth, email); showToast("Link enviado.", 'success'); setIsReset(false); } else { await signInWithEmailAndPassword(auth, email, password); } } catch (err) { showToast("Erro de acesso.", 'error'); } finally { setLoading(false); } };
-    return (<div className="min-h-screen bg-slate-900 flex items-center justify-center p-4"><div className="bg-white dark:bg-slate-800 w-full max-w-md p-8 rounded-2xl shadow-2xl"><div className="text-center mb-6"><Building2 className="text-indigo-600 mx-auto mb-2" size={40}/><h1 className="text-2xl font-bold dark:text-white">Acesso Restrito</h1><p className="text-slate-500 text-sm">Fechamento Custos</p></div><form onSubmit={handleAuth} className="space-y-4"><input className="w-full border p-3 rounded dark:bg-slate-700 dark:text-white" placeholder="Email Corporativo" value={email} onChange={e => setEmail(e.target.value)} />{!isReset && <input type="password" className="w-full border p-3 rounded dark:bg-slate-700 dark:text-white" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} />}<button disabled={loading} className="w-full bg-indigo-600 text-white py-3 rounded hover:bg-indigo-700 font-bold">{loading ? <Loader2 className="animate-spin mx-auto"/> : (isReset ? 'Recuperar Senha' : 'Entrar no Sistema')}</button></form><button onClick={() => setIsReset(!isReset)} className="w-full mt-4 text-slate-500 text-sm hover:underline">{isReset ? 'Voltar' : 'Esqueci a senha'}</button></div></div>);
-};
-const UsersScreen = ({ user, myRole, showToast }) => {
-    const [users, setUsers] = useState([]); const [newUserEmail, setNewUserEmail] = useState(''); const [newUserPass, setNewUserPass] = useState('');
-    const loadUsers = async () => { const list = await dbService.getAllUsers(); setUsers(list); }; useEffect(() => { loadUsers(); }, []);
-    const handleCreateUser = async () => { if (myRole !== 'admin') return; try { const secondaryApp = initializeApp(firebaseConfig, "Secondary"); const secondaryAuth = getAuth(secondaryApp); const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPass); await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid), { email: newUserEmail, role: 'viewer', createdAt: new Date().toISOString() }); await signOut(secondaryAuth); showToast("Usuário criado!", 'success'); setNewUserEmail(''); setNewUserPass(''); loadUsers(); } catch (e) { showToast("Erro: " + e.message, 'error'); } };
-    const handleChangeRole = async (uid, role) => { await dbService.updateUserRole(uid, role); loadUsers(); showToast("Permissão alterada.", 'success'); };
-    const handleDelete = async (uid) => { if (!confirm("Remover acesso?")) return; await dbService.deleteUserAccess(uid); loadUsers(); showToast("Acesso revogado.", 'success'); };
-    return (<div className="p-6 max-w-4xl mx-auto"><h2 className="text-2xl font-bold mb-6 dark:text-white">Gestão de Acessos</h2><div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-8 border dark:border-slate-700"><h3 className="font-bold mb-4 flex items-center gap-2 dark:text-white"><PlusCircle size={20}/> Cadastrar Novo Usuário</h3><div className="flex gap-4 items-end"><div className="flex-1"><label className="text-xs font-bold text-slate-500">Email</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserEmail} onChange={e=>setNewUserEmail(e.target.value)}/></div><div className="flex-1"><label className="text-xs font-bold text-slate-500">Senha Provisória</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserPass} onChange={e=>setNewUserPass(e.target.value)}/></div><button onClick={handleCreateUser} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700">Criar</button></div></div><div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700"><table className="w-full text-left"><thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{users.map(u => (<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{u.email}</td><td className="p-4"><select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select></td><td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td></tr>))}</tbody></table></div></div>);
-};
+
 const DREComponent = ({ transactions }) => {
     const dreData = useMemo(() => {
         const rows = JSON.parse(JSON.stringify(DRE_BLUEPRINT)); const accMap = {};
@@ -654,6 +619,7 @@ const DREComponent = ({ transactions }) => {
     }, [transactions]);
     return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden"><div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial</div><div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{dreData.map((row, i) => (<tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}><td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td><td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>{(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>))}</tbody></table></div></div>);
 };
+
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
     const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 7), type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
     const [activeTab, setActiveTab] = useState('expense'); 
@@ -663,6 +629,7 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
         if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
+        
         const [year, month] = form.date.split('-');
         const lastDay = new Date(year, month, 0).getDate();
         const fullDate = `${form.date}-${lastDay}`;
