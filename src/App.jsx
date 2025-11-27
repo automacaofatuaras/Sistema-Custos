@@ -776,63 +776,156 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
 };
 const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
     const stockData = useMemo(() => {
-        // Filtra transações de estoque e ordena por data
         const stockTxs = transactions
             .filter(t => t.type === 'metric' && t.metricType === 'estoque')
             .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-        // Soma total do volume de estoque (já respeita o filtro de segmento/unidade vindo do pai)
-        const totalStock = stockTxs.reduce((acc, t) => acc + t.value, 0);
-        
-        // Usa o custo médio vindo do App (que é o Custo p/ Ton do período/segmento)
-        // Se não houver custo (ex: sem produção), assume 0
+        // Custo Médio Global vindo da prop
         const avgCost = globalCostPerUnit || 0;
-        
-        const totalValue = totalStock * avgCost;
 
-        // Prepara dados do gráfico
+        // Estrutura para os Portos de Areia
+        const breakdown = {
+            total: 0,
+            fina: 0,
+            grossa: 0,
+            suja: 0,
+            outros: 0
+        };
+
+        stockTxs.forEach(t => {
+            const val = t.value;
+            breakdown.total += val;
+            
+            // Verifica na descrição do material OU na descrição principal
+            const desc = (t.materialDescription || t.description || '').toLowerCase();
+
+            if (desc.includes('fina')) {
+                breakdown.fina += val;
+            } else if (desc.includes('grossa')) {
+                breakdown.grossa += val;
+            } else if (desc.includes('suja')) {
+                breakdown.suja += val;
+            } else {
+                breakdown.outros += val;
+            }
+        });
+
+        // Prepara dados do gráfico (Evolução Total)
         const evolution = stockTxs.map(t => ({ 
             date: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), 
             Estoque: t.value 
         }));
 
-        return { total: totalStock, avgCost, totalValue, evolution };
+        return { 
+            ...breakdown, 
+            avgCost, 
+            totalValue: breakdown.total * avgCost,
+            valFina: breakdown.fina * avgCost,
+            valGrossa: breakdown.grossa * avgCost,
+            valSuja: breakdown.suja * avgCost,
+            evolution 
+        };
     }, [transactions, globalCostPerUnit]);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+            {/* CARDS PRINCIPAIS - TOTAIS */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
-                    <p className="text-slate-500 text-xs font-bold uppercase">Estoque Total</p>
-                    <h3 className="text-2xl font-bold dark:text-white">{stockData.total.toLocaleString()} {measureUnit}</h3>
+                <div className="bg-indigo-600 text-white p-6 rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none">
+                    <p className="text-indigo-200 text-xs font-bold uppercase mb-2">Estoque Total Físico</p>
+                    <h3 className="text-3xl font-bold">{stockData.total.toLocaleString()} <span className="text-lg font-normal opacity-80">{measureUnit}</span></h3>
+                    <div className="mt-4 pt-4 border-t border-indigo-500/50 flex justify-between items-center text-sm">
+                        <span>Custo Médio Aplicado</span>
+                        <span className="font-bold bg-indigo-500 px-2 py-1 rounded">R$ {stockData.avgCost.toFixed(2)}</span>
+                    </div>
                 </div>
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
-                    <p className="text-slate-500 text-xs font-bold uppercase">Custo Médio ({measureUnit})</p>
-                    <h3 className="text-2xl font-bold dark:text-white">R$ {stockData.avgCost.toFixed(2)}</h3>
-                    <p className="text-[10px] text-slate-400 mt-1">Baseado no Custo/Ton do período</p>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
-                    <p className="text-slate-500 text-xs font-bold uppercase">Valor Total Estoque</p>
-                    <h3 className="text-2xl font-bold text-emerald-600">
+
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm col-span-2 flex flex-col justify-center">
+                    <p className="text-slate-500 text-xs font-bold uppercase mb-2">Valor Total em Estoque</p>
+                    <h3 className="text-4xl font-bold text-emerald-600 dark:text-emerald-400">
                         {stockData.totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
                     </h3>
+                    <p className="text-slate-400 text-sm mt-1">Soma de todos os materiais x Custo da Tonelada no período</p>
                 </div>
             </div>
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80">
-                <h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque (Soma Unidades)</h3>
+
+            <h3 className="font-bold text-lg dark:text-white flex items-center gap-2 mt-8">
+                <Package className="text-indigo-500"/> Detalhamento por Material (Portos)
+            </h3>
+
+            {/* DETALHAMENTO POR TIPO DE AREIA */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* AREIA FINA */}
+                <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-amber-400 shadow-sm border dark:border-slate-700">
+                    <div className="flex justify-between mb-2">
+                        <span className="font-bold text-slate-700 dark:text-slate-200">Areia Fina</span>
+                        <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded">FINA</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Volume</p>
+                            <p className="text-lg font-bold dark:text-white">{stockData.fina.toLocaleString()} {measureUnit}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Valor</p>
+                            <p className="text-lg font-bold text-emerald-600">{stockData.valFina.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* AREIA GROSSA */}
+                <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-blue-500 shadow-sm border dark:border-slate-700">
+                    <div className="flex justify-between mb-2">
+                        <span className="font-bold text-slate-700 dark:text-slate-200">Areia Grossa</span>
+                        <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded">GROSSA</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Volume</p>
+                            <p className="text-lg font-bold dark:text-white">{stockData.grossa.toLocaleString()} {measureUnit}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Valor</p>
+                            <p className="text-lg font-bold text-emerald-600">{stockData.valGrossa.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* AREIA SUJA */}
+                <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-stone-500 shadow-sm border dark:border-slate-700">
+                    <div className="flex justify-between mb-2">
+                        <span className="font-bold text-slate-700 dark:text-slate-200">Areia Suja</span>
+                        <span className="text-xs font-bold bg-stone-100 text-stone-700 px-2 py-1 rounded">SUJA</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Volume</p>
+                            <p className="text-lg font-bold dark:text-white">{stockData.suja.toLocaleString()} {measureUnit}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Valor</p>
+                            <p className="text-lg font-bold text-emerald-600">{stockData.valSuja.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* GRÁFICO DE EVOLUÇÃO */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80 mt-6">
+                <h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque Físico (Total)</h3>
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={stockData.evolution}>
                         <defs>
                             <linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
-                                <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
                             </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
                         <XAxis dataKey="date" />
                         <YAxis />
                         <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
-                        <Area type="monotone" dataKey="Estoque" stroke="#8884d8" fillOpacity={1} fill="url(#colorStock)" />
+                        <Area type="monotone" dataKey="Estoque" stroke="#6366f1" fillOpacity={1} fill="url(#colorStock)" />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
@@ -955,13 +1048,24 @@ export default function App() {
 
   const currentMeasureUnit = getMeasureUnit(globalUnitFilter);
   
+// --- CÁLCULOS GERAIS PARA O DASHBOARD ---
   const totalProduction = useMemo(() => {
       return filteredData
         .filter(t => t.type === 'metric' && t.metricType === 'producao')
         .reduce((acc, t) => acc + t.value, 0);
   }, [filteredData]);
-  // ADICIONAR ESTA LINHA DENTRO DO COMPONENTE APP (ANTES DO RETURN)
+
+  const totalSales = useMemo(() => {
+      return filteredData
+        .filter(t => t.type === 'metric' && t.metricType === 'vendas')
+        .reduce((acc, t) => acc + t.value, 0);
+  }, [filteredData]);
+
   const costPerUnit = totalProduction > 0 ? kpis.expense / totalProduction : 0;
+  
+  // Novos KPIs
+  const resultMargin = kpis.revenue > 0 ? (kpis.balance / kpis.revenue) * 100 : 0;
+  const resultPerSalesUnit = totalSales > 0 ? kpis.balance / totalSales : 0;
 
   if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
 
@@ -996,18 +1100,84 @@ export default function App() {
           </div>
         </header>
 
-        {activeTab === 'dashboard' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6"> {/* Mudado para 4 colunas */}
-              <KpiCard title="Receitas" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" />
-              <KpiCard title="Despesas" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" />
-              <KpiCard title="Resultado" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} />
-              {/* NOVO KPI CUSTO P/ TON */}
-              <KpiCard title={`Custo p/ ${currentMeasureUnit}`} value={costPerUnit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={Factory} color="indigo" />
+{activeTab === 'dashboard' && (
+          <div className="space-y-6 animate-in fade-in duration-500">
+            {/* GRID DE KPIS PRINCIPAIS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" />
+              <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" />
+              <KpiCard title="Resultado Líquido" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} />
+              <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm flex flex-col justify-center">
+                 <p className="text-xs font-bold text-slate-500 uppercase mb-1">Margem de Resultado</p>
+                 <div className="flex items-end gap-2">
+                    <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
+                    <span className="text-xs text-slate-400 mb-2">do faturamento</span>
+                 </div>
+              </div>
             </div>
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm h-80 border dark:border-slate-700">
-              <h3 className="mb-4 font-bold dark:text-white">Fluxo do Período</h3>
-              <ResponsiveContainer width="100%" height="100%"><BarChart data={[{ name: 'Total', Entradas: kpis.revenue, Saidas: kpis.expense }]}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="name" /><YAxis /><Tooltip /><Bar dataKey="Entradas" fill="#10b981" /><Bar dataKey="Saidas" fill="#f43f5e" /></BarChart></ResponsiveContainer>
+
+            {/* SEGUNDA LINHA DE KPIS OPERACIONAIS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex justify-between items-start">
+                    <div>
+                        <p className="text-xs font-bold text-slate-500 uppercase">Produção Total</p>
+                        <h3 className="text-2xl font-bold dark:text-white mt-2">{totalProduction.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3>
+                    </div>
+                    <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600"><Factory size={20}/></div>
+                  </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex justify-between items-start">
+                    <div>
+                        <p className="text-xs font-bold text-slate-500 uppercase">Vendas Totais</p>
+                        <h3 className="text-2xl font-bold dark:text-white mt-2">{totalSales.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3>
+                    </div>
+                    <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600"><ShoppingCart size={20}/></div>
+                  </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex justify-between items-start">
+                    <div>
+                        <p className="text-xs font-bold text-slate-500 uppercase">Custo Médio</p>
+                        <h3 className="text-2xl font-bold text-rose-600 mt-2">{costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} <span className="text-sm font-normal text-slate-400">/{currentMeasureUnit}</span></h3>
+                    </div>
+                    <div className="p-2 bg-rose-100 rounded-lg text-rose-600"><TrendingDown size={20}/></div>
+                  </div>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex justify-between items-start">
+                    <div>
+                        <p className="text-xs font-bold text-slate-500 uppercase">Resultado Operacional</p>
+                        <h3 className={`text-2xl font-bold mt-2 ${resultPerSalesUnit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{resultPerSalesUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} <span className="text-sm font-normal text-slate-400">/{currentMeasureUnit} vendido</span></h3>
+                    </div>
+                    <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600"><DollarSign size={20}/></div>
+                  </div>
+              </div>
+            </div>
+
+            {/* GRÁFICO */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm h-96 border dark:border-slate-700">
+              <h3 className="mb-6 font-bold text-lg dark:text-white flex items-center gap-2"><BarChartIcon size={20}/> Fluxo Financeiro do Período</h3>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[{ name: 'Fluxo Global', Receitas: kpis.revenue, Despesas: kpis.expense, Resultado: kpis.balance }]} barSize={60}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.5} />
+                    <XAxis dataKey="name" tick={false} />
+                    <YAxis tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} />
+                    <Tooltip 
+                        cursor={{fill: 'transparent'}}
+                        contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }} 
+                        formatter={(val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    />
+                    <Legend wrapperStyle={{paddingTop: '20px'}}/>
+                    <Bar name="Receitas" dataKey="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    <Bar name="Despesas" dataKey="Despesas" fill="#f43f5e" radius={[4, 4, 0, 0]} />
+                    <Bar name="Resultado" dataKey="Resultado" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           </div>
         )}
