@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { 
   LayoutDashboard, UploadCloud, TrendingUp, TrendingDown, 
   DollarSign, Trash2, Building2, PlusCircle, Settings, Edit2, 
-  Save, X, Calendar, Loader2, List, FileUp, UserCircle, 
-  Users, Sun, Moon, Sparkles, FileText, Download, 
+  Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
+  Users, Sun, Moon, Lock, Sparkles, FileText, Download, 
   AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown,
   BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
 } from 'lucide-react';
@@ -16,7 +16,6 @@ import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 import { initializeApp, getApp, getApps } from 'firebase/app';
-// REMOVIDO: Imports de Auth não são mais necessários para login manual
 import { 
   getFirestore, collection, addDoc, getDocs, deleteDoc, 
   doc, updateDoc, writeBatch, setDoc, getDoc
@@ -43,15 +42,9 @@ const GEMINI_API_KEY = "SUA_KEY_GEMINI";
 
 // Inicialização do Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-// const auth = getAuth(app); // Auth desativado
+// Auth removido propositalmente para acesso direto
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
-
-// USUÁRIO PADRÃO (MOCK) - Para o sistema achar que tem alguém logado
-const MOCK_USER = {
-    uid: "admin_principal",
-    email: "admin@noromix.com.br"
-};
 
 // --- DADOS DE INICIALIZAÇÃO ---
 const BUSINESS_HIERARCHY = {
@@ -69,39 +62,7 @@ const SEGMENT_CONFIG = {
     "Construtora": "ton", "Fábrica de Tubos": "m³", "Noromix Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "ton", "Usinas de Asfalto": "ton"
 };
 
-// LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE)
-const ADMIN_CC_CODES = [
-    13000, 14000, // Portos
-    27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, // Concreteiras
-    10000, // Fabrica
-    20000, 5000, 4000, 3000, 26000, 2000, // Pedreiras
-    32000, 6000, 17000, 31000, 7000, 21000, // Usinas
-    40000 // Construtora
-];
-
-const getMeasureUnit = (unitOrSegment) => {
-    if (SEGMENT_CONFIG[unitOrSegment]) return SEGMENT_CONFIG[unitOrSegment];
-    for (const [segment, units] of Object.entries(BUSINESS_HIERARCHY)) {
-        if (units.includes(unitOrSegment)) return SEGMENT_CONFIG[segment];
-    }
-    return "un"; 
-};
-
-const getParentSegment = (unitName) => {
-    for (const [segment, units] of Object.entries(BUSINESS_HIERARCHY)) {
-        if (units.includes(unitName) || unitName.includes(segment)) return segment;
-    }
-    return "Geral";
-};
-
-const formatDate = (dateString) => {
-    if (!dateString) return '-';
-    const parts = dateString.split('-'); 
-    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    return dateString;
-};
-
-// --- REGRAS DE CUSTOS POR SEGMENTO ---
+// REGRAS DE CUSTOS POR SEGMENTO
 const COST_CENTER_RULES = {
     "Portos de Areia": {
         "DESPESAS DA UNIDADE": {
@@ -119,7 +80,35 @@ const COST_CENTER_RULES = {
     }
 };
 
-// --- MAPEAMENTO AUTOMÁTICO DE UNIDADES POR CENTRO DE CUSTO ---
+// LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE)
+const ADMIN_CC_CODES = [
+    13000, 14000, 27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, 
+    10000, 20000, 5000, 4000, 3000, 26000, 2000, 32000, 6000, 17000, 31000, 7000, 21000, 40000
+];
+
+const getMeasureUnit = (unitOrSegment) => {
+    if (SEGMENT_CONFIG[unitOrSegment]) return SEGMENT_CONFIG[unitOrSegment];
+    for (const [segment, units] of Object.entries(BUSINESS_HIERARCHY)) {
+        if (units.includes(unitOrSegment)) return SEGMENT_CONFIG[segment];
+    }
+    return "un"; 
+};
+
+const getParentSegment = (unitName) => {
+    for (const [segment, units] of Object.entries(BUSINESS_HIERARCHY)) {
+        if (units.includes(unitName) || unitName.includes(segment)) return segment;
+    }
+    return "Geral";
+};
+
+// FORMATADOR DE DATA (SEM FUSO HORÁRIO)
+const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const parts = dateString.split('-'); 
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return dateString;
+};
+
 const getUnitByCostCenter = (ccCode) => {
     const cc = parseInt(ccCode, 10);
     if (isNaN(cc)) return null;
@@ -138,19 +127,19 @@ const getUnitByCostCenter = (ccCode) => {
     if (cc >= 9000 && cc <= 9999) return "Noromix Concreteiras: Noromix Concreto S/A - Três Fronteiras";
     if (cc >= 8000 && cc <= 8999) return "Noromix Concreteiras: Noromix Concreto S/A - Votuporanga";
     if (cc >= 10000 && cc <= 10999) return "Fábrica de Tubos: Noromix Concreto S/A - Votuporanga (Fábrica)";
-    if (cc >= 20000 && cc <= 20999) return "Mineração Grandes Lagos - Icém";
-    if (cc >= 5000 && cc <= 5999) return "Mineração Grandes Lagos - Itapura";
-    if (cc >= 4000 && cc <= 4999) return "Mineração Grandes Lagos - Riolândia";
-    if (cc >= 3000 && cc <= 3999) return "Mineração Grandes Lagos - Três Fronteiras";
-    if (cc >= 26000 && cc <= 26999) return "Noromix Concreto S/A - Rinópolis";
-    if (cc >= 2000 && cc <= 2999) return "Mineração Noroeste Paulista - Monções";
-    if (cc >= 32000 && cc <= 32999) return "Noromix Concreto S/A - Assis";
-    if (cc >= 6000 && cc <= 6999) return "Noromix Concreto S/A - Monções (Usina)";
-    if (cc >= 17000 && cc <= 17999) return "Noromix Concreto S/A - Itapura (Usina)";
-    if (cc >= 31000 && cc <= 31999) return "Noromix Concreto S/A - Rinópolis (Usina)";
-    if (cc >= 7000 && cc <= 7999) return "Demop Participações LTDA - Três Fronteiras";
-    if (cc >= 21000 && cc <= 21999) return "Mineração Grandes Lagos - Icém (Usina)";
-    if (cc >= 40000 && cc <= 94999 && cc !== 94901) return "Noromix Construtora";
+    if (cc >= 20000 && cc <= 20999) return "Pedreiras: Mineração Grandes Lagos - Icém";
+    if (cc >= 5000 && cc <= 5999) return "Pedreiras: Mineração Grandes Lagos - Itapura";
+    if (cc >= 4000 && cc <= 4999) return "Pedreiras: Mineração Grandes Lagos - Riolândia";
+    if (cc >= 3000 && cc <= 3999) return "Pedreiras: Mineração Grandes Lagos - Três Fronteiras";
+    if (cc >= 26000 && cc <= 26999) return "Pedreiras: Noromix Concreto S/A - Rinópolis";
+    if (cc >= 2000 && cc <= 2999) return "Pedreiras: Mineração Noroeste Paulista - Monções";
+    if (cc >= 32000 && cc <= 32999) return "Usinas de Asfalto: Noromix Concreto S/A - Assis";
+    if (cc >= 6000 && cc <= 6999) return "Usinas de Asfalto: Noromix Concreto S/A - Monções (Usina)";
+    if (cc >= 17000 && cc <= 17999) return "Usinas de Asfalto: Noromix Concreto S/A - Itapura (Usina)";
+    if (cc >= 31000 && cc <= 31999) return "Usinas de Asfalto: Noromix Concreto S/A - Rinópolis (Usina)";
+    if (cc >= 7000 && cc <= 7999) return "Usinas de Asfalto: Demop Participações LTDA - Três Fronteiras";
+    if (cc >= 21000 && cc <= 21999) return "Usinas de Asfalto: Mineração Grandes Lagos - Icém (Usina)";
+    if (cc >= 40000 && cc <= 94999 && cc !== 94901) return "Construtora: Noromix Construtora";
     return null;
 };
 
@@ -195,20 +184,19 @@ const useToast = () => {
     return [toast, showToast];
 };
 
-// --- SERVIÇOS (MODIFICADO PARA NÃO PRECISAR DE AUTH) ---
+// --- SERVIÇOS (SEM LOGIN) ---
 const dbService = {
   getCollRef: (user, colName) => {
-    // Removed user check
+    // Sem validação de usuário
     return collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', colName);
   },
   syncSystem: async (user) => {
-      // Bypass total
-      return 'admin';
+    // Sempre retorna admin para liberar acesso
+    return 'admin';
   },
-  getAllUsers: async () => { return []; }, // Desativado
-  updateUserRole: async () => {}, // Desativado
-  deleteUserAccess: async () => {}, // Desativado
-  
+  getAllUsers: async () => { const usersColl = collection(db, 'artifacts', appId, 'users'); const snap = await getDocs(usersColl); return snap.docs.map(d => ({ id: d.id, ...d.data() })); },
+  updateUserRole: async (userId, newRole) => { const userRef = doc(db, 'artifacts', appId, 'users', userId); await updateDoc(userRef, { role: newRole }); },
+  deleteUserAccess: async (userId) => { const userRef = doc(db, 'artifacts', appId, 'users', userId); await deleteDoc(userRef); },
   add: async (user, col, item) => addDoc(dbService.getCollRef(user, col), item),
   update: async (user, col, id, data) => updateDoc(doc(dbService.getCollRef(user, col), id), data),
   del: async (user, col, id) => deleteDoc(doc(dbService.getCollRef(user, col), id)),
@@ -287,6 +275,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             if (isNaN(value) || value === 0) continue;
 
+            // CORREÇÃO DE DATA (FUSO)
             let isoDate = new Date().toISOString().split('T')[0];
             if (dateStr && dateStr.length === 10) {
                 const parts = dateStr.split('/');
@@ -297,6 +286,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
             
+            // CC 1042 (Divide por 2)
             if (ccCode === '01042' || ccCode === '1042') {
                 const splitValue = value / 2;
                 const baseObj = {
@@ -309,6 +299,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 continue;
             }
 
+            // CC 1087/1089 (Divide por 8 e depois por 2)
             if (ccCode === '01087' || ccCode === '1087' || ccCode === '01089' || ccCode === '1089') {
                 const splitValue = (value / 8) / 2;
                 const baseObj = {
@@ -607,7 +598,19 @@ const PeriodSelector = ({ filter, setFilter, years }) => {
         </div>
     );
 };
-
+const LoginScreen = ({ showToast }) => {
+    const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [isReset, setIsReset] = useState(false); const [loading, setLoading] = useState(false);
+    const handleAuth = async (e) => { e.preventDefault(); setLoading(true); try { if (isReset) { await sendPasswordResetEmail(auth, email); showToast("Link enviado.", 'success'); setIsReset(false); } else { await signInWithEmailAndPassword(auth, email, password); } } catch (err) { showToast("Erro de acesso.", 'error'); } finally { setLoading(false); } };
+    return (<div className="min-h-screen bg-slate-900 flex items-center justify-center p-4"><div className="bg-white dark:bg-slate-800 w-full max-w-md p-8 rounded-2xl shadow-2xl"><div className="text-center mb-6"><Building2 className="text-indigo-600 mx-auto mb-2" size={40}/><h1 className="text-2xl font-bold dark:text-white">Acesso Restrito</h1><p className="text-slate-500 text-sm">Fechamento Custos</p></div><form onSubmit={handleAuth} className="space-y-4"><input className="w-full border p-3 rounded dark:bg-slate-700 dark:text-white" placeholder="Email Corporativo" value={email} onChange={e => setEmail(e.target.value)} />{!isReset && <input type="password" className="w-full border p-3 rounded dark:bg-slate-700 dark:text-white" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} />}<button disabled={loading} className="w-full bg-indigo-600 text-white py-3 rounded hover:bg-indigo-700 font-bold">{loading ? <Loader2 className="animate-spin mx-auto"/> : (isReset ? 'Recuperar Senha' : 'Entrar no Sistema')}</button></form><button onClick={() => setIsReset(!isReset)} className="w-full mt-4 text-slate-500 text-sm hover:underline">{isReset ? 'Voltar' : 'Esqueci a senha'}</button></div></div>);
+};
+const UsersScreen = ({ user, myRole, showToast }) => {
+    const [users, setUsers] = useState([]); const [newUserEmail, setNewUserEmail] = useState(''); const [newUserPass, setNewUserPass] = useState('');
+    const loadUsers = async () => { const list = await dbService.getAllUsers(); setUsers(list); }; useEffect(() => { loadUsers(); }, []);
+    const handleCreateUser = async () => { if (myRole !== 'admin') return; try { const secondaryApp = initializeApp(firebaseConfig, "Secondary"); const secondaryAuth = getAuth(secondaryApp); const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPass); await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid), { email: newUserEmail, role: 'viewer', createdAt: new Date().toISOString() }); await signOut(secondaryAuth); showToast("Usuário criado!", 'success'); setNewUserEmail(''); setNewUserPass(''); loadUsers(); } catch (e) { showToast("Erro: " + e.message, 'error'); } };
+    const handleChangeRole = async (uid, role) => { await dbService.updateUserRole(uid, role); loadUsers(); showToast("Permissão alterada.", 'success'); };
+    const handleDelete = async (uid) => { if (!confirm("Remover acesso?")) return; await dbService.deleteUserAccess(uid); loadUsers(); showToast("Acesso revogado.", 'success'); };
+    return (<div className="p-6 max-w-4xl mx-auto"><h2 className="text-2xl font-bold mb-6 dark:text-white">Gestão de Acessos</h2><div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-8 border dark:border-slate-700"><h3 className="font-bold mb-4 flex items-center gap-2 dark:text-white"><PlusCircle size={20}/> Cadastrar Novo Usuário</h3><div className="flex gap-4 items-end"><div className="flex-1"><label className="text-xs font-bold text-slate-500">Email</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserEmail} onChange={e=>setNewUserEmail(e.target.value)}/></div><div className="flex-1"><label className="text-xs font-bold text-slate-500">Senha Provisória</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserPass} onChange={e=>setNewUserPass(e.target.value)}/></div><button onClick={handleCreateUser} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700">Criar</button></div></div><div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700"><table className="w-full text-left"><thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{users.map(u => (<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{u.email}</td><td className="p-4"><select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select></td><td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td></tr>))}</tbody></table></div></div>);
+};
 const DREComponent = ({ transactions }) => {
     const dreData = useMemo(() => {
         const rows = JSON.parse(JSON.stringify(DRE_BLUEPRINT)); const accMap = {};
@@ -619,7 +622,6 @@ const DREComponent = ({ transactions }) => {
     }, [transactions]);
     return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden"><div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial</div><div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{dreData.map((row, i) => (<tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}><td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td><td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>{(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>))}</tbody></table></div></div>);
 };
-
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
     const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 7), type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
     const [activeTab, setActiveTab] = useState('expense'); 
@@ -664,6 +666,13 @@ const StockComponent = ({ transactions, measureUnit }) => {
     }, [transactions]);
     return (<div className="space-y-6"><div className="grid grid-cols-3 gap-4"><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Estoque Total</p><h3 className="text-2xl font-bold dark:text-white">{stockData.total.toLocaleString()} {measureUnit}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Custo Médio (Período)</p><h3 className="text-2xl font-bold dark:text-white">R$ {stockData.avgCost.toFixed(2)}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Valor Total Estoque</p><h3 className="text-2xl font-bold text-emerald-600">R$ {stockData.totalValue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</h3></div></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80"><h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque</h3><ResponsiveContainer width="100%" height="100%"><AreaChart data={stockData.evolution}><defs><linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/><stop offset="95%" stopColor="#8884d8" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" /><YAxis /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} /><Area type="monotone" dataKey="Estoque" stroke="#8884d8" fillOpacity={1} fill="url(#colorStock)" /></AreaChart></ResponsiveContainer></div></div>);
 };
+const AIReportModal = ({ onClose, transactions, period }) => {
+    const [report, setReport] = useState(''); const [loading, setLoading] = useState(true);
+    useEffect(() => { const run = async () => { const res = await aiService.analyze(transactions, period); setReport(res); setLoading(false); }; run(); }, []);
+    return (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm"><div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-[85vh] flex flex-col"><div className="flex justify-between mb-4"><h3 className="text-xl font-bold dark:text-white">Análise IA</h3><button onClick={onClose}><X /></button></div><div className="flex-1 overflow-y-auto mb-4 text-slate-700 dark:text-slate-300 whitespace-pre-line">{loading ? <div className="text-center"><Loader2 className="animate-spin mx-auto"/> Analisando...</div> : report}</div><button onClick={() => aiService.generatePDF(report, transactions, period)} className="bg-indigo-600 text-white py-2 rounded flex justify-center gap-2"><Download size={18}/> Baixar PDF</button></div></div>
+    );
+};
 
 /**
  * ------------------------------------------------------------------
@@ -671,9 +680,12 @@ const StockComponent = ({ transactions, measureUnit }) => {
  * ------------------------------------------------------------------
  */
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState('viewer');
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  // 1. BYPASS LOGIN (USUÁRIO FALSO AUTOMÁTICO)
+  const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
+  const [userRole, setUserRole] = useState('admin');
+  
+  // ... RESTO DOS ESTADOS IGUAIS
+  const [loadingAuth, setLoadingAuth] = useState(false); // Já carregado
   const { theme, toggleTheme } = useTheme();
   const [toast, showToast] = useToast();
 
@@ -694,12 +706,12 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef(null);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      if (u) { const role = await dbService.syncSystem(u); setUserRole(role); }
-      setUser(u); setLoadingAuth(false);
-    });
-    return () => unsubscribe();
+  // CARREGA DADOS AO INICIAR (SEM LOGIN)
+  useEffect(() => { 
+      const init = async () => {
+          await loadData();
+      };
+      init();
   }, []);
 
   const loadData = async () => {
@@ -712,9 +724,11 @@ export default function App() {
         setSelectedIds([]);
     } catch (e) { showToast("Erro ao carregar dados.", 'error'); }
   };
-  useEffect(() => { if (user) loadData(); }, [user]);
 
-  const handleLogout = async () => await signOut(auth);
+  const handleLogout = async () => {
+      // Logout desabilitado (recarrega página)
+      window.location.reload();
+  };
 
   const handleImport = async (data) => {
     setIsProcessing(true);
@@ -776,7 +790,6 @@ export default function App() {
   }, [filteredData]);
 
   if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
-  if (!user) return <LoginScreen showToast={showToast} />;
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
@@ -791,8 +804,8 @@ export default function App() {
           <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos e Despesas</span></button>
           <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'estoque' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Zap size={20} /><span className="hidden lg:block">Estoque</span></button>
           <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção</span></button>
-          {['admin', 'editor'].includes(userRole) && <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>}
-          {userRole === 'admin' && <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-slate-800`}><Users size={20} /><span className="hidden lg:block">Usuários</span></button>}
+          {/* Importar sempre visível para admin */}
+          <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>
         </nav>
         <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-sm text-slate-400"><div className="p-1 bg-slate-800 rounded"><UserCircle size={16} /></div><div className="flex-1 min-w-0"><p className="truncate font-bold text-white">{user.email}</p><p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p></div></div></div>
       </aside>
@@ -837,7 +850,7 @@ export default function App() {
                         </button>
                     )}
                  </div>
-                 {['admin', 'editor'].includes(userRole) && <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>}
+                 <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>
              </div>
              <div className="overflow-x-auto">
                  <table className="w-full text-left text-sm">
@@ -866,7 +879,7 @@ export default function App() {
                                  <td className="p-4 text-xs dark:text-slate-300">{t.type === 'metric' ? t.metricType.toUpperCase() : t.accountPlan}</td>
                                  <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>{t.value.toLocaleString()}</td>
                                  <td className="p-4 flex gap-2">
-                                     {['admin', 'editor'].includes(userRole) && <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>}
+                                     <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>
                                  </td>
                              </tr>
                          ))}
