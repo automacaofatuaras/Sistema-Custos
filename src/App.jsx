@@ -1254,54 +1254,79 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
 
 const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
     const stockData = useMemo(() => {
-        const stockTxs = transactions
-            .filter(t => t.type === 'metric' && t.metricType === 'estoque')
-            .sort((a, b) => new Date(a.date) - new Date(b.date));
+        // 1. Ordena cronologicamente para o cálculo de saldo funcionar
+        const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
 
-        // Custo Médio Global vindo da prop
         const avgCost = globalCostPerUnit || 0;
 
-        // Estrutura para os Portos de Areia
-        const breakdown = {
-            total: 0,
-            fina: 0,
-            grossa: 0,
-            suja: 0,
-            outros: 0
+        // Saldos acumulados (Running Balance)
+        let balances = {
+            'Areia Fina': 0,
+            'Areia Grossa': 0,
+            'Areia Suja': 0,
+            'Outros': 0 // Para Brita, Pedra ou quando não especificado
         };
 
-        stockTxs.forEach(t => {
-            const val = t.value;
-            breakdown.total += val;
-            
-            // Verifica na descrição do material OU na descrição principal
-            const desc = (t.materialDescription || t.description || '').toLowerCase();
+        // Array para o gráfico de evolução
+        const evolution = [];
 
-            if (desc.includes('fina')) {
-                breakdown.fina += val;
-            } else if (desc.includes('grossa')) {
-                breakdown.grossa += val;
-            } else if (desc.includes('suja')) {
-                breakdown.suja += val;
-            } else {
-                breakdown.outros += val;
+        sorted.forEach(t => {
+            // Detecta o material baseado na descrição
+            let category = 'Outros';
+            const desc = (t.materialDescription || t.description || '').toLowerCase();
+            
+            if (desc.includes('fina')) category = 'Areia Fina';
+            else if (desc.includes('grossa')) category = 'Areia Grossa';
+            else if (desc.includes('suja')) category = 'Areia Suja';
+
+            // APLICAÇÃO DA REGRA DE NEGÓCIO
+            if (t.type === 'metric') {
+                const val = t.value;
+
+                if (t.metricType === 'producao') {
+                    // Produção: ADICIONA ao estoque
+                    balances[category] += val;
+                } 
+                else if (t.metricType === 'vendas') {
+                    // Vendas: SUBTRAI do estoque
+                    balances[category] -= val;
+                } 
+                else if (t.metricType === 'estoque') {
+                    // Lançamento de Estoque: DEFINE O NOVO SALDO (Medição/Drone)
+                    // Isso ignora o cálculo anterior e seta o valor real medido
+                    balances[category] = val;
+                }
+            }
+
+            // Calcula o total geral naquele momento para o gráfico
+            const totalMoment = Object.values(balances).reduce((a, b) => a + b, 0);
+            
+            // Adiciona ponto no gráfico (apenas se houve alteração)
+            if (t.type === 'metric') {
+                evolution.push({
+                    date: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+                    Estoque: totalMoment, // Saldo calculado naquele dia
+                    _rawDate: t.date
+                });
             }
         });
 
-        // Prepara dados do gráfico (Evolução Total)
-        const evolution = stockTxs.map(t => ({ 
-            date: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), 
-            Estoque: t.value 
-        }));
+        // Pega os saldos FINAIS (após processar todas as transações)
+        const totalFinal = Object.values(balances).reduce((a, b) => a + b, 0);
 
         return { 
-            ...breakdown, 
+            total: totalFinal,
+            fina: balances['Areia Fina'],
+            grossa: balances['Areia Grossa'],
+            suja: balances['Areia Suja'],
+            outros: balances['Outros'],
             avgCost, 
-            totalValue: breakdown.total * avgCost,
-            valFina: breakdown.fina * avgCost,
-            valGrossa: breakdown.grossa * avgCost,
-            valSuja: breakdown.suja * avgCost,
-            evolution 
+            totalValue: totalFinal * avgCost,
+            valFina: balances['Areia Fina'] * avgCost,
+            valGrossa: balances['Areia Grossa'] * avgCost,
+            valSuja: balances['Areia Suja'] * avgCost,
+            // Pega apenas os últimos 30 pontos para o gráfico não ficar poluido se tiver muitos dados
+            evolution: evolution.slice(-30) 
         };
     }, [transactions, globalCostPerUnit]);
 
@@ -1310,7 +1335,7 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
             {/* CARDS PRINCIPAIS - TOTAIS */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-indigo-600 text-white p-6 rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none">
-                    <p className="text-indigo-200 text-xs font-bold uppercase mb-2">Estoque Total Físico</p>
+                    <p className="text-indigo-200 text-xs font-bold uppercase mb-2">Estoque Atual Calculado</p>
                     <h3 className="text-3xl font-bold">{stockData.total.toLocaleString()} <span className="text-lg font-normal opacity-80">{measureUnit}</span></h3>
                     <div className="mt-4 pt-4 border-t border-indigo-500/50 flex justify-between items-center text-sm">
                         <span>Custo Médio Aplicado</span>
@@ -1319,36 +1344,31 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
                 </div>
 
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm col-span-2 flex flex-col justify-center">
-                    <p className="text-slate-500 text-xs font-bold uppercase mb-2">Valor Total em Estoque</p>
+                    <p className="text-slate-500 text-xs font-bold uppercase mb-2">Valor em Estoque (Inventário)</p>
                     <h3 className="text-4xl font-bold text-emerald-600 dark:text-emerald-400">
                         {stockData.totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
                     </h3>
-                    <p className="text-slate-400 text-sm mt-1">Soma de todos os materiais x Custo da Tonelada no período</p>
+                    <p className="text-slate-400 text-sm mt-1">Saldo Final Calculado x Custo Médio do Período</p>
                 </div>
             </div>
 
-            <h3 className="font-bold text-lg dark:text-white flex items-center gap-2 mt-8">
-                <Package className="text-indigo-500"/> Detalhamento por Material (Portos)
-            </h3>
+            <div className="flex items-center gap-2 mt-8">
+                <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
+                    <Package className="text-indigo-500"/> Detalhamento por Material
+                </h3>
+                <span className="text-xs text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">Cálculo: (Inicial + Prod - Vendas) ou Medição</span>
+            </div>
 
-            {/* DETALHAMENTO POR TIPO DE AREIA */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* DETALHAMENTO POR TIPO */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* AREIA FINA */}
                 <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-amber-400 shadow-sm border dark:border-slate-700">
                     <div className="flex justify-between mb-2">
                         <span className="font-bold text-slate-700 dark:text-slate-200">Areia Fina</span>
                         <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded">FINA</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-4 mt-4">
-                        <div>
-                            <p className="text-[10px] uppercase text-slate-400 font-bold">Volume</p>
-                            <p className="text-lg font-bold dark:text-white">{stockData.fina.toLocaleString()} {measureUnit}</p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-[10px] uppercase text-slate-400 font-bold">Valor</p>
-                            <p className="text-lg font-bold text-emerald-600">{stockData.valFina.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
-                        </div>
-                    </div>
+                    <p className="text-2xl font-bold dark:text-white mt-2">{stockData.fina.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span></p>
+                    <p className="text-xs text-emerald-600 font-bold mt-1">{stockData.valFina.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
                 </div>
 
                 {/* AREIA GROSSA */}
@@ -1357,16 +1377,8 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
                         <span className="font-bold text-slate-700 dark:text-slate-200">Areia Grossa</span>
                         <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded">GROSSA</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-4 mt-4">
-                        <div>
-                            <p className="text-[10px] uppercase text-slate-400 font-bold">Volume</p>
-                            <p className="text-lg font-bold dark:text-white">{stockData.grossa.toLocaleString()} {measureUnit}</p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-[10px] uppercase text-slate-400 font-bold">Valor</p>
-                            <p className="text-lg font-bold text-emerald-600">{stockData.valGrossa.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
-                        </div>
-                    </div>
+                    <p className="text-2xl font-bold dark:text-white mt-2">{stockData.grossa.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span></p>
+                    <p className="text-xs text-emerald-600 font-bold mt-1">{stockData.valGrossa.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
                 </div>
 
                 {/* AREIA SUJA */}
@@ -1375,22 +1387,24 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
                         <span className="font-bold text-slate-700 dark:text-slate-200">Areia Suja</span>
                         <span className="text-xs font-bold bg-stone-100 text-stone-700 px-2 py-1 rounded">SUJA</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-4 mt-4">
-                        <div>
-                            <p className="text-[10px] uppercase text-slate-400 font-bold">Volume</p>
-                            <p className="text-lg font-bold dark:text-white">{stockData.suja.toLocaleString()} {measureUnit}</p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-[10px] uppercase text-slate-400 font-bold">Valor</p>
-                            <p className="text-lg font-bold text-emerald-600">{stockData.valSuja.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
-                        </div>
+                    <p className="text-2xl font-bold dark:text-white mt-2">{stockData.suja.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span></p>
+                    <p className="text-xs text-emerald-600 font-bold mt-1">{stockData.valSuja.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                </div>
+
+                 {/* OUTROS MATERIAIS (Pedras, etc) */}
+                 <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-indigo-500 shadow-sm border dark:border-slate-700">
+                    <div className="flex justify-between mb-2">
+                        <span className="font-bold text-slate-700 dark:text-slate-200">Outros / Geral</span>
+                        <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-1 rounded">GERAL</span>
                     </div>
+                    <p className="text-2xl font-bold dark:text-white mt-2">{stockData.outros.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span></p>
+                    <p className="text-xs text-emerald-600 font-bold mt-1">{(stockData.outros * stockData.avgCost).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
                 </div>
             </div>
 
-            {/* GRÁFICO DE EVOLUÇÃO */}
+            {/* GRÁFICO DE EVOLUÇÃO DO SALDO */}
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80 mt-6">
-                <h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque Físico (Total)</h3>
+                <h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque (Saldo Diário)</h3>
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={stockData.evolution}>
                         <defs>
@@ -1399,11 +1413,11 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
                                 <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
                             </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        <XAxis dataKey="date" />
-                        <YAxis />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
+                        <XAxis dataKey="date" tick={{fontSize: 12}} />
+                        <YAxis tick={{fontSize: 12}} />
                         <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
-                        <Area type="monotone" dataKey="Estoque" stroke="#6366f1" fillOpacity={1} fill="url(#colorStock)" />
+                        <Area type="step" dataKey="Estoque" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorStock)" />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
