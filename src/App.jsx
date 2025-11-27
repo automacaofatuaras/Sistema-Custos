@@ -1248,22 +1248,38 @@ const filteredData = useMemo(() => {
 
 {activeTab === 'dashboard' && (
           <div className="space-y-6 animate-in fade-in duration-500">
-            {/* GRID DE KPIS PRINCIPAIS */}
+            {/* LINHA 1: FINANCEIRO PRINCIPAL + CUSTO P/ TON */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" />
               <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" />
               <KpiCard title="Resultado Líquido" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} />
-              <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm flex flex-col justify-center">
-                 <p className="text-xs font-bold text-slate-500 uppercase mb-1">Margem de Resultado</p>
-                 <div className="flex items-end gap-2">
-                    <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
-                    <span className="text-xs text-slate-400 mb-2">do faturamento</span>
+              
+              {/* CUSTO P/ TON EM DESTAQUE */}
+              <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border-l-4 border-l-rose-500 shadow-sm border dark:border-slate-700">
+                 <div className="flex justify-between items-start">
+                    <div>
+                        <p className="text-xs font-bold text-slate-500 uppercase">Custo Unitário (Período)</p>
+                        <h3 className="text-2xl font-bold text-rose-600 mt-2">
+                            {costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                        </h3>
+                        <p className="text-xs text-slate-400">por {currentMeasureUnit}</p>
+                    </div>
+                    <div className="p-2 bg-rose-50 rounded-lg text-rose-500"><Factory size={24}/></div>
                  </div>
               </div>
             </div>
 
-            {/* SEGUNDA LINHA DE KPIS OPERACIONAIS */}
+            {/* LINHA 2: OPERACIONAL E MARGENS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Margem */}
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center">
+                 <p className="text-xs font-bold text-slate-500 uppercase mb-1">Margem Líquida</p>
+                 <div className="flex items-end gap-2">
+                    <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
+                 </div>
+              </div>
+
+              {/* Produção */}
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="flex justify-between items-start">
                     <div>
@@ -1274,6 +1290,7 @@ const filteredData = useMemo(() => {
                   </div>
               </div>
 
+              {/* Vendas */}
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="flex justify-between items-start">
                     <div>
@@ -1284,7 +1301,7 @@ const filteredData = useMemo(() => {
                   </div>
               </div>
 
-              {/* NOVO CARD: ESTOQUE DO PERÍODO */}
+              {/* Estoque */}
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="flex justify-between items-start">
                     <div>
@@ -1294,35 +1311,25 @@ const filteredData = useMemo(() => {
                     <div className="p-2 bg-amber-100 rounded-lg text-amber-600"><Package size={20}/></div>
                   </div>
               </div>
-
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
-                  <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase">Resultado Operacional</p>
-                        <h3 className={`text-2xl font-bold mt-2 ${resultPerSalesUnit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{resultPerSalesUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} <span className="text-sm font-normal text-slate-400">/{currentMeasureUnit}</span></h3>
-                    </div>
-                    <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600"><DollarSign size={20}/></div>
-                  </div>
-              </div>
             </div>
 
             {/* GRÁFICO */}
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm h-96 border dark:border-slate-700">
-              <h3 className="mb-6 font-bold text-lg dark:text-white flex items-center gap-2"><BarChartIcon size={20}/> Fluxo Financeiro do Período</h3>
+              <h3 className="mb-6 font-bold text-lg dark:text-white flex items-center gap-2"><BarChartIcon size={20}/> Performance Financeira do Período</h3>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[{ name: 'Fluxo Global', Receitas: kpis.revenue, Despesas: kpis.expense, Resultado: kpis.balance }]} barSize={60}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.5} />
+                <BarChart data={[{ name: 'Performance', Receitas: kpis.revenue, Despesas: kpis.expense, Resultado: kpis.balance }]} barSize={80}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
                     <XAxis dataKey="name" tick={false} />
                     <YAxis tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} />
                     <Tooltip 
                         cursor={{fill: 'transparent'}}
-                        contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }} 
+                        contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff' }} 
                         formatter={(val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                     />
                     <Legend wrapperStyle={{paddingTop: '20px'}}/>
-                    <Bar name="Receitas" dataKey="Receitas" fill="#10b981" radius={[4, 4, 0, 0]} />
-                    <Bar name="Despesas" dataKey="Despesas" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-                    <Bar name="Resultado" dataKey="Resultado" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                    <Bar name="Receitas" dataKey="Receitas" fill="#10b981" radius={[6, 6, 0, 0]} />
+                    <Bar name="Despesas" dataKey="Despesas" fill="#f43f5e" radius={[6, 6, 0, 0]} />
+                    <Bar name="Resultado" dataKey="Resultado" fill="#6366f1" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
