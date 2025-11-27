@@ -841,12 +841,30 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         }
 
         try { 
-            if(initialData?.id) await dbService.update(user, 'transactions', initialData.id, tx);
-            else await dbService.add(user, 'transactions', tx); 
-            showToast("Lançamento salvo!", 'success'); 
-            onSave(); onClose(); 
-        } catch(e) { showToast("Erro ao salvar.", 'error'); }
-    };
+            if(initialData?.id) {
+                // SE FOR EDIÇÃO: Salva e fecha a janela
+                await dbService.update(user, 'transactions', initialData.id, tx);
+                showToast("Lançamento atualizado!", 'success');
+                onSave(); 
+                onClose(); 
+            } else {
+                // SE FOR NOVO: Salva, avisa, limpa o valor e MANTÉM ABERTO
+                await dbService.add(user, 'transactions', tx); 
+                showToast("Salvo! Pode fazer o próximo.", 'success');
+                onSave(); 
+                
+                // Limpa apenas campos variáveis para agilizar o próximo input
+                setForm(prev => ({ 
+                    ...prev, 
+                    value: '', 
+                    description: '',
+                    // Mantém: data, unidade, conta do DRE e tipo de material (se for estoque)
+                }));
+                // Observação: removemos o onClose() daqui
+            }
+        } catch(e) { 
+            showToast("Erro ao salvar.", 'error');
+        }
 
     const unitMeasure = form.segment ? getMeasureUnit(form.segment) : 'un';
 
