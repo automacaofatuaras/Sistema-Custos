@@ -778,7 +778,6 @@ const DREComponent = ({ transactions }) => {
     );
 };
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
-    // ADICIONADO: materialDescription no estado inicial
     const [form, setForm] = useState({ 
         date: new Date().toISOString().slice(0, 7), 
         type: 'expense', 
@@ -787,17 +786,26 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         segment: '', 
         accountPlan: '', 
         metricType: 'producao',
-        materialDescription: '' // Novo campo para o tipo de estoque
+        materialDescription: '' 
     });
 
     const [activeTab, setActiveTab] = useState('expense'); 
+
+    // Opções rápidas para Fechamento
+    const manualOptions = [
+        "Transporte Terceiros",
+        "Rateio Despesas Administrativas",
+        "Despesas Multas e Taxas",
+        "Frota Parada",
+        "Investimentos Consórcios a Contemplar"
+    ];
 
     useEffect(() => { 
         if (initialData) { 
             setForm({ 
                 ...initialData, 
                 date: initialData.date.slice(0, 7),
-                materialDescription: initialData.materialDescription || '' // Recupera se estiver editando
+                materialDescription: initialData.materialDescription || '' 
             }); 
             setActiveTab(initialData.type === 'metric' ? 'metric' : initialData.type); 
         } 
@@ -809,11 +817,7 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
         if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
-        
-        // VALIDAÇÃO ADICIONADA: Obriga a selecionar o material se for Estoque
-        if (activeTab === 'metric' && form.metricType === 'estoque' && !form.materialDescription) {
-            return showToast("Selecione o Material do Estoque.", 'error');
-        }
+        if (activeTab === 'metric' && form.metricType === 'estoque' && !form.materialDescription) return showToast("Selecione o Material.", 'error');
 
         const [year, month] = form.date.split('-');
         const lastDay = new Date(year, month, 0).getDate();
@@ -830,39 +834,18 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         };
 
         if (activeTab === 'metric') { 
-            // Define a descrição automática baseada no tipo e material
             const matDesc = form.metricType === 'estoque' ? ` - ${form.materialDescription}` : '';
             tx.description = `Lançamento de ${form.metricType.toUpperCase()}${matDesc}`; 
             tx.accountPlan = 'METRICS';
-            // Garante que o materialDescription seja salvo explicitamente
             if (form.metricType !== 'estoque') tx.materialDescription = '';
         }
 
         try { 
-            if(initialData?.id) {
-                // SE FOR EDIÇÃO: Salva e fecha a janela
-                await dbService.update(user, 'transactions', initialData.id, tx);
-                showToast("Lançamento atualizado!", 'success');
-                onSave(); 
-                onClose(); 
-            } else {
-                // SE FOR NOVO: Salva, avisa, limpa o valor e MANTÉM ABERTO
-                await dbService.add(user, 'transactions', tx); 
-                showToast("Salvo! Pode fazer o próximo.", 'success');
-                onSave(); 
-                
-                // Limpa apenas campos variáveis para agilizar o próximo input
-                setForm(prev => ({ 
-                    ...prev, 
-                    value: '', 
-                    description: '',
-                    // Mantém: data, unidade, conta do DRE e tipo de material (se for estoque)
-                }));
-                // Observação: removemos o onClose() daqui
-            }
-        } catch(e) { 
-            showToast("Erro ao salvar.", 'error');
-        }
+            if(initialData?.id) await dbService.update(user, 'transactions', initialData.id, tx);
+            else await dbService.add(user, 'transactions', tx); 
+            showToast("Lançamento salvo!", 'success'); 
+            onSave(); onClose(); 
+        } catch(e) { showToast("Erro ao salvar.", 'error'); }
     };
 
     const unitMeasure = form.segment ? getMeasureUnit(form.segment) : 'un';
@@ -870,19 +853,15 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6 dark:border-slate-700 border">
-                
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-bold dark:text-white">{initialData ? 'Editar' : 'Novo'} Lançamento</h3>
                     <button onClick={onClose}><X size={20} className="text-slate-400"/></button>
                 </div>
-
-                {/* ABAS DE TIPO */}
                 <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg mb-4">
                     <button onClick={() => setActiveTab('revenue')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'revenue' ? 'bg-white dark:bg-slate-700 shadow text-emerald-600' : 'text-slate-500'}`}>Receita</button>
                     <button onClick={() => setActiveTab('expense')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'expense' ? 'bg-white dark:bg-slate-700 shadow text-rose-600' : 'text-slate-500'}`}>Despesa</button>
                     <button onClick={() => setActiveTab('metric')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'metric' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-500'}`}>Métricas</button>
                 </div>
-
                 <div className="space-y-3">
                     <label className="block text-xs font-bold text-slate-500 uppercase">Competência</label>
                     <input type="month" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
@@ -890,19 +869,26 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                     <label className="block text-xs font-bold text-slate-500 uppercase">Unidade</label>
                     <HierarchicalSelect value={form.segment} onChange={(val) => setForm({...form, segment: val})} options={segments} placeholder="Selecione a Unidade..." />
 
-                    {/* CAMPOS PARA RECEITA E DESPESA */}
                     {activeTab !== 'metric' && (
                         <>
-                            <label className="block text-xs font-bold text-slate-500 uppercase">Detalhes</label>
-                            <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição (Ex: Pgto Fornecedor)" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
+                            <label className="block text-xs font-bold text-slate-500 uppercase">Descrição / Classificação</label>
+                            {/* Novo seletor rápido */}
+                            <select className="w-full border p-2 mb-2 rounded text-xs dark:bg-slate-700 dark:text-white" onChange={(e) => {
+                                if(e.target.value) setForm({...form, description: e.target.value});
+                            }}>
+                                <option value="">Selecione ou Digite abaixo...</option>
+                                {manualOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                            </select>
+                            <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição Manual..." value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
+                            
                             <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.accountPlan} onChange={e=>setForm({...form, accountPlan: e.target.value})}>
                                 <option value="">Conta do DRE...</option>
+                                <option value="00.00">00.00 - Lançamento Manual (Fechamento)</option>
                                 {DRE_BLUEPRINT.filter(r => r.level === 2).map(r => <option key={r.code} value={r.code}>{r.code} - {r.name}</option>)}
                             </select>
                         </>
                     )}
 
-                    {/* CAMPOS ESPECÍFICOS DE MÉTRICAS */}
                     {activeTab === 'metric' && (
                         <div className="space-y-3">
                             <div className="grid grid-cols-3 gap-2">
@@ -910,43 +896,24 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                                 <button onClick={()=>setForm({...form, metricType:'vendas'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='vendas'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><ShoppingCart className="mx-auto mb-1" size={16}/> Vendas</button>
                                 <button onClick={()=>setForm({...form, metricType:'estoque'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='estoque'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Package className="mx-auto mb-1" size={16}/> Estoque</button>
                             </div>
-
-                            {/* SELECT DE MATERIAL (SÓ APARECE SE FOR ESTOQUE) */}
                             {form.metricType === 'estoque' && (
-                                <div className="animate-in fade-in slide-in-from-top-2">
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Material</label>
-                                    <select 
-                                        className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white border-indigo-300 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                        value={form.materialDescription}
-                                        onChange={e => setForm({...form, materialDescription: e.target.value})}
-                                    >
-                                        <option value="">Selecione o Material...</option>
-                                        <option value="Estoque Total">Estoque Total (Geral)</option>
-                                        <option value="Areia Fina">Areia Fina</option>
-                                        <option value="Areia Grossa">Areia Grossa</option>
-                                        <option value="Areia Suja">Areia Suja</option>
-                                    </select>
-                                </div>
+                                <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white border-indigo-300" value={form.materialDescription} onChange={e => setForm({...form, materialDescription: e.target.value})}>
+                                    <option value="">Selecione o Material...</option>
+                                    <option value="Estoque Total">Estoque Total</option>
+                                    <option value="Areia Fina">Areia Fina</option>
+                                    <option value="Areia Grossa">Areia Grossa</option>
+                                    <option value="Areia Suja">Areia Suja</option>
+                                </select>
                             )}
                         </div>
                     )}
 
                     <div className="relative">
-                        <span className="absolute left-3 top-2 text-slate-400 font-bold">
-                            {activeTab === 'metric' ? unitMeasure : 'R$'}
-                        </span>
-                        <input 
-                            type="number" 
-                            className="w-full border p-2 pl-12 rounded dark:bg-slate-700 dark:text-white" 
-                            placeholder="Valor / Quantidade" 
-                            value={form.value} 
-                            onChange={e=>setForm({...form, value: e.target.value})} 
-                        />
+                        <span className="absolute left-3 top-2 text-slate-400 font-bold">{activeTab === 'metric' ? unitMeasure : 'R$'}</span>
+                        <input type="number" className="w-full border p-2 pl-12 rounded dark:bg-slate-700 dark:text-white" placeholder="Valor / Quantidade" value={form.value} onChange={e=>setForm({...form, value: e.target.value})} />
                     </div>
 
-                    <button onClick={handleSubmit} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">
-                        Salvar Lançamento
-                    </button>
+                    <button onClick={handleSubmit} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">Salvar Lançamento</button>
                 </div>
             </div>
         </div>
@@ -1657,13 +1624,14 @@ const filteredData = useMemo(() => {
       <aside className="w-20 lg:w-64 bg-slate-900 dark:bg-slate-950 text-white flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800">
         <div className="p-6 border-b border-slate-800 flex items-center gap-3"><div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center"><Building2 size={18} /></div><span className="text-xl font-bold hidden lg:block">Fechamento Custos</span></div>
         <nav className="flex-1 p-4 space-y-2">
-           <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /><span className="hidden lg:block">Visão Geral</span></button>
+           <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all $ ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /><span className="hidden lg:block">Visão Geral</span></button>
           <button onClick={() => setActiveTab('lancamentos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'lancamentos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><List size={20} /><span className="hidden lg:block">Lançamentos</span></button>
           <button onClick={() => setActiveTab('dre')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dre' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><FileText size={20} /><span className="hidden lg:block">DRE</span></button>
           <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos e Despesas</span></button>
           <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'estoque' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Package size={20} /><span className="hidden lg:block">Estoque</span></button>
           <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção vs Vendas</span></button>
           <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>
+          <button onClick={() => setActiveTab('fechamento')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'fechamento' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><FileUp size={20} /><span className="hidden lg:block">Fechamento</span></button>
         </nav>
         <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-sm text-slate-400"><div className="p-1 bg-slate-800 rounded"><UserCircle size={16} /></div><div className="flex-1 min-w-0"><p className="truncate font-bold text-white">{user.email}</p><p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p></div></div></div>
       </aside>
@@ -1871,6 +1839,7 @@ const filteredData = useMemo(() => {
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
         {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
+        {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} measureUnit={currentMeasureUnit} />}
       </main>
 
       {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
