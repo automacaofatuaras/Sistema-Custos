@@ -1020,7 +1020,7 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
     );
 };
 
-const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
+const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, selectedUnit }) => {
     // Estado para controlar quais linhas estão expandidas
     const [expanded, setExpanded] = useState({
         'receitas': true,
@@ -1029,6 +1029,20 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
     });
 
     const toggle = (key) => setExpanded(prev => ({...prev, [key]: !prev[key]}));
+
+    // LÓGICA DO TÍTULO DINÂMICO
+    const getPeriodLabel = () => {
+        const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        
+        if (filter.type === 'month') return `${months[filter.month]}/${filter.year}`;
+        if (filter.type === 'quarter') return `${filter.quarter}º Trimestre/${filter.year}`;
+        if (filter.type === 'semester') return `${filter.semester}º Semestre/${filter.year}`;
+        return `Ano de ${filter.year}`;
+    };
+
+    // Limpa o nome da unidade se tiver prefixo (ex: "Portos: Unidade X")
+    const unitLabel = selectedUnit.includes(':') ? selectedUnit.split(':')[1].trim() : selectedUnit;
+    const dynamicTitle = `Fechamento: ${unitLabel} - ${getPeriodLabel()}`;
 
     const data = useMemo(() => {
         // --- 1. PREPARAÇÃO DOS DADOS ---
@@ -1084,7 +1098,7 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
         const manuPrev = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('preventiva'));
         const manuCorr = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('corretiva'));
         const manuReform = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('reforma'));
-        const manuFrete = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('frete'));
+        const manuFrete = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('frete')); 
         const manuPneus = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('pneu'));
         const manuRessolado = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('ressolado'));
         const manuNovos = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('novos'));
@@ -1096,10 +1110,9 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
         // MANUAIS E ESPECÍFICOS
         const transpTerceiros = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('transporte terceiros'));
         const impostos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('02') || t.description.toLowerCase().includes('imposto')));
-        const custoAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('custo administrativo')); // Se houver específico
+        const custoAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('custo administrativo')); 
         
         // RESULTADO OPERACIONAL
-        // Margem - Custo Adm - Manutencao - Transp Residual - Transp Terceiros - Impostos
         const resultOperacional = margemContribuicao - custoAdm - manutencaoTotal - residualTransporte - transpTerceiros - impostos;
 
         // PÓS OPERACIONAL (Manuais)
@@ -1164,7 +1177,9 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
     return (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden animate-in fade-in">
             <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                <h3 className="font-bold text-lg dark:text-white">Fechamento: Portos de Areia</h3>
+                {/* TÍTULO DINÂMICO AQUI */}
+                <h3 className="font-bold text-lg dark:text-white">{dynamicTitle}</h3>
+                
                 <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
                     <span className="text-slate-500 mr-2">Vendas Totais:</span>
                     <span className="font-bold dark:text-white">{totalSales.toLocaleString()} {measureUnit}</span>
@@ -1214,6 +1229,7 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
                         <Row label="Margem de Contribuição" val={data.margemContribuicao} isHeader isResult bgClass="bg-blue-50 dark:bg-blue-900/20" />
 
                         {/* DESPESAS GERAIS */}
+                        <Row label="Custo Administrativo (Rateio)" val={data.custoAdm} indent={0} colorClass="text-rose-600" />
                         <Row label="Despesas Comerciais" val={0} indent={0} colorClass="text-rose-600" />
 
                         <Row label="Manutenção Transporte" val={data.manutencaoTotal} isHeader colorClass="text-rose-600" onClick={()=>toggle('manutencao')} hasArrow expanded={expanded['manutencao']} indent={0}/>
@@ -1874,7 +1890,7 @@ const stockDataRaw = useMemo(() => {
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
         {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
-        {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} measureUnit={currentMeasureUnit} />}
+        {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
       </main>
 
       {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
