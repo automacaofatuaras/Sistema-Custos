@@ -1519,6 +1519,33 @@ const filteredData = useMemo(() => {
       });
   }, [transactions, filter, globalUnitFilter, activeTab]);
 
+  // 2. NOVO DADO APENAS PARA O ESTOQUE (Carrega o ano todo para cálculo de saldo)
+const stockDataRaw = useMemo(() => {
+    return transactions.filter(t => {
+        let y;
+        if (typeof t.date === 'string' && t.date.length >= 10) {
+            y = parseInt(t.date.substring(0, 4));
+        } else {
+            y = new Date(t.date).getFullYear();
+        }
+        
+        // APENAS FILTRO DE ANO E UNIDADE (Ignora mês)
+        if (y !== filter.year) return false;
+
+        if (globalUnitFilter !== 'ALL') {
+            if (BUSINESS_HIERARCHY[globalUnitFilter]) {
+                const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
+            } else {
+                const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
+                return txUnit === filterUnit;
+            }
+        }
+        return true;
+    });
+}, [transactions, filter.year, globalUnitFilter]);
+
   const kpis = useMemo(() => {
       const rev = filteredData.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
       const exp = filteredData.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
@@ -1839,7 +1866,7 @@ const filteredData = useMemo(() => {
         {activeTab === 'dre' && <DREComponent transactions={filteredData} />}
         {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
         {/* Passando globalCostPerUnit para o componente de estoque */}
-        {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} />}
+        {activeTab === 'estoque' && <StockComponent transactions={stockDataRaw} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} />}
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
         {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
