@@ -1052,6 +1052,239 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
         </div>
     );
 };
+
+const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
+    // Estado para controlar quais linhas estão expandidas
+    const [expanded, setExpanded] = useState({
+        'receitas': true,
+        'custo_operacional': true,
+        'manutencao': true
+    });
+
+    const toggle = (key) => setExpanded(prev => ({...prev, [key]: !prev[key]}));
+
+    const data = useMemo(() => {
+        // --- 1. PREPARAÇÃO DOS DADOS ---
+        const totalRevenue = transactions.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
+        
+        // Helper para somar baseado em filtros
+        const sum = (fn) => transactions.filter(fn).reduce((acc, t) => acc + t.value, 0);
+
+        // Helper para verificar se uma transação pertence a um grupo de regras de custo
+        const isInRuleGroup = (t, groupName, subGroupName = null) => {
+            const rules = COST_CENTER_RULES["Portos de Areia"]; // Fixo para Portos por enquanto
+            if (!rules || !rules[groupName]) return false;
+            
+            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
+            
+            if (subGroupName) {
+                return rules[groupName][subGroupName]?.includes(ccCode);
+            }
+            // Se não passar subgrupo, verifica em todos os subgrupos daquele grupo raiz
+            return Object.values(rules[groupName]).flat().includes(ccCode);
+        };
+
+        // --- 2. CÁLCULOS DAS LINHAS ---
+
+        // RECEITAS
+        const recMaterial = sum(t => t.type === 'revenue' && (t.description.toLowerCase().includes('retira') || t.description.toLowerCase().includes('entrega') || t.accountPlan === '01.01'));
+        const recFrete = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('frete'));
+        const subsidio = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('subsídio'));
+        
+        // Detalhe Receitas
+        const recRetira = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('retira'));
+        const recEntrega = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('entrega'));
+        const freteCarreta = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('carreta'));
+        const freteTruck = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('truck'));
+        const freteTerceiros = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('terceiros') && t.description.toLowerCase().includes('frete'));
+
+        // CUSTO OPERACIONAL (Despesas Unidade + Administrativo + Combustivel)
+        // Despesas da Unidade (Regra do CC)
+        const despUnidade = sum(t => t.type === 'expense' && isInRuleGroup(t, 'DESPESAS DA UNIDADE'));
+        
+        // Combustível (Está no grupo TRANSPORTE, mas filtramos por descrição ou conta)
+        const combustivel = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && (t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel') || t.accountPlan === '03.07.01'));
+
+        const totalCustoOperacional = despUnidade + combustivel;
+
+        // MARGEM DE CONTRIBUIÇÃO
+        const margemContribuicao = totalRevenue - totalCustoOperacional;
+
+        // MANUTENÇÃO (Está no grupo TRANSPORTE, conta 03.05)
+        const manutencaoTotal = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05'));
+        
+        // Detalhe Manutenção
+        const manuPrev = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('preventiva'));
+        const manuCorr = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('corretiva'));
+        const manuReform = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('reforma'));
+        const manuPneus = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('pneu'));
+        
+        // TOTAL DESPESAS TRANSPORTE (Residual: Tudo de transporte menos combustivel e manutenção)
+        const totalTransporteGroup = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE'));
+        const residualTransporte = totalTransporteGroup - combustivel - manutencaoTotal;
+
+        // MANUAIS E ESPECÍFICOS
+        const transpTerceiros = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('transporte terceiros'));
+        const impostos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('02') || t.description.toLowerCase().includes('imposto')));
+        const custoAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('custo administrativo')); // Se houver específico
+        
+        // RESULTADO OPERACIONAL
+        // Margem - Custo Adm - Manutencao - Transp Residual - Transp Terceiros - Impostos
+        const resultOperacional = margemContribuicao - custoAdm - manutencaoTotal - residualTransporte - transpTerceiros - impostos;
+
+        // PÓS OPERACIONAL (Manuais)
+        const rateioAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('rateio despesas'));
+        const multas = sum(t => t.type === 'expense' && (t.description.toLowerCase().includes('multa') || t.description.toLowerCase().includes('taxa')));
+        const frotaParada = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('frota parada'));
+
+        const resultPosDespesas = resultOperacional - rateioAdm - multas - frotaParada;
+
+        // INVESTIMENTOS
+        const investimentos = sum(t => t.type === 'expense' && (t.description.toLowerCase().includes('consórcio') || t.description.toLowerCase().includes('investimento')));
+        
+        const resultFinal = resultPosDespesas - investimentos;
+
+        return {
+            totalRevenue,
+            recMaterial, recRetira, recEntrega,
+            recFrete, freteCarreta, freteTruck, freteTerceiros,
+            subsidio,
+            totalCustoOperacional, despUnidade, combustivel,
+            margemContribuicao,
+            custoAdm,
+            manutencaoTotal, manuPrev, manuCorr, manuReform, manuPneus,
+            residualTransporte,
+            transpTerceiros,
+            impostos,
+            resultOperacional,
+            rateioAdm, multas, frotaParada,
+            resultPosDespesas,
+            investimentos,
+            resultFinal
+        };
+    }, [transactions]);
+
+    // Componente de Linha da Tabela
+    const Row = ({ label, val, isHeader = false, isResult = false, isSub = false, colorClass = "text-slate-700", bgClass = "", indent = 0, onClick = null, hasArrow = false, expanded = false }) => {
+        const percent = data.totalRevenue > 0 ? (val / data.totalRevenue) * 100 : 0;
+        const perUnit = totalSales > 0 ? val / totalSales : 0;
+        
+        let finalColor = colorClass;
+        if (isResult) finalColor = val >= 0 ? 'text-emerald-600' : 'text-rose-600';
+
+        return (
+            <tr className={`${bgClass} border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer`} onClick={onClick}>
+                <td className={`p-2 py-3 flex items-center ${finalColor} dark:text-slate-200`} style={{ paddingLeft: `${indent * 20 + 10}px` }}>
+                    {hasArrow && (expanded ? <ChevronDown size={14} className="mr-2"/> : <ChevronRight size={14} className="mr-2"/>)}
+                    <span className={`${isHeader ? 'font-bold uppercase text-sm' : 'text-xs font-medium'}`}>{label}</span>
+                </td>
+                <td className={`p-2 text-right font-bold ${finalColor} dark:text-slate-200`}>
+                    {isSub && val === 0 ? '-' : val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </td>
+                <td className="p-2 text-right text-xs font-mono text-slate-500 dark:text-slate-400">
+                    {percent === 0 ? '-' : `${percent.toFixed(2)}%`}
+                </td>
+                <td className="p-2 text-right text-xs font-mono text-slate-500 dark:text-slate-400">
+                    {perUnit === 0 ? '-' : perUnit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </td>
+            </tr>
+        );
+    };
+
+    return (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden animate-in fade-in">
+            <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
+                <h3 className="font-bold text-lg dark:text-white">Fechamento: Portos de Areia</h3>
+                <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
+                    <span className="text-slate-500 mr-2">Vendas Totais:</span>
+                    <span className="font-bold dark:text-white">{totalSales.toLocaleString()} {measureUnit}</span>
+                </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-xs uppercase">
+                        <tr>
+                            <th className="p-3 pl-4">Descrição</th>
+                            <th className="p-3 text-right">Valor</th>
+                            <th className="p-3 text-right">%</th>
+                            <th className="p-3 text-right">R$ / {measureUnit}</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y dark:divide-slate-700">
+                        {/* RECEITAS */}
+                        <Row label="Total Receitas" val={data.totalRevenue} isHeader colorClass="text-blue-600" onClick={()=>toggle('receitas')} hasArrow expanded={expanded['receitas']} />
+                        
+                        {expanded['receitas'] && (
+                            <>
+                                <Row label="Receita de Material" val={data.recMaterial} indent={1} colorClass="text-blue-500" />
+                                <Row label="Receita Retira" val={data.recRetira} indent={2} isSub colorClass="text-blue-400" />
+                                <Row label="Receita Entrega" val={data.recEntrega} indent={2} isSub colorClass="text-blue-400" />
+                                
+                                <Row label="Receita de Frete" val={data.recFrete} indent={1} colorClass="text-blue-500" />
+                                <Row label="Frete Carreta" val={data.freteCarreta} indent={2} isSub colorClass="text-blue-400" />
+                                <Row label="Frete Truck" val={data.freteTruck} indent={2} isSub colorClass="text-blue-400" />
+                                <Row label="Frete Terceiros" val={data.freteTerceiros} indent={2} isSub colorClass="text-blue-400" />
+
+                                <Row label="Subsídio de Terceiros" val={data.subsidio} indent={1} colorClass="text-blue-500" />
+                            </>
+                        )}
+
+                        {/* CUSTO OPERACIONAL */}
+                        <Row label="Custo Operacional" val={data.totalCustoOperacional} isHeader colorClass="text-rose-600" onClick={()=>toggle('custo_operacional')} hasArrow expanded={expanded['custo_operacional']} />
+                        {expanded['custo_operacional'] && (
+                            <>
+                                <Row label="Despesas da Unidade" val={data.despUnidade} indent={1} colorClass="text-rose-500" />
+                                <Row label="Administrativo Unidade" val={0} indent={1} colorClass="text-rose-500" /> 
+                                <Row label="Combustível Transporte" val={data.combustivel} indent={1} colorClass="text-rose-500" />
+                            </>
+                        )}
+
+                        {/* MARGEM DE CONTRIBUIÇÃO */}
+                        <Row label="Margem de Contribuição" val={data.margemContribuicao} isHeader isResult bgClass="bg-blue-50 dark:bg-blue-900/20" />
+
+                        {/* DESPESAS GERAIS */}
+                        <Row label="Custo Administrativo" val={data.custoAdm} indent={0} colorClass="text-rose-600" />
+                        <Row label="Despesas Comerciais" val={0} indent={0} colorClass="text-rose-600" />
+
+                        <Row label="Manutenção Transporte" val={data.manutencaoTotal} isHeader colorClass="text-rose-600" onClick={()=>toggle('manutencao')} hasArrow expanded={expanded['manutencao']} indent={0}/>
+                        {expanded['manutencao'] && (
+                            <>
+                                <Row label="Manutenção Preventiva" val={data.manuPrev} indent={1} isSub colorClass="text-rose-500" />
+                                <Row label="Manutenção Corretiva" val={data.manuCorr} indent={1} isSub colorClass="text-rose-500" />
+                                <Row label="Manutenção Reforma" val={data.manuReform} indent={1} isSub colorClass="text-rose-500" />
+                                <Row label="Serviços de Pneus/Borracharia" val={data.manuPneus} indent={1} isSub colorClass="text-rose-500" />
+                            </>
+                        )}
+
+                        <Row label="Total Despesas Transportes (Residual)" val={data.residualTransporte} indent={0} colorClass="text-rose-600 font-bold" />
+                        <Row label="Total Desp. Transp. Terceiros" val={data.transpTerceiros} indent={0} colorClass="text-rose-600" />
+                        <Row label="Impostos" val={data.impostos} indent={0} colorClass="text-rose-600" />
+
+                        {/* RESULTADO OPERACIONAL */}
+                        <Row label="Resultado Operacional" val={data.resultOperacional} isHeader isResult bgClass="bg-slate-200 dark:bg-slate-700" />
+
+                        {/* PÓS OPERACIONAL */}
+                        <Row label="Rateio Despesas Administrativas" val={data.rateioAdm} indent={0} colorClass="text-rose-600" />
+                        <Row label="Despesas Multas e Taxas" val={data.multas} indent={0} colorClass="text-rose-600" />
+                        <Row label="Frota Parada" val={data.frotaParada} indent={0} colorClass="text-rose-600" />
+
+                        {/* RESULTADO PÓS DESPESAS */}
+                        <Row label="Resultado Pós Despesas" val={data.resultPosDespesas} isHeader isResult bgClass="bg-slate-200 dark:bg-slate-700" />
+
+                        {/* INVESTIMENTOS */}
+                        <Row label="Investimentos / Consórcios" val={data.investimentos} indent={0} colorClass="text-rose-600" />
+
+                        {/* RESULTADO FINAL */}
+                        <Row label="Resultado Pós Investimentos" val={data.resultFinal} isHeader isResult bgClass="bg-slate-300 dark:bg-slate-600" />
+
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
     const stockData = useMemo(() => {
         const stockTxs = transactions
