@@ -222,9 +222,40 @@ const aiService = { analyze: async () => "IA Placeholder" };
  * ------------------------------------------------------------------
  */
 
-const KpiCard = ({ title, value, icon: Icon, color }) => {
+const KpiCard = ({ title, value, icon: Icon, color, trend, reverseColor = false }) => {
     const colors = { emerald: 'text-emerald-600 bg-emerald-50', rose: 'text-rose-600 bg-rose-50', indigo: 'text-indigo-600 bg-indigo-50' };
-    return (<div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm"><div className="flex justify-between"><div><p className="text-xs font-bold text-slate-500 uppercase mb-2">{title}</p><h3 className="text-2xl font-bold dark:text-white">{value}</h3></div><div className={`p-3 rounded-xl ${colors[color]}`}><Icon size={24}/></div></div></div>);
+    
+    // Lógica de cor da variação: 
+    // Se reverseColor for true (Despesas/Custos): Positivo é Ruim (Vermelho), Negativo é Bom (Verde)
+    // Se reverseColor for false (Receita): Positivo é Bom (Verde), Negativo é Ruim (Vermelho)
+    let trendColor = 'text-slate-400';
+    if (trend !== undefined && trend !== 0) {
+        if (reverseColor) {
+            trendColor = trend > 0 ? 'text-rose-500' : 'text-emerald-500';
+        } else {
+            trendColor = trend > 0 ? 'text-emerald-500' : 'text-rose-500';
+        }
+    }
+
+    return (
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm flex flex-col justify-between">
+            <div className="flex justify-between items-start">
+                <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase mb-2">{title}</p>
+                    <h3 className="text-2xl font-bold dark:text-white">{value}</h3>
+                    {trend !== undefined && !isNaN(trend) && (
+                        <div className={`flex items-center gap-1 mt-1 text-xs font-bold ${trendColor}`}>
+                            <span>{trend > 0 ? '▲' : (trend < 0 ? '▼' : '-')} {Math.abs(trend).toFixed(1)}%</span>
+                            <span className="text-[10px] font-normal text-slate-400 dark:text-slate-500">vs mês ant.</span>
+                        </div>
+                    )}
+                </div>
+                <div className={`p-3 rounded-xl ${colors[color]}`}>
+                    <Icon size={24}/>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 const AutomaticImportComponent = ({ onImport, isProcessing }) => {
@@ -1214,6 +1245,72 @@ const filteredData = useMemo(() => {
 
   if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
 
+  // --- CÁLCULOS DE VARIAÇÃO (MÊS ANTERIOR) ---
+  const variations = useMemo(() => {
+      // 1. Determinar qual é o "mês passado" com base no filtro atual
+      let prevMonth = filter.month - 1;
+      let prevYear = filter.year;
+      
+      if (prevMonth < 0) {
+          prevMonth = 11; // Dezembro
+          prevYear -= 1;
+      }
+
+      // 2. Filtrar transações do período anterior (respeitando o filtro de unidade global)
+      const prevData = transactions.filter(t => {
+          let y, m;
+          // Parse seguro de data igual ao filteredData
+          if (typeof t.date === 'string' && t.date.length >= 10) {
+              y = parseInt(t.date.substring(0, 4));
+              m = parseInt(t.date.substring(5, 7)) - 1; 
+          } else {
+              const d = new Date(t.date);
+              y = d.getFullYear();
+              m = d.getMonth();
+          }
+
+          // Filtro de Data Anterior
+          const isDateMatch = (filter.type === 'month') 
+            ? (y === prevYear && m === prevMonth)
+            : false; // Se não for filtro mensal, não calcula variação por enquanto
+
+          // Filtro de Unidade (O mesmo do filtro principal)
+          if (!isDateMatch) return false;
+
+          if (globalUnitFilter !== 'ALL') {
+              if (BUSINESS_HIERARCHY[globalUnitFilter]) {
+                 const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                 return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
+              } else {
+                  const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                  const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
+                  return txUnit === filterUnit;
+              }
+          }
+          return true;
+      });
+
+      // 3. Calcular Totais do Mês Anterior
+      const prevRevenue = prevData.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
+      const prevExpense = prevData.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
+      const prevBalance = prevRevenue - prevExpense;
+      const prevProduction = prevData.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
+      const prevCostPerUnit = prevProduction > 0 ? prevExpense / prevProduction : 0;
+
+      // 4. Função auxiliar para calcular % de variação
+      const calcVar = (curr, prev) => {
+          if (!prev || prev === 0) return 0;
+          return ((curr - prev) / prev) * 100;
+      };
+
+      return {
+          revenue: calcVar(kpis.revenue, prevRevenue),
+          expense: calcVar(kpis.expense, prevExpense),
+          balance: calcVar(kpis.balance, prevBalance),
+          costPerUnit: calcVar(costPerUnit, prevCostPerUnit)
+      };
+  }, [transactions, filter, globalUnitFilter, kpis, costPerUnit]);
+  
  return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
       {toast && <div className={`fixed top-4 right-4 z-50 p-4 rounded shadow-xl flex gap-2 ${toast.type==='success'?'bg-emerald-500 text-white':'bg-rose-500 text-white'}`}>{toast.type==='success'?<CheckCircle/>:<AlertTriangle/>}{toast.message}</div>}
@@ -1247,28 +1344,41 @@ const filteredData = useMemo(() => {
         </header>
 
 {activeTab === 'dashboard' && (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            {/* LINHA 1: FINANCEIRO PRINCIPAL + CUSTO P/ TON */}
+         {/* LINHA 1: FINANCEIRO PRINCIPAL + CUSTO P/ TON COM VARIAÇÃO */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" />
-              <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" />
-              <KpiCard title="Resultado Líquido" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} />
+              <KpiCard 
+                title="Receita Bruta" 
+                value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
+                icon={TrendingUp} 
+                color="emerald" 
+                trend={variations.revenue} 
+              />
+              <KpiCard 
+                title="Despesas Totais" 
+                value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
+                icon={TrendingDown} 
+                color="rose" 
+                trend={variations.expense} 
+                reverseColor={true} // Despesa subindo fica vermelho
+              />
+              <KpiCard 
+                title="Resultado Líquido" 
+                value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
+                icon={DollarSign} 
+                color={kpis.balance >= 0 ? 'indigo' : 'rose'} 
+                trend={variations.balance} 
+              />
               
               {/* CUSTO P/ TON EM DESTAQUE */}
-              <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border-l-4 border-l-rose-500 shadow-sm border dark:border-slate-700">
-                 <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase">Custo Unitário (Período)</p>
-                        <h3 className="text-2xl font-bold text-rose-600 mt-2">
-                            {costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                        </h3>
-                        <p className="text-xs text-slate-400">por {currentMeasureUnit}</p>
-                    </div>
-                    <div className="p-2 bg-rose-50 rounded-lg text-rose-500"><Factory size={24}/></div>
-                 </div>
-              </div>
+              <KpiCard 
+                title={`Custo / ${currentMeasureUnit}`}
+                value={costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                icon={Factory}
+                color="rose" // Ícone vermelho pois é custo
+                trend={variations.costPerUnit}
+                reverseColor={true} // Custo subindo fica vermelho
+              />
             </div>
-
             {/* LINHA 2: OPERACIONAL E MARGENS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Margem */}
