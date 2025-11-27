@@ -1336,14 +1336,14 @@ const filteredData = useMemo(() => {
           </div>
         )}
 
-       {activeTab === 'lancamentos' && (
+      {activeTab === 'lancamentos' && (
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border dark:border-slate-700">
              <div className="p-6 border-b dark:border-slate-700 flex flex-col gap-4">
                  
-                 {/* CABEÇALHO E BOTÕES DE AÇÃO */}
+                 {/* CABEÇALHO */}
                  <div className="flex justify-between items-center">
                     <div className="flex gap-4 items-center">
-                        <h3 className="font-bold text-lg dark:text-white">Lançamentos Detalhados</h3>
+                        <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
                         {selectedIds.length > 0 && userRole === 'admin' && (
                             <button onClick={handleBatchDelete} className="bg-rose-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-rose-700 transition-colors">
                                 Excluir ({selectedIds.length})
@@ -1353,36 +1353,17 @@ const filteredData = useMemo(() => {
                     {['admin', 'editor'].includes(userRole) && <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>}
                  </div>
 
-                 {/* BARRA DE PESQUISA E FILTROS */}
-                 <div className="flex flex-col md:flex-row gap-2 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border dark:border-slate-700">
-                    <div className="flex-1 relative">
+                 {/* APENAS BARRA DE PESQUISA (Data agora é no topo da página) */}
+                 <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border dark:border-slate-700">
+                    <div className="relative w-full">
                         <Search className="absolute left-3 top-3 text-slate-400" size={16}/>
                         <input 
                             type="text" 
-                            placeholder="Pesquisar por descrição, conta ou valor..." 
+                            placeholder="Pesquisar neste período (Descrição, Conta ou Valor)..." 
                             className="w-full pl-10 pr-4 py-2 rounded-lg border dark:border-slate-600 dark:bg-slate-800 dark:text-white text-sm outline-none focus:ring-2 ring-indigo-500"
                             value={lancamentosSearch}
                             onChange={(e) => setLancamentosSearch(e.target.value)}
                         />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-500 uppercase">Data:</span>
-                        <input 
-                            type="date" 
-                            className="p-2 rounded-lg border dark:border-slate-600 dark:bg-slate-800 dark:text-white text-sm outline-none"
-                            value={lancamentosDateFilter.start}
-                            onChange={(e) => setLancamentosDateFilter({...lancamentosDateFilter, start: e.target.value})}
-                        />
-                        <span className="text-slate-400">-</span>
-                        <input 
-                            type="date" 
-                            className="p-2 rounded-lg border dark:border-slate-600 dark:bg-slate-800 dark:text-white text-sm outline-none"
-                            value={lancamentosDateFilter.end}
-                            onChange={(e) => setLancamentosDateFilter({...lancamentosDateFilter, end: e.target.value})}
-                        />
-                         {(lancamentosDateFilter.start || lancamentosDateFilter.end) && (
-                            <button onClick={() => setLancamentosDateFilter({start:'', end:''})} className="p-2 text-rose-500 hover:bg-rose-100 rounded-lg" title="Limpar Data"><X size={16}/></button>
-                         )}
                     </div>
                  </div>
              </div>
@@ -1402,18 +1383,14 @@ const filteredData = useMemo(() => {
                      </thead>
                      <tbody className="divide-y dark:divide-slate-700">
                          {filteredData.filter(t => {
-                             // LÓGICA DE FILTRO LOCAL
+                             // FILTRO APENAS DE TEXTO (Data já vem filtrada do filteredData)
                              const searchLower = lancamentosSearch.toLowerCase();
                              const matchesSearch = !lancamentosSearch || 
                                  t.description.toLowerCase().includes(searchLower) ||
                                  t.accountPlan.toLowerCase().includes(searchLower) ||
                                  t.value.toString().includes(searchLower);
                              
-                             let matchesDate = true;
-                             if (lancamentosDateFilter.start) matchesDate = matchesDate && t.date >= lancamentosDateFilter.start;
-                             if (lancamentosDateFilter.end) matchesDate = matchesDate && t.date <= lancamentosDateFilter.end;
-
-                             return matchesSearch && matchesDate;
+                             return matchesSearch;
                          }).map(t => (
                               <tr key={t.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${selectedIds.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
                                  <td className="p-4"><input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></td>
@@ -1437,7 +1414,6 @@ const filteredData = useMemo(() => {
              </div>
           </div>
         )}
-
         {activeTab === 'dre' && <DREComponent transactions={filteredData} />}
         {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
         {/* Passando globalCostPerUnit para o componente de estoque */}
