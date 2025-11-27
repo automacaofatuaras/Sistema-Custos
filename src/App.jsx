@@ -744,25 +744,163 @@ const DREComponent = ({ transactions }) => {
     );
 };
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
-    const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 7), type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
+    // ADICIONADO: materialDescription no estado inicial
+    const [form, setForm] = useState({ 
+        date: new Date().toISOString().slice(0, 7), 
+        type: 'expense', 
+        description: '', 
+        value: '', 
+        segment: '', 
+        accountPlan: '', 
+        metricType: 'producao',
+        materialDescription: '' // Novo campo para o tipo de estoque
+    });
+
     const [activeTab, setActiveTab] = useState('expense'); 
-    useEffect(() => { if (initialData) { setForm({ ...initialData, date: initialData.date.slice(0, 7) }); setActiveTab(initialData.type === 'metric' ? 'metric' : initialData.type); } }, [initialData]);
+
+    useEffect(() => { 
+        if (initialData) { 
+            setForm({ 
+                ...initialData, 
+                date: initialData.date.slice(0, 7),
+                materialDescription: initialData.materialDescription || '' // Recupera se estiver editando
+            }); 
+            setActiveTab(initialData.type === 'metric' ? 'metric' : initialData.type); 
+        } 
+    }, [initialData]);
+
     const handleSubmit = async () => {
         const val = parseFloat(form.value);
+        
         if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
         if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
+        
+        // VALIDAÇÃO ADICIONADA: Obriga a selecionar o material se for Estoque
+        if (activeTab === 'metric' && form.metricType === 'estoque' && !form.materialDescription) {
+            return showToast("Selecione o Material do Estoque.", 'error');
+        }
+
         const [year, month] = form.date.split('-');
         const lastDay = new Date(year, month, 0).getDate();
         const fullDate = `${form.date}-${lastDay}`;
+        
+        let tx = { 
+            ...form, 
+            date: fullDate, 
+            value: val, 
+            costCenter: 'GERAL', 
+            source: 'manual', 
+            createdAt: new Date().toISOString(), 
+            type: activeTab 
+        };
 
-        let tx = { ...form, date: fullDate, value: val, costCenter: 'GERAL', source: 'manual', createdAt: new Date().toISOString(), type: activeTab };
-        if (activeTab === 'metric') { tx.description = `Lançamento de ${form.metricType === 'producao' ? 'Produção' : (form.metricType === 'vendas' ? 'Vendas' : 'Estoque')}`; tx.accountPlan = 'METRICS'; }
-        try { if(initialData?.id) await dbService.update(user, 'transactions', initialData.id, tx); else await dbService.add(user, 'transactions', tx); showToast("Lançamento realizado!", 'success'); onSave(); onClose(); } catch(e) { showToast("Erro ao salvar.", 'error'); }
+        if (activeTab === 'metric') { 
+            // Define a descrição automática baseada no tipo e material
+            const matDesc = form.metricType === 'estoque' ? ` - ${form.materialDescription}` : '';
+            tx.description = `Lançamento de ${form.metricType.toUpperCase()}${matDesc}`; 
+            tx.accountPlan = 'METRICS';
+            // Garante que o materialDescription seja salvo explicitamente
+            if (form.metricType !== 'estoque') tx.materialDescription = '';
+        }
+
+        try { 
+            if(initialData?.id) await dbService.update(user, 'transactions', initialData.id, tx);
+            else await dbService.add(user, 'transactions', tx); 
+            
+            showToast("Lançamento realizado!", 'success'); 
+            onSave(); 
+            onClose(); 
+        } catch(e) { 
+            showToast("Erro ao salvar.", 'error');
+        }
     };
+
     const unitMeasure = form.segment ? getMeasureUnit(form.segment) : 'un';
+
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"><div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6 dark:border-slate-700 border"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold dark:text-white">{initialData ? 'Editar' : 'Novo'} Lançamento</h3><button onClick={onClose}><X size={20} className="text-slate-400"/></button></div><div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg mb-4"><button onClick={() => setActiveTab('revenue')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'revenue' ? 'bg-white dark:bg-slate-700 shadow text-emerald-600' : 'text-slate-500'}`}>Receita</button><button onClick={() => setActiveTab('expense')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'expense' ? 'bg-white dark:bg-slate-700 shadow text-rose-600' : 'text-slate-500'}`}>Despesa</button><button onClick={() => setActiveTab('metric')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'metric' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-500'}`}>Métricas</button></div><div className="space-y-3"><label className="block text-xs font-bold text-slate-500 uppercase">Competência</label><input type="month" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} /><label className="block text-xs font-bold text-slate-500 uppercase">Unidade</label><HierarchicalSelect value={form.segment} onChange={(val) => setForm({...form, segment: val})} options={segments} placeholder="Selecione a Unidade..." />{activeTab !== 'metric' && (<><label className="block text-xs font-bold text-slate-500 uppercase">Detalhes</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição (Ex: Pgto Fornecedor)" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} /><select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.accountPlan} onChange={e=>setForm({...form, accountPlan: e.target.value})}><option value="">Conta do DRE...</option>{DRE_BLUEPRINT.filter(r => r.level === 2).map(r => <option key={r.code} value={r.code}>{r.code} - {r.name}</option>)}</select></>)}{activeTab === 'metric' && (<div className="grid grid-cols-3 gap-2"><button onClick={()=>setForm({...form, metricType:'producao'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='producao'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Factory className="mx-auto mb-1" size={16}/> Produção</button><button onClick={()=>setForm({...form, metricType:'vendas'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='vendas'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><ShoppingCart className="mx-auto mb-1" size={16}/> Vendas</button><button onClick={()=>setForm({...form, metricType:'estoque'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='estoque'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Package className="mx-auto mb-1" size={16}/> Estoque</button></div>)}<div className="relative"><span className="absolute left-3 top-2 text-slate-400 font-bold">{activeTab === 'metric' ? unitMeasure : 'R$'}</span><input type="number" className="w-full border p-2 pl-12 rounded dark:bg-slate-700 dark:text-white" placeholder="Valor" value={form.value} onChange={e=>setForm({...form, value: e.target.value})} /></div><button onClick={handleSubmit} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">Salvar Lançamento</button></div></div></div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md p-6 dark:border-slate-700 border">
+                
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold dark:text-white">{initialData ? 'Editar' : 'Novo'} Lançamento</h3>
+                    <button onClick={onClose}><X size={20} className="text-slate-400"/></button>
+                </div>
+
+                {/* ABAS DE TIPO */}
+                <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg mb-4">
+                    <button onClick={() => setActiveTab('revenue')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'revenue' ? 'bg-white dark:bg-slate-700 shadow text-emerald-600' : 'text-slate-500'}`}>Receita</button>
+                    <button onClick={() => setActiveTab('expense')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'expense' ? 'bg-white dark:bg-slate-700 shadow text-rose-600' : 'text-slate-500'}`}>Despesa</button>
+                    <button onClick={() => setActiveTab('metric')} className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'metric' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-500'}`}>Métricas</button>
+                </div>
+
+                <div className="space-y-3">
+                    <label className="block text-xs font-bold text-slate-500 uppercase">Competência</label>
+                    <input type="month" className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
+                    
+                    <label className="block text-xs font-bold text-slate-500 uppercase">Unidade</label>
+                    <HierarchicalSelect value={form.segment} onChange={(val) => setForm({...form, segment: val})} options={segments} placeholder="Selecione a Unidade..." />
+
+                    {/* CAMPOS PARA RECEITA E DESPESA */}
+                    {activeTab !== 'metric' && (
+                        <>
+                            <label className="block text-xs font-bold text-slate-500 uppercase">Detalhes</label>
+                            <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição (Ex: Pgto Fornecedor)" value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
+                            <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.accountPlan} onChange={e=>setForm({...form, accountPlan: e.target.value})}>
+                                <option value="">Conta do DRE...</option>
+                                {DRE_BLUEPRINT.filter(r => r.level === 2).map(r => <option key={r.code} value={r.code}>{r.code} - {r.name}</option>)}
+                            </select>
+                        </>
+                    )}
+
+                    {/* CAMPOS ESPECÍFICOS DE MÉTRICAS */}
+                    {activeTab === 'metric' && (
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-3 gap-2">
+                                <button onClick={()=>setForm({...form, metricType:'producao'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='producao'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Factory className="mx-auto mb-1" size={16}/> Produção</button>
+                                <button onClick={()=>setForm({...form, metricType:'vendas'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='vendas'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><ShoppingCart className="mx-auto mb-1" size={16}/> Vendas</button>
+                                <button onClick={()=>setForm({...form, metricType:'estoque'})} className={`p-2 border rounded text-xs font-bold ${form.metricType==='estoque'?'bg-indigo-100 border-indigo-500 text-indigo-700':'dark:text-white'}`}><Package className="mx-auto mb-1" size={16}/> Estoque</button>
+                            </div>
+
+                            {/* SELECT DE MATERIAL (SÓ APARECE SE FOR ESTOQUE) */}
+                            {form.metricType === 'estoque' && (
+                                <div className="animate-in fade-in slide-in-from-top-2">
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Material</label>
+                                    <select 
+                                        className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white border-indigo-300 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        value={form.materialDescription}
+                                        onChange={e => setForm({...form, materialDescription: e.target.value})}
+                                    >
+                                        <option value="">Selecione o Material...</option>
+                                        <option value="Estoque Total">Estoque Total (Geral)</option>
+                                        <option value="Areia Fina">Areia Fina</option>
+                                        <option value="Areia Grossa">Areia Grossa</option>
+                                        <option value="Areia Suja">Areia Suja</option>
+                                    </select>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="relative">
+                        <span className="absolute left-3 top-2 text-slate-400 font-bold">
+                            {activeTab === 'metric' ? unitMeasure : 'R$'}
+                        </span>
+                        <input 
+                            type="number" 
+                            className="w-full border p-2 pl-12 rounded dark:bg-slate-700 dark:text-white" 
+                            placeholder="Valor / Quantidade" 
+                            value={form.value} 
+                            onChange={e=>setForm({...form, value: e.target.value})} 
+                        />
+                    </div>
+
+                    <button onClick={handleSubmit} className="w-full bg-indigo-600 text-white py-3 rounded font-bold hover:bg-indigo-700">
+                        Salvar Lançamento
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 };
 const ProductionComponent = ({ transactions, measureUnit }) => {
