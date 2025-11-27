@@ -998,8 +998,9 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
             
             {/* GRÁFICO 1: FÍSICO (Volume) */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6">
-              <Package className="text-indigo-500"/>
-                <h3 className="font-bold text-lg mb-4 dark:text-white">Quantitativo: Produção vs Vendas ({measureUnit})</h3>
+              
+                <h3 className="font-bold text-lg mb-4 dark:text-white"> <Package className="text-indigo-500"/>
+                  Quantitativo: Produção vs Vendas ({measureUnit})</h3>
                 <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={data}>
