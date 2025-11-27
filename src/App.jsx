@@ -1084,7 +1084,10 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
         const manuPrev = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('preventiva'));
         const manuCorr = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('corretiva'));
         const manuReform = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('reforma'));
+        const manuFrete = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('frete'));
         const manuPneus = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('pneu'));
+        const manuRessolado = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('ressolado'));
+        const manuNovos = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('novos'));
         
         // TOTAL DESPESAS TRANSPORTE (Residual: Tudo de transporte menos combustivel e manutenção)
         const totalTransporteGroup = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE'));
@@ -1119,7 +1122,7 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
             totalCustoOperacional, despUnidade, combustivel,
             margemContribuicao,
             custoAdm,
-            manutencaoTotal, manuPrev, manuCorr, manuReform, manuPneus,
+            manutencaoTotal, manuPrev, manuCorr, manuReform, manuFrete, manuPneus, manuRessolado, manuNovos
             residualTransporte,
             transpTerceiros,
             impostos,
@@ -1219,6 +1222,7 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
                                 <Row label="Manutenção Preventiva" val={data.manuPrev} indent={1} isSub colorClass="text-rose-500" />
                                 <Row label="Manutenção Corretiva" val={data.manuCorr} indent={1} isSub colorClass="text-rose-500" />
                                 <Row label="Manutenção Reforma" val={data.manuReform} indent={1} isSub colorClass="text-rose-500" />
+                                <Row label="Fretes compras p/ manutenção" val={data.manuFrete} indent={1} isSub colorClass="text-rose-500" />
                                 <Row label="Serviços de Pneus/Borracharia" val={data.manuPneus} indent={1} isSub colorClass="text-rose-500" />
                                 <Row label="Pneus Ressolados" val={data.manuRessolado} indent={1} isSub colorClass="text-rose-500" />
                                 <Row label="Pneus Novos" val={data.manuNovos} indent={1} isSub colorClass="text-rose-500" />
