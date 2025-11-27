@@ -1152,15 +1152,16 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
                 <h3 className="font-bold text-lg dark:text-white">{dynamicTitle}</h3>
                 
-                {/* CABEÇALHO ATUALIZADO COM PRODUÇÃO E VENDAS */}
                 <div className="flex gap-4">
                     <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
                         <span className="text-slate-500 mr-2">Produção Total:</span>
-                        <span className="font-bold text-indigo-600 dark:text-indigo-400">{totalProduction.toLocaleString()} {measureUnit}</span>
+                        {/* ALTERADO: ton fixo */}
+                        <span className="font-bold text-indigo-600 dark:text-indigo-400">{totalProduction.toLocaleString()} ton</span>
                     </div>
                     <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
                         <span className="text-slate-500 mr-2">Vendas Totais:</span>
-                        <span className="font-bold text-emerald-600 dark:text-emerald-400">{totalSales.toLocaleString()} {measureUnit}</span>
+                        {/* ALTERADO: ton fixo */}
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400">{totalSales.toLocaleString()} ton</span>
                     </div>
                 </div>
             </div>
@@ -1172,7 +1173,8 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                             <th className="p-3 pl-4">Descrição</th>
                             <th className="p-3 text-right">Valor</th>
                             <th className="p-3 text-right">%</th>
-                            <th className="p-3 text-right">R$ / {measureUnit}</th>
+                            {/* ALTERADO: ton fixo */}
+                            <th className="p-3 text-right">R$ / ton</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
