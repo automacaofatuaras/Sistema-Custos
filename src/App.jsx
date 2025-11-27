@@ -1119,10 +1119,11 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         // MANUAIS E ESPECÍFICOS
         const transpTerceiros = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('transporte terceiros'));
         const impostos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('02') || t.description.toLowerCase().includes('imposto')));
-        const custoAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('custo administrativo')); 
         
-        // RESULTADO OPERACIONAL
-        const resultOperacional = margemContribuicao - custoAdm - manutencaoTotal - residualTransporte - transpTerceiros - impostos;
+        // REMOVIDO: custoAdm (pois removemos a linha visual, removemos do cálculo também)
+        
+        // RESULTADO OPERACIONAL (Sem custoAdm)
+        const resultOperacional = margemContribuicao - manutencaoTotal - residualTransporte - transpTerceiros - impostos;
 
         // PÓS OPERACIONAL
         const rateioAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('rateio despesas'));
@@ -1137,7 +1138,7 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
         return {
             totalRevenue, recMaterial, recRetira, recEntrega, recFrete, freteCarreta, freteTruck, freteTerceiros, subsidio,
-            totalCustoOperacional, despUnidade, combustivel, margemContribuicao, custoAdm,
+            totalCustoOperacional, despUnidade, combustivel, margemContribuicao,
             manutencaoTotal, manuPrev, manuCorr, manuReform, manuFrete, manuPneus, manuRessolado, manuNovos,
             residualTransporte, transpTerceiros, impostos, resultOperacional, rateioAdm, multas, frotaParada,
             resultPosDespesas, investimentos, resultFinal
@@ -1173,12 +1174,10 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                 <div className="flex gap-4">
                     <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
                         <span className="text-slate-500 mr-2">Produção Total:</span>
-                        {/* ALTERADO: ton fixo */}
                         <span className="font-bold text-indigo-600 dark:text-indigo-400">{totalProduction.toLocaleString()} ton</span>
                     </div>
                     <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
                         <span className="text-slate-500 mr-2">Vendas Totais:</span>
-                        {/* ALTERADO: ton fixo */}
                         <span className="font-bold text-emerald-600 dark:text-emerald-400">{totalSales.toLocaleString()} ton</span>
                     </div>
                 </div>
@@ -1191,11 +1190,11 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                             <th className="p-3 pl-4">Descrição</th>
                             <th className="p-3 text-right">Valor</th>
                             <th className="p-3 text-right">%</th>
-                            {/* ALTERADO: ton fixo */}
                             <th className="p-3 text-right">R$ / ton</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
+                        {/* RECEITAS */}
                         <Row label="Total Receitas" val={data.totalRevenue} isHeader colorClass="text-blue-600" onClick={()=>toggle('receitas')} hasArrow expanded={expanded['receitas']} />
                         {expanded['receitas'] && (
                             <>
@@ -1221,7 +1220,7 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
                         <Row label="Margem de Contribuição" val={data.margemContribuicao} isHeader isResult bgClass="bg-blue-50 dark:bg-blue-900/20" />
 
-                        <Row label="Custo Administrativo (Rateio)" val={data.custoAdm} indent={0} colorClass="text-rose-600" />
+                        {/* REMOVIDO: Custo Administrativo (Rateio) */}
                         <Row label="Despesas Comerciais" val={0} indent={0} colorClass="text-rose-600" />
 
                         <Row label="Manutenção Transporte" val={data.manutencaoTotal} isHeader colorClass="text-rose-600" onClick={()=>toggle('manutencao')} hasArrow expanded={expanded['manutencao']} indent={0}/>
