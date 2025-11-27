@@ -1241,91 +1241,104 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
 const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentFilter }) => {
     const stockData = useMemo(() => {
-        // 1. CÁLCULO DO ANO TODO (Para garantir o saldo acumulado correto)
-        // Usa transactions (que agora está recebendo stockDataRaw do App.js)
+        // 1. CÁLCULO MÊS A MÊS ACUMULADO
+        // Ordena todas as transações do ano por data
         const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
         const avgCost = globalCostPerUnit || 0;
 
-        // Saldos acumulados (Apenas as categorias fixas)
-        let balances = {
+        // Saldos acumulados correntes (Começam zerados no início do ano ou período)
+        let currentBalances = {
             'Areia Fina': 0,
             'Areia Grossa': 0,
             'Areia Suja': 0
         };
 
-        const fullEvolution = [];
+        const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        const monthlyEvolution = [];
 
-        sorted.forEach(t => {
-            // Detecta o material
-            let category = null;
-            const desc = (t.materialDescription || t.description || '').toLowerCase();
-            
-            if (desc.includes('fina')) category = 'Areia Fina';
-            else if (desc.includes('grossa')) category = 'Areia Grossa';
-            else if (desc.includes('suja')) category = 'Areia Suja';
+        // Loop pelos 12 meses para garantir que temos o saldo final de cada mês
+        for (let m = 0; m < 12; m++) {
+            // Filtra transações que ocorreram NESTE mês 'm'
+            const txsInMonth = sorted.filter(t => {
+                const d = new Date(t.date);
+                // Ajuste de fuso horário simples se necessário, mas aqui usaremos o mês direto do objeto Date
+                // Nota: O filtro global de Ano já foi aplicado em 'transactions' antes de chegar aqui
+                return d.getMonth() === m;
+            });
 
-            // Se não for areia, IGNORA
-            if (!category) return;
+            // Processa as transações do mês para atualizar o saldo corrente
+            txsInMonth.forEach(t => {
+                let category = null;
+                const desc = (t.materialDescription || t.description || '').toLowerCase();
+                
+                if (desc.includes('fina')) category = 'Areia Fina';
+                else if (desc.includes('grossa')) category = 'Areia Grossa';
+                else if (desc.includes('suja')) category = 'Areia Suja';
 
-            // LÓGICA DE MOVIMENTAÇÃO
-            if (t.type === 'metric') {
-                const val = t.value;
-                if (t.metricType === 'producao') balances[category] += val;
-                else if (t.metricType === 'vendas') balances[category] -= val;
-                else if (t.metricType === 'estoque') balances[category] = val; // Medição/Ajuste
-            }
+                if (category) {
+                    const val = t.value;
+                    if (t.type === 'metric') {
+                        if (t.metricType === 'producao') currentBalances[category] += val;
+                        else if (t.metricType === 'vendas') currentBalances[category] -= val;
+                        else if (t.metricType === 'estoque') currentBalances[category] = val; // Ajuste de inventário
+                    }
+                }
+            });
 
-            // Soma do total físico naquele dia
-            const totalMoment = Object.values(balances).reduce((a, b) => a + b, 0);
-            
-            if (t.type === 'metric') {
-                fullEvolution.push({
-                    dateObj: new Date(t.date),
-                    displayDate: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-                    Estoque: totalMoment
-                });
-            }
-        });
+            // Calcula totais do fechamento deste mês
+            const totalMonth = currentBalances['Areia Fina'] + currentBalances['Areia Grossa'] + currentBalances['Areia Suja'];
 
-        // 2. RECORTA O GRÁFICO PARA O PERÍODO SELECIONADO (Mês, Trimestre, etc)
-        // O cálculo acima rodou o ano todo. Agora filtramos só o que será exibido no gráfico.
-        let filteredEvolution = fullEvolution;
-        
-        if (currentFilter && currentFilter.type === 'month') {
-            filteredEvolution = fullEvolution.filter(item => item.dateObj.getMonth() === currentFilter.month);
-        } else if (currentFilter && currentFilter.type === 'quarter') {
+            monthlyEvolution.push({
+                name: months[m], // Nome do mês (Jan, Fev...)
+                monthIndex: m,
+                'Areia Fina': currentBalances['Areia Fina'],
+                'Areia Grossa': currentBalances['Areia Grossa'],
+                'Areia Suja': currentBalances['Areia Suja'],
+                Total: totalMonth
+            });
+        }
+
+        // 2. FILTRAGEM VISUAL (Caso o usuário selecione Trimestre/Semestre no filtro principal)
+        // Se o filtro for "Year" (Anual), mostramos todos os 12 meses.
+        // Se for "Month", mostramos apenas o mês selecionado (e talvez os vizinhos, mas vou focar no comportamento padrão).
+        let displayData = monthlyEvolution;
+
+        if (currentFilter && currentFilter.type === 'quarter') {
             const startMonth = (currentFilter.quarter - 1) * 3;
             const endMonth = startMonth + 2;
-            filteredEvolution = fullEvolution.filter(item => item.dateObj.getMonth() >= startMonth && item.dateObj.getMonth() <= endMonth);
+            displayData = monthlyEvolution.filter(item => item.monthIndex >= startMonth && item.monthIndex <= endMonth);
         } else if (currentFilter && currentFilter.type === 'semester') {
              const isFirstSem = currentFilter.semester === 1;
-             filteredEvolution = fullEvolution.filter(item => isFirstSem ? item.dateObj.getMonth() < 6 : item.dateObj.getMonth() >= 6);
+             displayData = monthlyEvolution.filter(item => isFirstSem ? item.monthIndex < 6 : item.monthIndex >= 6);
         }
-        // Se for filtro 'year', ele mostra tudo (fullEvolution)
+        // Nota: Se o filtro for 'month', ainda pode ser interessante mostrar o ano todo para ver a evolução, 
+        // mas se quiser restringir, descomente a linha abaixo:
+        // if (currentFilter.type === 'month') displayData = monthlyEvolution.filter(item => item.monthIndex === currentFilter.month);
 
-        // Pega os saldos FINAIS (acumulados até o último dia processado no ano)
-        const totalFinal = Object.values(balances).reduce((a, b) => a + b, 0);
+        // Saldos ATUAIS (última posição calculada do ano, ou seja, Dezembro ou último mês processado)
+        const currentFinal = currentBalances; 
+        const totalFinal = currentFinal['Areia Fina'] + currentFinal['Areia Grossa'] + currentFinal['Areia Suja'];
 
         return { 
             total: totalFinal,
-            fina: balances['Areia Fina'],
-            grossa: balances['Areia Grossa'],
-            suja: balances['Areia Suja'],
+            fina: currentFinal['Areia Fina'],
+            grossa: currentFinal['Areia Grossa'],
+            suja: currentFinal['Areia Suja'],
             avgCost, 
             totalValue: totalFinal * avgCost,
-            valFina: balances['Areia Fina'] * avgCost,
-            valGrossa: balances['Areia Grossa'] * avgCost,
-            valSuja: balances['Areia Suja'] * avgCost,
-            evolution: filteredEvolution // Gráfico recortado visualmente, mas com altura correta
+            valFina: currentFinal['Areia Fina'] * avgCost,
+            valGrossa: currentFinal['Areia Grossa'] * avgCost,
+            valSuja: currentFinal['Areia Suja'] * avgCost,
+            evolution: displayData // Dados mensais acumulados
         };
     }, [transactions, globalCostPerUnit, currentFilter]);
 
     return (
         <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-            {/* CARDS TOTAIS */}
+            {/* CARDS TOTAIS (SALDO ATUAL) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-indigo-600 text-white p-6 rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none">
-                    <p className="text-indigo-200 text-xs font-bold uppercase mb-2">Estoque Físico Total</p>
+                    <p className="text-indigo-200 text-xs font-bold uppercase mb-2">Estoque Físico Atual</p>
                     <h3 className="text-3xl font-bold">{stockData.total.toLocaleString()} <span className="text-lg font-normal opacity-80">{measureUnit}</span></h3>
                     <div className="mt-4 pt-4 border-t border-indigo-500/50 flex justify-between items-center text-sm">
                         <span>Custo Médio</span>
@@ -1338,13 +1351,13 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
                     <h3 className="text-4xl font-bold text-emerald-600 dark:text-emerald-400">
                         {stockData.totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
                     </h3>
-                    <p className="text-slate-400 text-sm mt-1">Baseado no Custo Médio x Volume Calculado</p>
+                    <p className="text-slate-400 text-sm mt-1">Baseado no Saldo Atual x Custo Médio</p>
                 </div>
             </div>
 
             <div className="flex items-center gap-2 mt-8">
                 <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
-                    <Package className="text-indigo-500"/> Detalhamento por Tipo
+                    <Package className="text-indigo-500"/> Detalhamento do Saldo Atual
                 </h3>
             </div>
 
@@ -1381,23 +1394,24 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
                 </div>
             </div>
 
-            {/* GRÁFICO */}
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80 mt-6">
-                <h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque (Período Selecionado)</h3>
+            {/* GRÁFICO ATUALIZADO: Barras Empilhadas Mês a Mês */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-96 mt-6">
+                <h3 className="font-bold mb-6 dark:text-white">Evolução do Saldo Acumulado (Mês a Mês)</h3>
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={stockData.evolution}>
-                        <defs>
-                            <linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
-                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                            </linearGradient>
-                        </defs>
+                    <BarChart data={stockData.evolution} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                        <XAxis dataKey="displayDate" tick={{fontSize: 12}} />
-                        <YAxis tick={{fontSize: 12}} />
-                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
-                        <Area type="step" dataKey="Estoque" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorStock)" />
-                    </AreaChart>
+                        <XAxis dataKey="name" tick={{fontSize: 12}} stroke="#94a3b8" />
+                        <YAxis tick={{fontSize: 12}} stroke="#94a3b8" />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} 
+                            cursor={{fill: 'rgba(255,255,255,0.05)'}}
+                        />
+                        <Legend />
+                        {/* Barras Empilhadas para mostrar a composição do estoque */}
+                        <Bar name="Areia Fina" dataKey="Areia Fina" stackId="a" fill="#fbbf24" />
+                        <Bar name="Areia Grossa" dataKey="Areia Grossa" stackId="a" fill="#3b82f6" />
+                        <Bar name="Areia Suja" dataKey="Areia Suja" stackId="a" fill="#78716c" />
+                    </BarChart>
                 </ResponsiveContainer>
             </div>
         </div>
