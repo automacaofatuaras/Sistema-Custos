@@ -17,8 +17,12 @@ import * as XLSX from 'xlsx';
 
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { 
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, 
+  signOut, sendPasswordResetEmail, createUserWithEmailAndPassword
+} from 'firebase/auth';
+import { 
   getFirestore, collection, addDoc, getDocs, deleteDoc, 
-  doc, updateDoc, writeBatch, setDoc, getDoc
+  doc, updateDoc, writeBatch, setDoc, getDoc, query, where
 } from 'firebase/firestore';
 
 /**
@@ -42,7 +46,7 @@ const GEMINI_API_KEY = "SUA_KEY_GEMINI";
 
 // Inicialização do Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-// Auth removido propositalmente para acesso direto
+const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
 
@@ -80,7 +84,6 @@ const COST_CENTER_RULES = {
     }
 };
 
-// LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE)
 const ADMIN_CC_CODES = [
     13000, 14000, 27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, 
     10000, 20000, 5000, 4000, 3000, 26000, 2000, 32000, 6000, 17000, 31000, 7000, 21000, 40000
@@ -101,22 +104,29 @@ const getParentSegment = (unitName) => {
     return "Geral";
 };
 
-// FORMATADOR DE DATA (SEM FUSO HORÁRIO)
+// FORMATADOR DE DATA (Trata data com ou sem hora)
 const formatDate = (dateString) => {
     if (!dateString) return '-';
-    const parts = dateString.split('-'); 
+    // Se tiver 'T', pega só a parte da data
+    const cleanDate = dateString.includes('T') ? dateString.split('T')[0] : dateString;
+    const parts = cleanDate.split('-'); 
     if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     return dateString;
 };
 
+// --- MAPEAMENTO AUTOMÁTICO DE UNIDADES (Nomes Completos para Bater com Filtro) ---
 const getUnitByCostCenter = (ccCode) => {
     const cc = parseInt(ccCode, 10);
     if (isNaN(cc)) return null;
     
-    if (cc === 1087 || cc === 1089 || cc === 1042) return "Porto de Areia Saara - Mira Estrela";
+    // Rateios Especiais
+    if (cc === 1087 || cc === 1089 || cc === 1042) return "Portos de Areia: Porto de Areia Saara - Mira Estrela"; 
 
-    if (cc >= 13000 && cc <= 13999) return "Porto de Areia Saara - Mira Estrela";
-    if (cc >= 14000 && cc <= 14999) return "Porto Agua Amarela - Riolândia";
+    // Portos
+    if (cc >= 13000 && cc <= 13999) return "Portos de Areia: Porto de Areia Saara - Mira Estrela";
+    if (cc >= 14000 && cc <= 14999) return "Portos de Areia: Porto Agua Amarela - Riolândia";
+    
+    // Concreteiras
     if (cc >= 27000 && cc <= 27999) return "Noromix Concreteiras: Noromix Concreto S/A - Fernandópolis";
     if (cc >= 22000 && cc <= 22999) return "Noromix Concreteiras: Noromix Concreto S/A - Ilha Solteira";
     if (cc >= 25000 && cc <= 25999) return "Noromix Concreteiras: Noromix Concreto S/A - Jales";
@@ -126,20 +136,29 @@ const getUnitByCostCenter = (ccCode) => {
     if (cc >= 29000 && cc <= 29999) return "Noromix Concreteiras: Noromix Concreto S/A - Pereira Barreto";
     if (cc >= 9000 && cc <= 9999) return "Noromix Concreteiras: Noromix Concreto S/A - Três Fronteiras";
     if (cc >= 8000 && cc <= 8999) return "Noromix Concreteiras: Noromix Concreto S/A - Votuporanga";
+    
+    // Fábrica
     if (cc >= 10000 && cc <= 10999) return "Fábrica de Tubos: Noromix Concreto S/A - Votuporanga (Fábrica)";
+    
+    // Pedreiras
     if (cc >= 20000 && cc <= 20999) return "Pedreiras: Mineração Grandes Lagos - Icém";
     if (cc >= 5000 && cc <= 5999) return "Pedreiras: Mineração Grandes Lagos - Itapura";
     if (cc >= 4000 && cc <= 4999) return "Pedreiras: Mineração Grandes Lagos - Riolândia";
     if (cc >= 3000 && cc <= 3999) return "Pedreiras: Mineração Grandes Lagos - Três Fronteiras";
     if (cc >= 26000 && cc <= 26999) return "Pedreiras: Noromix Concreto S/A - Rinópolis";
     if (cc >= 2000 && cc <= 2999) return "Pedreiras: Mineração Noroeste Paulista - Monções";
+    
+    // Usinas
     if (cc >= 32000 && cc <= 32999) return "Usinas de Asfalto: Noromix Concreto S/A - Assis";
     if (cc >= 6000 && cc <= 6999) return "Usinas de Asfalto: Noromix Concreto S/A - Monções (Usina)";
     if (cc >= 17000 && cc <= 17999) return "Usinas de Asfalto: Noromix Concreto S/A - Itapura (Usina)";
     if (cc >= 31000 && cc <= 31999) return "Usinas de Asfalto: Noromix Concreto S/A - Rinópolis (Usina)";
     if (cc >= 7000 && cc <= 7999) return "Usinas de Asfalto: Demop Participações LTDA - Três Fronteiras";
     if (cc >= 21000 && cc <= 21999) return "Usinas de Asfalto: Mineração Grandes Lagos - Icém (Usina)";
+    
+    // Construtora
     if (cc >= 40000 && cc <= 94999 && cc !== 94901) return "Construtora: Noromix Construtora";
+    
     return null;
 };
 
@@ -184,15 +203,14 @@ const useToast = () => {
     return [toast, showToast];
 };
 
-// --- SERVIÇOS (SEM LOGIN) ---
+// --- SERVIÇOS ---
 const dbService = {
   getCollRef: (user, colName) => {
-    // Sem validação de usuário
+    // Sem validação de usuário para teste
     return collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', colName);
   },
   syncSystem: async (user) => {
-    // Sempre retorna admin para liberar acesso
-    return 'admin';
+      return 'admin';
   },
   getAllUsers: async () => { const usersColl = collection(db, 'artifacts', appId, 'users'); const snap = await getDocs(usersColl); return snap.docs.map(d => ({ id: d.id, ...d.data() })); },
   updateUserRole: async (userId, newRole) => { const userRef = doc(db, 'artifacts', appId, 'users', userId); await updateDoc(userRef, { role: newRole }); },
@@ -204,7 +222,6 @@ const dbService = {
   getAll: async (user, col) => { const snapshot = await getDocs(dbService.getCollRef(user, col)); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); },
   addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
 };
-
 const aiService = { analyze: async () => "IA Placeholder" };
 
 /**
@@ -275,51 +292,60 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             if (isNaN(value) || value === 0) continue;
 
-            // CORREÇÃO DE DATA (FUSO)
+            // --- CORREÇÃO DE DATA E HORA (T10:00:00) ---
+            // Isso força a data para 10h da manhã do dia informado, evitando regressão de dia pelo fuso horário
             let isoDate = new Date().toISOString().split('T')[0];
             if (dateStr && dateStr.length === 10) {
                 const parts = dateStr.split('/');
                 if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
+            const safeDateWithTime = `${isoDate}T10:00:00`;
 
             if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
 
             const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
             
-            // CC 1042 (Divide por 2)
+            // REGRAS DE SPLIT
             if (ccCode === '01042' || ccCode === '1042') {
                 const splitValue = value / 2;
                 const baseObj = {
-                    date: isoDate, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
+                    date: safeDateWithTime, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
                     planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
                     value: splitValue, type: type, source: 'automatic_import', createdAt: new Date().toISOString()
                 };
-                parsed.push({ ...baseObj, segment: "Porto de Areia Saara - Mira Estrela" });
-                parsed.push({ ...baseObj, segment: "Porto Agua Amarela - Riolândia" });
+                parsed.push({ ...baseObj, segment: "Portos de Areia: Porto de Areia Saara - Mira Estrela" });
+                parsed.push({ ...baseObj, segment: "Portos de Areia: Porto Agua Amarela - Riolândia" });
                 continue;
             }
 
-            // CC 1087/1089 (Divide por 8 e depois por 2)
             if (ccCode === '01087' || ccCode === '1087' || ccCode === '01089' || ccCode === '1089') {
                 const splitValue = (value / 8) / 2;
                 const baseObj = {
-                    date: isoDate, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
+                    date: safeDateWithTime, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
                     planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
                     value: splitValue, type: type, source: 'automatic_import', createdAt: new Date().toISOString()
                 };
-                parsed.push({ ...baseObj, segment: "Porto de Areia Saara - Mira Estrela" });
-                parsed.push({ ...baseObj, segment: "Porto Agua Amarela - Riolândia" });
+                parsed.push({ ...baseObj, segment: "Portos de Areia: Porto de Areia Saara - Mira Estrela" });
+                parsed.push({ ...baseObj, segment: "Portos de Areia: Porto Agua Amarela - Riolândia" });
                 continue;
             }
 
             const detectedUnit = getUnitByCostCenter(ccCode);
+            // Fallback se não achar unidade
             const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
 
             parsed.push({
-                date: isoDate, segment: finalSegment, costCenter: `${ccCode} - ${ccDesc}`,
-                accountPlan: planCode || '00.00', planDescription: planDesc || 'Indefinido',
-                description: supplier, materialDescription: sortDesc, value: value,
-                type: type, source: 'automatic_import', createdAt: new Date().toISOString()
+                date: safeDateWithTime, // Data com hora fixa
+                segment: finalSegment,
+                costCenter: `${ccCode} - ${ccDesc}`,
+                accountPlan: planCode || '00.00',
+                planDescription: planDesc || 'Indefinido',
+                description: supplier, 
+                materialDescription: sortDesc, 
+                value: value,
+                type: type,
+                source: 'automatic_import',
+                createdAt: new Date().toISOString()
             });
         }
         setPreviewData(parsed);
@@ -529,6 +555,8 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
     );
 };
 
+// ... (Resto dos Componentes: HierarchicalSelect, PeriodSelector, LoginScreen, UsersScreen, DREComponent, ManualEntryModal, ProductionComponent, StockComponent, App - MANTIDOS)
+
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -680,12 +708,9 @@ const AIReportModal = ({ onClose, transactions, period }) => {
  * ------------------------------------------------------------------
  */
 export default function App() {
-  // 1. BYPASS LOGIN (USUÁRIO FALSO AUTOMÁTICO)
-  const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
-  const [userRole, setUserRole] = useState('admin');
-  
-  // ... RESTO DOS ESTADOS IGUAIS
-  const [loadingAuth, setLoadingAuth] = useState(false); // Já carregado
+  const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState('viewer');
+  const [loadingAuth, setLoadingAuth] = useState(true);
   const { theme, toggleTheme } = useTheme();
   const [toast, showToast] = useToast();
 
@@ -706,12 +731,12 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef(null);
 
-  // CARREGA DADOS AO INICIAR (SEM LOGIN)
-  useEffect(() => { 
-      const init = async () => {
-          await loadData();
-      };
-      init();
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      if (u) { const role = await dbService.syncSystem(u); setUserRole(role); }
+      setUser(u); setLoadingAuth(false);
+    });
+    return () => unsubscribe();
   }, []);
 
   const loadData = async () => {
@@ -724,11 +749,9 @@ export default function App() {
         setSelectedIds([]);
     } catch (e) { showToast("Erro ao carregar dados.", 'error'); }
   };
+  useEffect(() => { if (user) loadData(); }, [user]);
 
-  const handleLogout = async () => {
-      // Logout desabilitado (recarrega página)
-      window.location.reload();
-  };
+  const handleLogout = async () => await signOut(auth);
 
   const handleImport = async (data) => {
     setIsProcessing(true);
@@ -790,6 +813,7 @@ export default function App() {
   }, [filteredData]);
 
   if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
+  if (!user) return <LoginScreen showToast={showToast} />;
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
@@ -804,8 +828,8 @@ export default function App() {
           <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos e Despesas</span></button>
           <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'estoque' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Zap size={20} /><span className="hidden lg:block">Estoque</span></button>
           <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção</span></button>
-          {/* Importar sempre visível para admin */}
-          <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>
+          {['admin', 'editor'].includes(userRole) && <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>}
+          {userRole === 'admin' && <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-slate-800`}><Users size={20} /><span className="hidden lg:block">Usuários</span></button>}
         </nav>
         <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-sm text-slate-400"><div className="p-1 bg-slate-800 rounded"><UserCircle size={16} /></div><div className="flex-1 min-w-0"><p className="truncate font-bold text-white">{user.email}</p><p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p></div></div></div>
       </aside>
@@ -850,7 +874,7 @@ export default function App() {
                         </button>
                     )}
                  </div>
-                 <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>
+                 {['admin', 'editor'].includes(userRole) && <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>}
              </div>
              <div className="overflow-x-auto">
                  <table className="w-full text-left text-sm">
@@ -879,7 +903,7 @@ export default function App() {
                                  <td className="p-4 text-xs dark:text-slate-300">{t.type === 'metric' ? t.metricType.toUpperCase() : t.accountPlan}</td>
                                  <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>{t.value.toLocaleString()}</td>
                                  <td className="p-4 flex gap-2">
-                                     <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>
+                                     {['admin', 'editor'].includes(userRole) && <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>}
                                  </td>
                              </tr>
                          ))}
