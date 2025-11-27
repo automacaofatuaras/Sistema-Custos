@@ -838,7 +838,7 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
             tx.description = `Lançamento de ${form.metricType.toUpperCase()}${matDesc}`; 
             tx.accountPlan = 'METRICS';
             if (form.metricType !== 'estoque') tx.materialDescription = '';
-        }
+        };
 
         try { 
             if(initialData?.id) {
