@@ -1020,7 +1020,7 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
     );
 };
 
-const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, selectedUnit }) => {
+const FechamentoComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit }) => {
     // Estado para controlar quais linhas estão expandidas
     const [expanded, setExpanded] = useState({
         'receitas': true,
@@ -1040,7 +1040,6 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
         return `Ano de ${filter.year}`;
     };
 
-    // Limpa o nome da unidade se tiver prefixo (ex: "Portos: Unidade X")
     const unitLabel = selectedUnit.includes(':') ? selectedUnit.split(':')[1].trim() : selectedUnit;
     const dynamicTitle = `Fechamento: ${unitLabel} - ${getPeriodLabel()}`;
 
@@ -1061,12 +1060,10 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
             if (subGroupName) {
                 return rules[groupName][subGroupName]?.includes(ccCode);
             }
-            // Se não passar subgrupo, verifica em todos os subgrupos daquele grupo raiz
             return Object.values(rules[groupName]).flat().includes(ccCode);
         };
 
         // --- 2. CÁLCULOS DAS LINHAS ---
-
         // RECEITAS
         const recMaterial = sum(t => t.type === 'revenue' && (t.description.toLowerCase().includes('retira') || t.description.toLowerCase().includes('entrega') || t.accountPlan === '01.01'));
         const recFrete = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('frete'));
@@ -1079,22 +1076,16 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
         const freteTruck = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('truck'));
         const freteTerceiros = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('terceiros') && t.description.toLowerCase().includes('frete'));
 
-        // CUSTO OPERACIONAL (Despesas Unidade + Administrativo + Combustivel)
-        // Despesas da Unidade (Regra do CC)
+        // CUSTO OPERACIONAL
         const despUnidade = sum(t => t.type === 'expense' && isInRuleGroup(t, 'DESPESAS DA UNIDADE'));
-        
-        // Combustível (Está no grupo TRANSPORTE, mas filtramos por descrição ou conta)
         const combustivel = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && (t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel') || t.accountPlan === '03.07.01'));
-
         const totalCustoOperacional = despUnidade + combustivel;
 
         // MARGEM DE CONTRIBUIÇÃO
         const margemContribuicao = totalRevenue - totalCustoOperacional;
 
-        // MANUTENÇÃO (Está no grupo TRANSPORTE, conta 03.05)
+        // MANUTENÇÃO
         const manutencaoTotal = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05'));
-        
-        // Detalhe Manutenção
         const manuPrev = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('preventiva'));
         const manuCorr = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('corretiva'));
         const manuReform = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('reforma'));
@@ -1103,7 +1094,7 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
         const manuRessolado = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('ressolado'));
         const manuNovos = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('novos'));
         
-        // TOTAL DESPESAS TRANSPORTE (Residual: Tudo de transporte menos combustivel e manutenção)
+        // TOTAL DESPESAS TRANSPORTE
         const totalTransporteGroup = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE'));
         const residualTransporte = totalTransporteGroup - combustivel - manutencaoTotal;
 
@@ -1115,7 +1106,7 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
         // RESULTADO OPERACIONAL
         const resultOperacional = margemContribuicao - custoAdm - manutencaoTotal - residualTransporte - transpTerceiros - impostos;
 
-        // PÓS OPERACIONAL (Manuais)
+        // PÓS OPERACIONAL
         const rateioAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('rateio despesas'));
         const multas = sum(t => t.type === 'expense' && (t.description.toLowerCase().includes('multa') || t.description.toLowerCase().includes('taxa')));
         const frotaParada = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('frota parada'));
@@ -1124,34 +1115,20 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
 
         // INVESTIMENTOS
         const investimentos = sum(t => t.type === 'expense' && (t.description.toLowerCase().includes('consórcio') || t.description.toLowerCase().includes('investimento')));
-        
         const resultFinal = resultPosDespesas - investimentos;
 
         return {
-            totalRevenue,
-            recMaterial, recRetira, recEntrega,
-            recFrete, freteCarreta, freteTruck, freteTerceiros,
-            subsidio,
-            totalCustoOperacional, despUnidade, combustivel,
-            margemContribuicao,
-            custoAdm,
+            totalRevenue, recMaterial, recRetira, recEntrega, recFrete, freteCarreta, freteTruck, freteTerceiros, subsidio,
+            totalCustoOperacional, despUnidade, combustivel, margemContribuicao, custoAdm,
             manutencaoTotal, manuPrev, manuCorr, manuReform, manuFrete, manuPneus, manuRessolado, manuNovos,
-            residualTransporte,
-            transpTerceiros,
-            impostos,
-            resultOperacional,
-            rateioAdm, multas, frotaParada,
-            resultPosDespesas,
-            investimentos,
-            resultFinal
+            residualTransporte, transpTerceiros, impostos, resultOperacional, rateioAdm, multas, frotaParada,
+            resultPosDespesas, investimentos, resultFinal
         };
     }, [transactions]);
 
-    // Componente de Linha da Tabela
     const Row = ({ label, val, isHeader = false, isResult = false, isSub = false, colorClass = "text-slate-700", bgClass = "", indent = 0, onClick = null, hasArrow = false, expanded = false }) => {
         const percent = data.totalRevenue > 0 ? (val / data.totalRevenue) * 100 : 0;
         const perUnit = totalSales > 0 ? val / totalSales : 0;
-        
         let finalColor = colorClass;
         if (isResult) finalColor = val >= 0 ? 'text-emerald-600' : 'text-rose-600';
 
@@ -1164,25 +1141,27 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
                 <td className={`p-2 text-right font-bold ${finalColor} dark:text-slate-200`}>
                     {isSub && val === 0 ? '-' : val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </td>
-                <td className="p-2 text-right text-xs font-mono text-slate-500 dark:text-slate-400">
-                    {percent === 0 ? '-' : `${percent.toFixed(2)}%`}
-                </td>
-                <td className="p-2 text-right text-xs font-mono text-slate-500 dark:text-slate-400">
-                    {perUnit === 0 ? '-' : perUnit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                </td>
+                <td className="p-2 text-right text-xs font-mono text-slate-500 dark:text-slate-400">{percent === 0 ? '-' : `${percent.toFixed(2)}%`}</td>
+                <td className="p-2 text-right text-xs font-mono text-slate-500 dark:text-slate-400">{perUnit === 0 ? '-' : perUnit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
             </tr>
         );
     };
 
     return (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden animate-in fade-in">
-            <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                {/* TÍTULO DINÂMICO AQUI */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
                 <h3 className="font-bold text-lg dark:text-white">{dynamicTitle}</h3>
                 
-                <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
-                    <span className="text-slate-500 mr-2">Vendas Totais:</span>
-                    <span className="font-bold dark:text-white">{totalSales.toLocaleString()} {measureUnit}</span>
+                {/* CABEÇALHO ATUALIZADO COM PRODUÇÃO E VENDAS */}
+                <div className="flex gap-4">
+                    <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
+                        <span className="text-slate-500 mr-2">Produção Total:</span>
+                        <span className="font-bold text-indigo-600 dark:text-indigo-400">{totalProduction.toLocaleString()} {measureUnit}</span>
+                    </div>
+                    <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
+                        <span className="text-slate-500 mr-2">Vendas Totais:</span>
+                        <span className="font-bold text-emerald-600 dark:text-emerald-400">{totalSales.toLocaleString()} {measureUnit}</span>
+                    </div>
                 </div>
             </div>
             
@@ -1197,25 +1176,20 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
                         </tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
-                        {/* RECEITAS */}
                         <Row label="Total Receitas" val={data.totalRevenue} isHeader colorClass="text-blue-600" onClick={()=>toggle('receitas')} hasArrow expanded={expanded['receitas']} />
-                        
                         {expanded['receitas'] && (
                             <>
                                 <Row label="Receita de Material" val={data.recMaterial} indent={1} colorClass="text-blue-500" />
                                 <Row label="Receita Retira" val={data.recRetira} indent={2} isSub colorClass="text-blue-400" />
                                 <Row label="Receita Entrega" val={data.recEntrega} indent={2} isSub colorClass="text-blue-400" />
-                                
                                 <Row label="Receita de Frete" val={data.recFrete} indent={1} colorClass="text-blue-500" />
                                 <Row label="Frete Carreta" val={data.freteCarreta} indent={2} isSub colorClass="text-blue-400" />
                                 <Row label="Frete Truck" val={data.freteTruck} indent={2} isSub colorClass="text-blue-400" />
                                 <Row label="Frete Terceiros" val={data.freteTerceiros} indent={2} isSub colorClass="text-blue-400" />
-
                                 <Row label="Subsídio de Terceiros" val={data.subsidio} indent={1} colorClass="text-blue-500" />
                             </>
                         )}
 
-                        {/* CUSTO OPERACIONAL */}
                         <Row label="Custo Operacional" val={data.totalCustoOperacional} isHeader colorClass="text-rose-600" onClick={()=>toggle('custo_operacional')} hasArrow expanded={expanded['custo_operacional']} />
                         {expanded['custo_operacional'] && (
                             <>
@@ -1225,10 +1199,8 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
                             </>
                         )}
 
-                        {/* MARGEM DE CONTRIBUIÇÃO */}
                         <Row label="Margem de Contribuição" val={data.margemContribuicao} isHeader isResult bgClass="bg-blue-50 dark:bg-blue-900/20" />
 
-                        {/* DESPESAS GERAIS */}
                         <Row label="Custo Administrativo (Rateio)" val={data.custoAdm} indent={0} colorClass="text-rose-600" />
                         <Row label="Despesas Comerciais" val={0} indent={0} colorClass="text-rose-600" />
 
@@ -1249,23 +1221,17 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit, filter, se
                         <Row label="Total Desp. Transp. Terceiros" val={data.transpTerceiros} indent={0} colorClass="text-rose-600" />
                         <Row label="Impostos" val={data.impostos} indent={0} colorClass="text-rose-600" />
 
-                        {/* RESULTADO OPERACIONAL */}
                         <Row label="Resultado Operacional" val={data.resultOperacional} isHeader isResult bgClass="bg-slate-200 dark:bg-slate-700" />
 
-                        {/* PÓS OPERACIONAL */}
                         <Row label="Rateio Despesas Administrativas" val={data.rateioAdm} indent={0} colorClass="text-rose-600" />
                         <Row label="Despesas Multas e Taxas" val={data.multas} indent={0} colorClass="text-rose-600" />
                         <Row label="Frota Parada" val={data.frotaParada} indent={0} colorClass="text-rose-600" />
 
-                        {/* RESULTADO PÓS DESPESAS */}
                         <Row label="Resultado Pós Despesas" val={data.resultPosDespesas} isHeader isResult bgClass="bg-slate-200 dark:bg-slate-700" />
 
-                        {/* INVESTIMENTOS */}
                         <Row label="Investimentos / Consórcios" val={data.investimentos} indent={0} colorClass="text-rose-600" />
 
-                        {/* RESULTADO FINAL */}
                         <Row label="Resultado Pós Investimentos" val={data.resultFinal} isHeader isResult bgClass="bg-slate-300 dark:bg-slate-600" />
-
                     </tbody>
                 </table>
             </div>
@@ -1887,12 +1853,13 @@ const stockDataRaw = useMemo(() => {
         )}
         {activeTab === 'dre' && <DREComponent transactions={filteredData} />}
         {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
+        {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
         {/* Passando globalCostPerUnit para o componente de estoque */}
         {activeTab === 'estoque' && <StockComponent transactions={stockDataRaw} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} />}
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
         {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
-        {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
+        
       </main>
 
       {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
