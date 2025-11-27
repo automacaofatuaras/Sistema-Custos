@@ -4,7 +4,7 @@ import {
   DollarSign, Trash2, Building2, PlusCircle, Settings, Edit2, 
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, 
-  AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown,
+  AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown, Printer,
   BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
 } from 'lucide-react';
 import { 
@@ -1120,9 +1120,7 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const transpTerceiros = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('transporte terceiros'));
         const impostos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('02') || t.description.toLowerCase().includes('imposto')));
         
-        // REMOVIDO: custoAdm (pois removemos a linha visual, removemos do cálculo também)
-        
-        // RESULTADO OPERACIONAL (Sem custoAdm)
+        // RESULTADO OPERACIONAL
         const resultOperacional = margemContribuicao - manutencaoTotal - residualTransporte - transpTerceiros - impostos;
 
         // PÓS OPERACIONAL
@@ -1167,9 +1165,28 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
     };
 
     return (
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden animate-in fade-in">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden animate-in fade-in print:shadow-none print:border-none">
+            {/* ESTILOS DE IMPRESSÃO: Esconde sidebar e cabeçalho do app, mantém só o relatório */}
+            <style>{`
+                @media print {
+                    aside, header, button.no-print { display: none !important; }
+                    main { padding: 0 !important; overflow: visible !important; }
+                    body { background: white !important; }
+                    .print\\:shadow-none { box-shadow: none !important; }
+                    .print\\:border-none { border: none !important; }
+                    /* Expande tudo na impressão */
+                    tbody tr { display: table-row !important; } 
+                }
+            `}</style>
+
             <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
-                <h3 className="font-bold text-lg dark:text-white">{dynamicTitle}</h3>
+                <div className="flex items-center gap-4">
+                    <h3 className="font-bold text-lg dark:text-white">{dynamicTitle}</h3>
+                    {/* BOTÃO EXPORTAR PDF */}
+                    <button onClick={() => window.print()} className="no-print p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Exportar PDF / Imprimir">
+                        <Printer size={20}/>
+                    </button>
+                </div>
                 
                 <div className="flex gap-4">
                     <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
@@ -1220,7 +1237,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
                         <Row label="Margem de Contribuição" val={data.margemContribuicao} isHeader isResult bgClass="bg-blue-50 dark:bg-blue-900/20" />
 
-                        {/* REMOVIDO: Custo Administrativo (Rateio) */}
                         <Row label="Despesas Comerciais" val={0} indent={0} colorClass="text-rose-600" />
 
                         <Row label="Manutenção Transporte" val={data.manutencaoTotal} isHeader colorClass="text-rose-600" onClick={()=>toggle('manutencao')} hasArrow expanded={expanded['manutencao']} indent={0}/>
