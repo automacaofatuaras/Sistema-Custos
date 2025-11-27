@@ -1202,7 +1202,7 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
                         {expanded['custo_operacional'] && (
                             <>
                                 <Row label="Despesas da Unidade" val={data.despUnidade} indent={1} colorClass="text-rose-500" />
-                                <Row label="Administrativo Unidade" val={0} indent={1} colorClass="text-rose-500" /> 
+                                <Row label="Custo Administrativo" val={0} indent={1} colorClass="text-rose-500" /> 
                                 <Row label="Combustível Transporte" val={data.combustivel} indent={1} colorClass="text-rose-500" />
                             </>
                         )}
@@ -1211,7 +1211,6 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
                         <Row label="Margem de Contribuição" val={data.margemContribuicao} isHeader isResult bgClass="bg-blue-50 dark:bg-blue-900/20" />
 
                         {/* DESPESAS GERAIS */}
-                        <Row label="Custo Administrativo" val={data.custoAdm} indent={0} colorClass="text-rose-600" />
                         <Row label="Despesas Comerciais" val={0} indent={0} colorClass="text-rose-600" />
 
                         <Row label="Manutenção Transporte" val={data.manutencaoTotal} isHeader colorClass="text-rose-600" onClick={()=>toggle('manutencao')} hasArrow expanded={expanded['manutencao']} indent={0}/>
@@ -1221,6 +1220,8 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
                                 <Row label="Manutenção Corretiva" val={data.manuCorr} indent={1} isSub colorClass="text-rose-500" />
                                 <Row label="Manutenção Reforma" val={data.manuReform} indent={1} isSub colorClass="text-rose-500" />
                                 <Row label="Serviços de Pneus/Borracharia" val={data.manuPneus} indent={1} isSub colorClass="text-rose-500" />
+                                <Row label="Pneus Ressolados" val={data.manuRessolado} indent={1} isSub colorClass="text-rose-500" />
+                                <Row label="Pneus Novos" val={data.manuNovos} indent={1} isSub colorClass="text-rose-500" />
                             </>
                         )}
 
