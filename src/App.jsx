@@ -998,7 +998,8 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
             
             {/* GRÁFICO 1: FÍSICO (Volume) */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6">
-                <h3 className="font-bold text-lg mb-4 dark:text-white">Volume Físico: Produção vs Vendas ({measureUnit})</h3>
+              <Package className="text-indigo-500"/>
+                <h3 className="font-bold text-lg mb-4 dark:text-white">Quantitativo: Produção vs Vendas ({measureUnit})</h3>
                 <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={data}>
@@ -1025,7 +1026,8 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
                 </h3>
                 <div className="h-80">
                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={data} barGap={0}>
+                        {/* Alterado de BarChart para LineChart */}
+                        <LineChart data={data}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
                             <XAxis dataKey="name" stroke="#94a3b8" />
                             <YAxis 
@@ -1033,19 +1035,18 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
                                 tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`}
                             />
                             <Tooltip 
-                                cursor={{fill: 'transparent'}}
                                 contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} 
                                 formatter={(val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                itemStyle={{ color: '#fff' }}
                             />
                             <Legend />
-                            {/* Barras Lado a Lado */}
-                            <Bar name="Faturamento" dataKey="Faturamento" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={60} />
-                            <Bar name="Custo Total" dataKey="Custo" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={60} />
-                        </BarChart>
+                            {/* Alterado de Bar para Line, mantendo as cores */}
+                            <Line name="Faturamento" type="monotone" dataKey="Faturamento" stroke="#10b981" strokeWidth={3} dot={{r:4}} />
+                            <Line name="Custo Total" type="monotone" dataKey="Custo" stroke="#f43f5e" strokeWidth={3} dot={{r:4}} />
+                        </LineChart>
                     </ResponsiveContainer>
                 </div>
             </div>
-
         </div>
     );
 };
