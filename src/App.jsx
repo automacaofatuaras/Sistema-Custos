@@ -1359,7 +1359,8 @@ const filteredData = useMemo(() => {
         </header>
 
 {activeTab === 'dashboard' && (
-         {/* LINHA 1: FINANCEIRO PRINCIPAL + CUSTO P/ TON COM VARIAÇÃO */}
+          <div className="space-y-6 animate-in fade-in duration-500">
+            {/* LINHA 1: FINANCEIRO PRINCIPAL + CUSTO P/ TON COM VARIAÇÃO */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard 
                 title="Receita Bruta" 
@@ -1374,7 +1375,7 @@ const filteredData = useMemo(() => {
                 icon={TrendingDown} 
                 color="rose" 
                 trend={variations.expense} 
-                reverseColor={true} // Despesa subindo fica vermelho
+                reverseColor={true} 
               />
               <KpiCard 
                 title="Resultado Líquido" 
@@ -1384,16 +1385,16 @@ const filteredData = useMemo(() => {
                 trend={variations.balance} 
               />
               
-              {/* CUSTO P/ TON EM DESTAQUE */}
               <KpiCard 
                 title={`Custo / ${currentMeasureUnit}`}
                 value={costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
                 icon={Factory}
-                color="rose" // Ícone vermelho pois é custo
+                color="rose" 
                 trend={variations.costPerUnit}
-                reverseColor={true} // Custo subindo fica vermelho
+                reverseColor={true} 
               />
             </div>
+
             {/* LINHA 2: OPERACIONAL E MARGENS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Margem */}
