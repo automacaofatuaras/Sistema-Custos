@@ -639,7 +639,6 @@ const DREComponent = ({ transactions }) => {
 
         transactions.forEach(t => {
             if (!t.accountPlan) return;
-            // Lógica padrão: Receita (+) Despesa (-) para cálculo
             const val = t.type === 'revenue' ? t.value : -t.value; 
             const code = t.accountPlan;
             
@@ -647,15 +646,12 @@ const DREComponent = ({ transactions }) => {
             if (!accountNames[code]) accountNames[code] = t.planDescription;
         });
 
-        // 3. Mescla os dados: Se existir no blueprint soma, se não, cria nova linha filha (Nível 3)
+        // 3. Mescla os dados
         Object.keys(accountTotals).forEach(code => {
             if (blueprintCodes.has(code)) {
-                // Se o código já existe no modelo (ex: 01.01), soma nele
                 const row = rows.find(r => r.code === code);
                 row.value = (row.value || 0) + accountTotals[code];
             } else {
-                // Se não existe (ex: 04.01.99), descobre quem é o pai (ex: 04.01) e adiciona como filho
-                // Assume formato XX.XX.XX, pega os primeiros 5 chars para o pai
                 const parentCode = code.length >= 5 ? code.substring(0, 5) : null;
                 const parentExists = blueprintCodes.has(parentCode);
 
@@ -664,7 +660,7 @@ const DREComponent = ({ transactions }) => {
                         code: code,
                         name: accountNames[code] || 'Outros',
                         parent: parentCode,
-                        level: 3, // Nível de detalhe
+                        level: 3, 
                         value: accountTotals[code],
                         isDynamic: true
                     });
@@ -672,23 +668,24 @@ const DREComponent = ({ transactions }) => {
             }
         });
 
-        // 4. Ordena para ficar visualmente correto (Código 01, depois 01.01, depois 01.01.01...)
-        rows.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+        // --- CORREÇÃO DO CÁLCULO DUPLICADO ---
+        // 4. Ordena por Nível Decrescente (3 -> 2 -> 1) para somar de baixo para cima
+        rows.sort((a, b) => b.level - a.level);
 
-        // 5. Soma Hierárquica (Filhos somam nos Pais) - Roda 2 vezes para garantir profundidade (N3 -> N2 -> N1)
-        for(let i=0; i<2; i++) {
-            rows.forEach(row => {
-                if (row.parent) {
-                    const parent = rows.find(r => r.code === row.parent);
-                    // Só soma no pai se o pai não for uma fórmula (como Lucro Bruto)
-                    if (parent && !parent.formula) {
-                        parent.value = (parent.value || 0) + (row.value || 0);
-                    }
+        // 5. Soma Hierárquica (Roda apenas uma vez)
+        rows.forEach(row => {
+            if (row.parent) {
+                const parent = rows.find(r => r.code === row.parent);
+                if (parent && !parent.formula) {
+                    parent.value = (parent.value || 0) + (row.value || 0);
                 }
-            });
-        }
+            }
+        });
 
         // 6. Calcula Fórmulas (Resultado Líquido, etc)
+        // Antes de calcular fórmulas, reordenamos por código para garantir que as referências existam
+        rows.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+
         rows.forEach(row => {
             if (row.formula) {
                 const parts = row.formula.split(' ');
@@ -699,15 +696,19 @@ const DREComponent = ({ transactions }) => {
                         op = part;
                         return;
                     }
-                    const refRow = rows.find(r => r.code === part || r.code === part.replace('LUCRO_BRUTO', 'LUCRO_BRUTO'));
+                    // Busca pelo código exato ou substituição de alias
+                    const refCode = part === 'LUCRO_BRUTO' ? 'LUCRO_BRUTO' : part;
+                    // A busca deve ser feita no array atualizado
+                    const refRow = rows.find(r => r.code === refCode);
                     const refVal = refRow ? (refRow.value || 0) : 0;
+                    
                     if (op === '+') total += refVal; else total -= refVal;
                 });
                 row.value = total;
             }
         });
         
-        // Remove linhas zeradas que são dinâmicas (opcional, para limpar visualização)
+        // Filtra para exibição final (remove linhas zeradas apenas se forem dinâmicas/detalhe)
         return rows.filter(r => r.level < 3 || (r.value !== 0));
     }, [transactions]);
 
