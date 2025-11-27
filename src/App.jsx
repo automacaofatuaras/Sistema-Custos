@@ -1259,50 +1259,53 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
 
 const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentFilter }) => {
     const stockData = useMemo(() => {
-        // 1. Ordena cronologicamente o ANO TODO
+        // 1. CÁLCULO DO ANO TODO (Para garantir o saldo acumulado correto)
         const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
         const avgCost = globalCostPerUnit || 0;
 
-        // Objeto para saldos acumulados
-        let balances = {};
-        // Array para o gráfico de evolução (histórico completo do ano)
+        // Saldos acumulados (Apenas as categorias fixas)
+        let balances = {
+            'Areia Fina': 0,
+            'Areia Grossa': 0,
+            'Areia Suja': 0
+        };
+
         const fullEvolution = [];
 
         sorted.forEach(t => {
-            // Detecção do material (Dinâmica: serve para Areia, Pedra, etc)
-            let category = 'Estoque Geral';
-            const desc = (t.materialDescription || t.description || '').trim();
-            const lowerDesc = desc.toLowerCase();
+            // Detecta o material
+            let category = null;
+            const desc = (t.materialDescription || t.description || '').toLowerCase();
+            
+            if (desc.includes('fina')) category = 'Areia Fina';
+            else if (desc.includes('grossa')) category = 'Areia Grossa';
+            else if (desc.includes('suja')) category = 'Areia Suja';
 
-            // Prioriza Areias, senão usa o nome do material lançado
-            if (lowerDesc.includes('fina')) category = 'Areia Fina';
-            else if (lowerDesc.includes('grossa')) category = 'Areia Grossa';
-            else if (lowerDesc.includes('suja')) category = 'Areia Suja';
-            else if (desc.length > 2) category = desc; 
+            // Se não for areia, IGNORA
+            if (!category) return;
 
-            if (balances[category] === undefined) balances[category] = 0;
-
-            // CÁLCULO (Produção soma, Venda subtrai, Medição define)
+            // LÓGICA DE MOVIMENTAÇÃO
             if (t.type === 'metric') {
                 const val = t.value;
                 if (t.metricType === 'producao') balances[category] += val;
                 else if (t.metricType === 'vendas') balances[category] -= val;
-                else if (t.metricType === 'estoque') balances[category] = val; // Medição
+                else if (t.metricType === 'estoque') balances[category] = val; // Medição/Ajuste
             }
 
-            // Salva o estado do estoque neste dia
+            // Soma do total físico naquele dia
             const totalMoment = Object.values(balances).reduce((a, b) => a + b, 0);
+            
             if (t.type === 'metric') {
                 fullEvolution.push({
-                    dateObj: new Date(t.date), // Objeto Date real para filtrar depois
+                    dateObj: new Date(t.date),
                     displayDate: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
                     Estoque: totalMoment
                 });
             }
         });
 
-        // 2. APLICAR O FILTRO DE DATA NO RESULTADO FINAL
-        // O cálculo acima correu o ano todo. Agora vamos exibir só o que o usuário pediu.
+        // 2. RECORTA O GRÁFICO PARA O MÊS SELECIONADO
+        // O cálculo acima rodou o ano todo. Agora filtramos só o que será exibido no gráfico.
         let filteredEvolution = fullEvolution;
         
         if (currentFilter.type === 'month') {
@@ -1315,26 +1318,21 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
              const isFirstSem = currentFilter.semester === 1;
              filteredEvolution = fullEvolution.filter(item => isFirstSem ? item.dateObj.getMonth() < 6 : item.dateObj.getMonth() >= 6);
         }
-        // Se for anual, mantém tudo.
 
-        // Pega o ÚLTIMO saldo disponível dentro do período filtrado para mostrar nos Cards
-        // Se o mês ainda não acabou, pega o último registro. Se não tem registro no mês, o saldo é o mesmo do mês anterior (precisaria tratar, mas visualmente pegaremos o último do array)
-        const lastEntry = filteredEvolution.length > 0 ? filteredEvolution[filteredEvolution.length - 1] : null;
-        const totalDisplay = lastEntry ? lastEntry.Estoque : (fullEvolution.length > 0 ? fullEvolution[fullEvolution.length - 1].Estoque : 0);
-
-        // Gera os cards baseados no saldo ATUAL (final do processamento total ou do período)
-        // Nota: Para precisão perfeita nos cards por material, idealmente filtraríamos os balances também, 
-        // mas usar o saldo acumulado final é o padrão para "Saldo Atual".
-        const breakdown = Object.entries(balances)
-            .sort((a, b) => b[1] - a[1])
-            .map(([name, value]) => ({ name, value, totalValue: value * avgCost }));
+        // Pega os saldos FINAIS (acumulados até o último dia processado)
+        const totalFinal = Object.values(balances).reduce((a, b) => a + b, 0);
 
         return { 
-            total: totalDisplay, // Mostra o saldo da evolução gráfica
-            breakdown, // Mostra detalhe por material
+            total: totalFinal,
+            fina: balances['Areia Fina'],
+            grossa: balances['Areia Grossa'],
+            suja: balances['Areia Suja'],
             avgCost, 
-            totalValue: totalDisplay * avgCost,
-            evolution: filteredEvolution // Gráfico recortado
+            totalValue: totalFinal * avgCost,
+            valFina: balances['Areia Fina'] * avgCost,
+            valGrossa: balances['Areia Grossa'] * avgCost,
+            valSuja: balances['Areia Suja'] * avgCost,
+            evolution: filteredEvolution // Gráfico recortado visualmente, mas com altura correta
         };
     }, [transactions, globalCostPerUnit, currentFilter]);
 
@@ -1343,7 +1341,7 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
             {/* CARDS TOTAIS */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-indigo-600 text-white p-6 rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none">
-                    <p className="text-indigo-200 text-xs font-bold uppercase mb-2">Estoque (Fim do Período)</p>
+                    <p className="text-indigo-200 text-xs font-bold uppercase mb-2">Estoque Físico Total</p>
                     <h3 className="text-3xl font-bold">{stockData.total.toLocaleString()} <span className="text-lg font-normal opacity-80">{measureUnit}</span></h3>
                     <div className="mt-4 pt-4 border-t border-indigo-500/50 flex justify-between items-center text-sm">
                         <span>Custo Médio</span>
@@ -1360,25 +1358,44 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
                 </div>
             </div>
 
-            {/* CARDS DINÂMICOS (Fina, Grossa, Brita, etc) */}
-            {stockData.breakdown.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-6">
-                     {stockData.breakdown.map((item, idx) => (
-                        <div key={idx} className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-indigo-500 shadow-sm border dark:border-slate-700">
-                            <div className="flex justify-between mb-2">
-                                <span className="font-bold text-slate-700 dark:text-slate-200 truncate pr-2">{item.name}</span>
-                                <span className="text-[10px] font-bold px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 uppercase">{item.name.substring(0,3)}</span>
-                            </div>
-                            <p className="text-2xl font-bold dark:text-white mt-2">
-                                {item.value.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span>
-                            </p>
-                            <p className="text-xs text-emerald-600 font-bold mt-1">
-                                {item.totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                            </p>
-                        </div>
-                    ))}
+            <div className="flex items-center gap-2 mt-8">
+                <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
+                    <Package className="text-indigo-500"/> Detalhamento por Tipo
+                </h3>
+            </div>
+
+            {/* DETALHAMENTO FIXO (3 COLUNAS) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* FINA */}
+                <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-amber-400 shadow-sm border dark:border-slate-700">
+                    <div className="flex justify-between mb-2">
+                        <span className="font-bold text-slate-700 dark:text-slate-200">Areia Fina</span>
+                        <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded">FINA</span>
+                    </div>
+                    <p className="text-2xl font-bold dark:text-white mt-2">{stockData.fina.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span></p>
+                    <p className="text-xs text-emerald-600 font-bold mt-1">{stockData.valFina.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
                 </div>
-            )}
+
+                {/* GROSSA */}
+                <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-blue-500 shadow-sm border dark:border-slate-700">
+                    <div className="flex justify-between mb-2">
+                        <span className="font-bold text-slate-700 dark:text-slate-200">Areia Grossa</span>
+                        <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded">GROSSA</span>
+                    </div>
+                    <p className="text-2xl font-bold dark:text-white mt-2">{stockData.grossa.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span></p>
+                    <p className="text-xs text-emerald-600 font-bold mt-1">{stockData.valGrossa.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                </div>
+
+                {/* SUJA */}
+                <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-stone-500 shadow-sm border dark:border-slate-700">
+                    <div className="flex justify-between mb-2">
+                        <span className="font-bold text-slate-700 dark:text-slate-200">Areia Suja</span>
+                        <span className="text-xs font-bold bg-stone-100 text-stone-700 px-2 py-1 rounded">SUJA</span>
+                    </div>
+                    <p className="text-2xl font-bold dark:text-white mt-2">{stockData.suja.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span></p>
+                    <p className="text-xs text-emerald-600 font-bold mt-1">{stockData.valSuja.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                </div>
+            </div>
 
             {/* GRÁFICO */}
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80 mt-6">
