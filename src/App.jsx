@@ -613,13 +613,16 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
     );
 };
 const PeriodSelector = ({ filter, setFilter, years }) => {
+    // ALTERAÇÃO: Meses com nomes completos
+    const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    
     return (
         <div className="flex bg-white dark:bg-slate-800 p-1 rounded-lg border dark:border-slate-700 shadow-sm">
             <select className="bg-transparent p-2 text-sm outline-none dark:text-white" value={filter.type} onChange={e => setFilter({...filter, type: e.target.value})}>
                 <option value="month">Mensal</option><option value="quarter">Trimestral</option><option value="semester">Semestral</option><option value="year">Anual</option>
             </select>
-            {filter.type === 'month' && <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.month} onChange={e => setFilter({...filter, month: parseInt(e.target.value)})}>{['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map((m, i) => <option key={i} value={i}>{m}</option>)}</select>}
-            {filter.type === 'quarter' && <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.quarter} onChange={e => setFilter({...filter, quarter: parseInt(e.target.value)})}> <option value={1}>1º Trim</option><option value={2}>2º Trim</option><option value={3}>3º Trim</option><option value={4}>4º Trim</option></select>}
+            {filter.type === 'month' && <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.month} onChange={e => setFilter({...filter, month: parseInt(e.target.value)})}>{months.map((m, i) => <option key={i} value={i}>{m}</option>)}</select>}
+            {filter.type === 'quarter' && <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.quarter} onChange={e => setFilter({...filter, quarter: parseInt(e.target.value)})}> <option value={1}>1º Trimestre</option><option value={2}>2º Trimestre</option><option value={3}>3º Trimestre</option><option value={4}>4º Trimestre</option></select>}
             {filter.type === 'semester' && <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 dark:text-white" value={filter.semester} onChange={e => setFilter({...filter, semester: parseInt(e.target.value)})}> <option value={1}>1º Semestre</option><option value={2}>2º Semestre</option></select>}
             <select className="bg-transparent p-2 text-sm outline-none border-l dark:border-slate-700 font-bold dark:text-white" value={filter.year} onChange={e => setFilter({...filter, year: parseInt(e.target.value)})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select>
         </div>
@@ -1094,6 +1097,9 @@ export default function App() {
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
+  // NOVOS ESTADOS PARA A ABA LANÇAMENTOS
+const [lancamentosSearch, setLancamentosSearch] = useState('');
+const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', end: '' });
 
   const [importText, setImportText] = useState('');
   const [importSegment, setImportSegment] = useState(''); 
@@ -1193,6 +1199,13 @@ export default function App() {
         .reduce((acc, t) => acc + t.value, 0);
   }, [filteredData]);
 
+  // CÁLCULO DE ESTOQUE TOTAL PARA O DASHBOARD
+  const totalStockPeriod = useMemo(() => {
+      return filteredData
+        .filter(t => t.type === 'metric' && t.metricType === 'estoque')
+        .reduce((acc, t) => acc + t.value, 0);
+  }, [filteredData]);
+
   const totalSales = useMemo(() => {
       return filteredData
         .filter(t => t.type === 'metric' && t.metricType === 'vendas')
@@ -1276,13 +1289,14 @@ export default function App() {
                   </div>
               </div>
 
+              {/* NOVO CARD: ESTOQUE DO PERÍODO */}
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="flex justify-between items-start">
                     <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase">Custo Médio</p>
-                        <h3 className="text-2xl font-bold text-rose-600 mt-2">{costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} <span className="text-sm font-normal text-slate-400">/{currentMeasureUnit}</span></h3>
+                        <p className="text-xs font-bold text-slate-500 uppercase">Estoque (Fechamento)</p>
+                        <h3 className="text-2xl font-bold dark:text-white mt-2">{totalStockPeriod.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3>
                     </div>
-                    <div className="p-2 bg-rose-100 rounded-lg text-rose-600"><TrendingDown size={20}/></div>
+                    <div className="p-2 bg-amber-100 rounded-lg text-amber-600"><Package size={20}/></div>
                   </div>
               </div>
 
@@ -1290,7 +1304,7 @@ export default function App() {
                   <div className="flex justify-between items-start">
                     <div>
                         <p className="text-xs font-bold text-slate-500 uppercase">Resultado Operacional</p>
-                        <h3 className={`text-2xl font-bold mt-2 ${resultPerSalesUnit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{resultPerSalesUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} <span className="text-sm font-normal text-slate-400">/{currentMeasureUnit} vendido</span></h3>
+                        <h3 className={`text-2xl font-bold mt-2 ${resultPerSalesUnit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{resultPerSalesUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} <span className="text-sm font-normal text-slate-400">/{currentMeasureUnit}</span></h3>
                     </div>
                     <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600"><DollarSign size={20}/></div>
                   </div>
