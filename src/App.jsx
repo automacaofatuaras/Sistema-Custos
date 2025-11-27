@@ -1139,23 +1139,21 @@ const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', 
   const handleSelectOne = (id) => { setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); };
   const handleBatchDelete = async () => { if (!confirm(`Tem certeza que deseja excluir ${selectedIds.length} lançamentos?`)) return; try { await dbService.deleteBulk(user, 'transactions', selectedIds); await loadData(); showToast(`${selectedIds.length} itens excluídos.`, 'success'); } catch (e) { showToast("Erro ao excluir.", 'error'); } };
 
-  const filteredData = useMemo(() => {
+const filteredData = useMemo(() => {
       return transactions.filter(t => {
-          // --- CORREÇÃO 2: LEITURA SEGURA DE DATA (SEM FUSO) ---
           let y, m;
-          // Se for string ISO (2024-10-01...), lemos direto da string para evitar recuo de dia por fuso
           if (typeof t.date === 'string' && t.date.length >= 10) {
               y = parseInt(t.date.substring(0, 4));
-              m = parseInt(t.date.substring(5, 7)) - 1; // Mês 0-indexado
+              m = parseInt(t.date.substring(5, 7)) - 1; 
           } else {
-              // Fallback para objetos Date antigos
               const d = new Date(t.date);
               y = d.getFullYear();
               m = d.getMonth();
           }
           
           const dateMatch = (() => {
-              if (activeTab === 'lancamentos') return true; 
+              // REMOVIDA A LINHA: if (activeTab === 'lancamentos') return true; 
+              // Agora o filtro global aplica-se a todas as abas, inclusive lançamentos
               if (y !== filter.year) return false;
               if (filter.type === 'month' && m !== filter.month) return false;
               if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
@@ -1165,16 +1163,12 @@ const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', 
 
           if (!dateMatch) return false;
           
-          // --- CORREÇÃO 1: FILTRO DE UNIDADE ---
           if (globalUnitFilter !== 'ALL') {
-              // Se for um Segmento Pai (ex: "Noromix Concreteiras")
               if (BUSINESS_HIERARCHY[globalUnitFilter]) {
                  const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
                  const isInSegment = BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
                  return isInSegment;
               } else {
-                  // Se for uma Unidade Específica
-                  // Normalizamos ambos os lados para garantir o match (remove prefixos antes do :)
                   const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
                   const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
                   return txUnit === filterUnit;
@@ -1239,9 +1233,10 @@ const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', 
       </aside>
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+<header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
           <div className="flex gap-2 w-full md:w-auto items-center">
-             {activeTab !== 'lancamentos' && <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
+             {/* ALTERAÇÃO: Removido o condicional, agora aparece sempre */}
+             <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
              <HierarchicalSelect value={globalUnitFilter} onChange={setGlobalUnitFilter} options={segments} isFilter={true} placeholder="Selecione Unidade ou Segmento" />
           </div>
           <div className="flex gap-2">
