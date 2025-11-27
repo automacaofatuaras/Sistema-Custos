@@ -953,13 +953,101 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
     );
 };
 const ProductionComponent = ({ transactions, measureUnit }) => {
+    // Processamento dos dados para ambos os gráficos
     const data = useMemo(() => {
-        const metrics = transactions.filter(t => t.type === 'metric' && (t.metricType === 'producao' || t.metricType === 'vendas')).sort((a, b) => new Date(a.date) - new Date(b.date));
+        // Filtra transações relevantes (Métricas, Receitas e Despesas)
+        const relevant = transactions.filter(t => 
+            (t.type === 'metric' && (t.metricType === 'producao' || t.metricType === 'vendas')) ||
+            (t.type === 'revenue' || t.type === 'expense')
+        );
+
         const grouped = {};
-        metrics.forEach(t => { const d = new Date(t.date); const key = `${d.getFullYear()}-${d.getMonth()}`; const label = d.toLocaleString('default', { month: 'short' }); if (!grouped[key]) grouped[key] = { name: label, Produção: 0, Vendas: 0, sortKey: d.getTime() }; if (t.metricType === 'producao') grouped[key].Produção += t.value; if (t.metricType === 'vendas') grouped[key].Vendas += t.value; });
+        
+        relevant.forEach(t => {
+            const d = new Date(t.date);
+            // Chave de agrupamento: Ano-Mês
+            const key = `${d.getFullYear()}-${d.getMonth()}`;
+            const label = d.toLocaleString('default', { month: 'short' });
+
+            // Inicializa o objeto se não existir
+            if (!grouped[key]) {
+                grouped[key] = { 
+                    name: label, 
+                    Produção: 0, 
+                    Vendas: 0, 
+                    Faturamento: 0, 
+                    Custo: 0,
+                    sortKey: d.getTime() 
+                };
+            }
+
+            // Soma valores físicos
+            if (t.type === 'metric' && t.metricType === 'producao') grouped[key].Produção += t.value;
+            if (t.type === 'metric' && t.metricType === 'vendas') grouped[key].Vendas += t.value;
+
+            // Soma valores financeiros
+            if (t.type === 'revenue') grouped[key].Faturamento += t.value;
+            if (t.type === 'expense') grouped[key].Custo += t.value;
+        });
+
         return Object.values(grouped).sort((a,b) => a.sortKey - b.sortKey);
     }, [transactions]);
-    return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6"><h3 className="font-bold text-lg mb-4 dark:text-white">Produção vs Vendas ({measureUnit})</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={data}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" /><YAxis /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} itemStyle={{ color: '#fff' }}/><Legend /><Line type="monotone" dataKey="Produção" stroke="#8884d8" strokeWidth={2} /><Line type="monotone" dataKey="Vendas" stroke="#82ca9d" strokeWidth={2} /></LineChart></ResponsiveContainer></div></div>);
+
+    return (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            
+            {/* GRÁFICO 1: FÍSICO (Volume) */}
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6">
+                <h3 className="font-bold text-lg mb-4 dark:text-white">Volume Físico: Produção vs Vendas ({measureUnit})</h3>
+                <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={data}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
+                            <XAxis dataKey="name" stroke="#94a3b8" />
+                            <YAxis stroke="#94a3b8" />
+                            <Tooltip 
+                                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} 
+                                itemStyle={{ color: '#fff' }}
+                            />
+                            <Legend />
+                            <Line name="Produção (t)" type="monotone" dataKey="Produção" stroke="#8884d8" strokeWidth={3} dot={{r:4}} />
+                            <Line name="Vendas (t)" type="monotone" dataKey="Vendas" stroke="#82ca9d" strokeWidth={3} dot={{r:4}} />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            {/* GRÁFICO 2: FINANCEIRO (R$) - NOVO */}
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6">
+                <h3 className="font-bold text-lg mb-4 dark:text-white flex items-center gap-2">
+                    <DollarSign className="text-emerald-500" size={20}/> 
+                    Financeiro: Custo de Produção vs Faturamento
+                </h3>
+                <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={data} barGap={0}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
+                            <XAxis dataKey="name" stroke="#94a3b8" />
+                            <YAxis 
+                                stroke="#94a3b8" 
+                                tickFormatter={(val) => `R$${(val/1000).toFixed(0)}k`}
+                            />
+                            <Tooltip 
+                                cursor={{fill: 'transparent'}}
+                                contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} 
+                                formatter={(val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            />
+                            <Legend />
+                            {/* Barras Lado a Lado */}
+                            <Bar name="Faturamento" dataKey="Faturamento" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={60} />
+                            <Bar name="Custo Total" dataKey="Custo" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={60} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+        </div>
+    );
 };
 const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
     const stockData = useMemo(() => {
@@ -1338,7 +1426,7 @@ const filteredData = useMemo(() => {
           <button onClick={() => setActiveTab('dre')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dre' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><FileText size={20} /><span className="hidden lg:block">DRE</span></button>
           <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos e Despesas</span></button>
           <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'estoque' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Zap size={20} /><span className="hidden lg:block">Estoque</span></button>
-          <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção</span></button>
+          <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção vs Vendas</span></button>
           <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>
         </nav>
         <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-sm text-slate-400"><div className="p-1 bg-slate-800 rounded"><UserCircle size={16} /></div><div className="flex-1 min-w-0"><p className="truncate font-bold text-white">{user.email}</p><p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p></div></div></div>
