@@ -1239,179 +1239,159 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
     );
 };
 
-const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentFilter }) => {
+const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
     const stockData = useMemo(() => {
-        // 1. CÁLCULO MÊS A MÊS ACUMULADO
-        // Ordena todas as transações do ano por data
-        const sorted = [...transactions].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const stockTxs = transactions
+            .filter(t => t.type === 'metric' && t.metricType === 'estoque')
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // Custo Médio Global vindo da prop
         const avgCost = globalCostPerUnit || 0;
 
-        // Saldos acumulados correntes (Começam zerados no início do ano ou período)
-        let currentBalances = {
-            'Areia Fina': 0,
-            'Areia Grossa': 0,
-            'Areia Suja': 0
+        // Estrutura para os Portos de Areia
+        const breakdown = {
+            total: 0,
+            fina: 0,
+            grossa: 0,
+            suja: 0,
+            outros: 0
         };
 
-        const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-        const monthlyEvolution = [];
+        stockTxs.forEach(t => {
+            const val = t.value;
+            breakdown.total += val;
+            
+            // Verifica na descrição do material OU na descrição principal
+            const desc = (t.materialDescription || t.description || '').toLowerCase();
 
-        // Loop pelos 12 meses para garantir que temos o saldo final de cada mês
-        for (let m = 0; m < 12; m++) {
-            // Filtra transações que ocorreram NESTE mês 'm'
-            const txsInMonth = sorted.filter(t => {
-                const d = new Date(t.date);
-                // Ajuste de fuso horário simples se necessário, mas aqui usaremos o mês direto do objeto Date
-                // Nota: O filtro global de Ano já foi aplicado em 'transactions' antes de chegar aqui
-                return d.getMonth() === m;
-            });
+            if (desc.includes('fina')) {
+                breakdown.fina += val;
+            } else if (desc.includes('grossa')) {
+                breakdown.grossa += val;
+            } else if (desc.includes('suja')) {
+                breakdown.suja += val;
+            } else {
+                breakdown.outros += val;
+            }
+        });
 
-            // Processa as transações do mês para atualizar o saldo corrente
-            txsInMonth.forEach(t => {
-                let category = null;
-                const desc = (t.materialDescription || t.description || '').toLowerCase();
-                
-                if (desc.includes('fina')) category = 'Areia Fina';
-                else if (desc.includes('grossa')) category = 'Areia Grossa';
-                else if (desc.includes('suja')) category = 'Areia Suja';
-
-                if (category) {
-                    const val = t.value;
-                    if (t.type === 'metric') {
-                        if (t.metricType === 'producao') currentBalances[category] += val;
-                        else if (t.metricType === 'vendas') currentBalances[category] -= val;
-                        else if (t.metricType === 'estoque') currentBalances[category] = val; // Ajuste de inventário
-                    }
-                }
-            });
-
-            // Calcula totais do fechamento deste mês
-            const totalMonth = currentBalances['Areia Fina'] + currentBalances['Areia Grossa'] + currentBalances['Areia Suja'];
-
-            monthlyEvolution.push({
-                name: months[m], // Nome do mês (Jan, Fev...)
-                monthIndex: m,
-                'Areia Fina': currentBalances['Areia Fina'],
-                'Areia Grossa': currentBalances['Areia Grossa'],
-                'Areia Suja': currentBalances['Areia Suja'],
-                Total: totalMonth
-            });
-        }
-
-        // 2. FILTRAGEM VISUAL (Caso o usuário selecione Trimestre/Semestre no filtro principal)
-        // Se o filtro for "Year" (Anual), mostramos todos os 12 meses.
-        // Se for "Month", mostramos apenas o mês selecionado (e talvez os vizinhos, mas vou focar no comportamento padrão).
-        let displayData = monthlyEvolution;
-
-        if (currentFilter && currentFilter.type === 'quarter') {
-            const startMonth = (currentFilter.quarter - 1) * 3;
-            const endMonth = startMonth + 2;
-            displayData = monthlyEvolution.filter(item => item.monthIndex >= startMonth && item.monthIndex <= endMonth);
-        } else if (currentFilter && currentFilter.type === 'semester') {
-             const isFirstSem = currentFilter.semester === 1;
-             displayData = monthlyEvolution.filter(item => isFirstSem ? item.monthIndex < 6 : item.monthIndex >= 6);
-        }
-        // Nota: Se o filtro for 'month', ainda pode ser interessante mostrar o ano todo para ver a evolução, 
-        // mas se quiser restringir, descomente a linha abaixo:
-        // if (currentFilter.type === 'month') displayData = monthlyEvolution.filter(item => item.monthIndex === currentFilter.month);
-
-        // Saldos ATUAIS (última posição calculada do ano, ou seja, Dezembro ou último mês processado)
-        const currentFinal = currentBalances; 
-        const totalFinal = currentFinal['Areia Fina'] + currentFinal['Areia Grossa'] + currentFinal['Areia Suja'];
+        // Prepara dados do gráfico (Evolução Total)
+        const evolution = stockTxs.map(t => ({ 
+            date: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), 
+            Estoque: t.value 
+        }));
 
         return { 
-            total: totalFinal,
-            fina: currentFinal['Areia Fina'],
-            grossa: currentFinal['Areia Grossa'],
-            suja: currentFinal['Areia Suja'],
+            ...breakdown, 
             avgCost, 
-            totalValue: totalFinal * avgCost,
-            valFina: currentFinal['Areia Fina'] * avgCost,
-            valGrossa: currentFinal['Areia Grossa'] * avgCost,
-            valSuja: currentFinal['Areia Suja'] * avgCost,
-            evolution: displayData // Dados mensais acumulados
+            totalValue: breakdown.total * avgCost,
+            valFina: breakdown.fina * avgCost,
+            valGrossa: breakdown.grossa * avgCost,
+            valSuja: breakdown.suja * avgCost,
+            evolution 
         };
-    }, [transactions, globalCostPerUnit, currentFilter]);
+    }, [transactions, globalCostPerUnit]);
 
     return (
         <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
-            {/* CARDS TOTAIS (SALDO ATUAL) */}
+            {/* CARDS PRINCIPAIS - TOTAIS */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-indigo-600 text-white p-6 rounded-2xl shadow-lg shadow-indigo-200 dark:shadow-none">
-                    <p className="text-indigo-200 text-xs font-bold uppercase mb-2">Estoque Físico Atual</p>
+                    <p className="text-indigo-200 text-xs font-bold uppercase mb-2">Estoque Total Físico</p>
                     <h3 className="text-3xl font-bold">{stockData.total.toLocaleString()} <span className="text-lg font-normal opacity-80">{measureUnit}</span></h3>
                     <div className="mt-4 pt-4 border-t border-indigo-500/50 flex justify-between items-center text-sm">
-                        <span>Custo Médio</span>
+                        <span>Custo Médio Aplicado</span>
                         <span className="font-bold bg-indigo-500 px-2 py-1 rounded">R$ {stockData.avgCost.toFixed(2)}</span>
                     </div>
                 </div>
 
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 shadow-sm col-span-2 flex flex-col justify-center">
-                    <p className="text-slate-500 text-xs font-bold uppercase mb-2">Valor Financeiro em Estoque</p>
+                    <p className="text-slate-500 text-xs font-bold uppercase mb-2">Valor Total em Estoque</p>
                     <h3 className="text-4xl font-bold text-emerald-600 dark:text-emerald-400">
                         {stockData.totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
                     </h3>
-                    <p className="text-slate-400 text-sm mt-1">Baseado no Saldo Atual x Custo Médio</p>
+                    <p className="text-slate-400 text-sm mt-1">Soma de todos os materiais x Custo da Tonelada no período</p>
                 </div>
             </div>
 
-            <div className="flex items-center gap-2 mt-8">
-                <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
-                    <Package className="text-indigo-500"/> Detalhamento do Saldo Atual
-                </h3>
-            </div>
+            <h3 className="font-bold text-lg dark:text-white flex items-center gap-2 mt-8">
+                <Package className="text-indigo-500"/> Detalhamento por Material (Portos)
+            </h3>
 
-            {/* DETALHAMENTO FIXO (3 COLUNAS) */}
+            {/* DETALHAMENTO POR TIPO DE AREIA */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* FINA */}
+                {/* AREIA FINA */}
                 <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-amber-400 shadow-sm border dark:border-slate-700">
                     <div className="flex justify-between mb-2">
                         <span className="font-bold text-slate-700 dark:text-slate-200">Areia Fina</span>
                         <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded">FINA</span>
                     </div>
-                    <p className="text-2xl font-bold dark:text-white mt-2">{stockData.fina.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span></p>
-                    <p className="text-xs text-emerald-600 font-bold mt-1">{stockData.valFina.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Volume</p>
+                            <p className="text-lg font-bold dark:text-white">{stockData.fina.toLocaleString()} {measureUnit}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Valor</p>
+                            <p className="text-lg font-bold text-emerald-600">{stockData.valFina.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                        </div>
+                    </div>
                 </div>
 
-                {/* GROSSA */}
+                {/* AREIA GROSSA */}
                 <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-blue-500 shadow-sm border dark:border-slate-700">
                     <div className="flex justify-between mb-2">
                         <span className="font-bold text-slate-700 dark:text-slate-200">Areia Grossa</span>
                         <span className="text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded">GROSSA</span>
                     </div>
-                    <p className="text-2xl font-bold dark:text-white mt-2">{stockData.grossa.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span></p>
-                    <p className="text-xs text-emerald-600 font-bold mt-1">{stockData.valGrossa.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Volume</p>
+                            <p className="text-lg font-bold dark:text-white">{stockData.grossa.toLocaleString()} {measureUnit}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Valor</p>
+                            <p className="text-lg font-bold text-emerald-600">{stockData.valGrossa.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                        </div>
+                    </div>
                 </div>
 
-                {/* SUJA */}
+                {/* AREIA SUJA */}
                 <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border-l-4 border-l-stone-500 shadow-sm border dark:border-slate-700">
                     <div className="flex justify-between mb-2">
                         <span className="font-bold text-slate-700 dark:text-slate-200">Areia Suja</span>
                         <span className="text-xs font-bold bg-stone-100 text-stone-700 px-2 py-1 rounded">SUJA</span>
                     </div>
-                    <p className="text-2xl font-bold dark:text-white mt-2">{stockData.suja.toLocaleString()} <span className="text-sm text-slate-400">{measureUnit}</span></p>
-                    <p className="text-xs text-emerald-600 font-bold mt-1">{stockData.valSuja.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Volume</p>
+                            <p className="text-lg font-bold dark:text-white">{stockData.suja.toLocaleString()} {measureUnit}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] uppercase text-slate-400 font-bold">Valor</p>
+                            <p className="text-lg font-bold text-emerald-600">{stockData.valSuja.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            {/* GRÁFICO ATUALIZADO: Barras Empilhadas Mês a Mês */}
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-96 mt-6">
-                <h3 className="font-bold mb-6 dark:text-white">Evolução do Saldo Acumulado (Mês a Mês)</h3>
+            {/* GRÁFICO DE EVOLUÇÃO */}
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80 mt-6">
+                <h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque Físico (Total)</h3>
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={stockData.evolution} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                        <XAxis dataKey="name" tick={{fontSize: 12}} stroke="#94a3b8" />
-                        <YAxis tick={{fontSize: 12}} stroke="#94a3b8" />
-                        <Tooltip 
-                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} 
-                            cursor={{fill: 'rgba(255,255,255,0.05)'}}
-                        />
-                        <Legend />
-                        {/* Barras Empilhadas para mostrar a composição do estoque */}
-                        <Bar name="Areia Fina" dataKey="Areia Fina" stackId="a" fill="#fbbf24" />
-                        <Bar name="Areia Grossa" dataKey="Areia Grossa" stackId="a" fill="#3b82f6" />
-                        <Bar name="Areia Suja" dataKey="Areia Suja" stackId="a" fill="#78716c" />
-                    </BarChart>
+                    <AreaChart data={stockData.evolution}>
+                        <defs>
+                            <linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="date" />
+                        <YAxis />
+                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
+                        <Area type="monotone" dataKey="Estoque" stroke="#6366f1" fillOpacity={1} fill="url(#colorStock)" />
+                    </AreaChart>
                 </ResponsiveContainer>
             </div>
         </div>
@@ -1869,7 +1849,7 @@ const stockDataRaw = useMemo(() => {
         {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
         {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
         {/* Passando globalCostPerUnit para o componente de estoque */}
-        {activeTab === 'estoque' && <StockComponent transactions={stockDataRaw} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} />}
+        {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} />}
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
         {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
