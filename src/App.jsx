@@ -394,7 +394,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
         setFiltered(data);
     }, [transactions, searchTerm]);
 
-    const groupedData = useMemo(() => {
+const groupedData = useMemo(() => {
         const hierarchy = {
             'DESPESAS DA UNIDADE': { total: 0, subgroups: { 'CUSTO OPERACIONAL INDÚSTRIA': { total: 0, classes: {} }, 'CUSTO OPERACIONAL ADMINISTRATIVO': { total: 0, classes: {} }, 'OUTRAS DESPESAS': { total: 0, classes: {} } } },
             'TRANSPORTE': { total: 0, subgroups: { 'CUSTO TRANSPORTE': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
@@ -437,15 +437,22 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
             }
 
             let finalValue = t.value;
-            
             if (!hierarchy[targetRoot]) hierarchy[targetRoot] = { total: 0, subgroups: {} };
             if (!hierarchy[targetRoot].subgroups[targetSub]) hierarchy[targetRoot].subgroups[targetSub] = { total: 0, classes: {} };
-
+            
             const subgroup = hierarchy[targetRoot].subgroups[targetSub];
-            const classKey = `${t.accountPlan} - ${t.planDescription}`;
+            
+            // --- MODIFICAÇÃO: Se for imposto, usa a descrição manual ---
+            let displayDesc = t.planDescription;
+            if (targetRoot === 'IMPOSTOS' || t.accountPlan === '02.01') {
+                // Se tiver descrição manual, usa ela, senão usa a do plano
+                displayDesc = t.description && t.description.length > 2 ? t.description : t.planDescription;
+            }
 
+            const classKey = `${t.accountPlan} - ${displayDesc}`;
+            
             if (!subgroup.classes[classKey]) {
-                subgroup.classes[classKey] = { id: classKey, code: t.accountPlan, name: t.planDescription, total: 0, items: [] };
+                subgroup.classes[classKey] = { id: classKey, code: t.accountPlan, name: displayDesc, total: 0, items: [] };
             }
 
             subgroup.classes[classKey].items.push(t);
@@ -767,23 +774,69 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
     }, [transactions]);
     return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6"><h3 className="font-bold text-lg mb-4 dark:text-white">Produção vs Vendas ({measureUnit})</h3><div className="h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={data}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" /><YAxis /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} itemStyle={{ color: '#fff' }}/><Legend /><Line type="monotone" dataKey="Produção" stroke="#8884d8" strokeWidth={2} /><Line type="monotone" dataKey="Vendas" stroke="#82ca9d" strokeWidth={2} /></LineChart></ResponsiveContainer></div></div>);
 };
-const StockComponent = ({ transactions, measureUnit }) => {
+const StockComponent = ({ transactions, measureUnit, globalCostPerUnit }) => {
     const stockData = useMemo(() => {
-        const stockTxs = transactions.filter(t => t.type === 'metric' && t.metricType === 'estoque').sort((a, b) => new Date(a.date) - new Date(b.date));
+        // Filtra transações de estoque e ordena por data
+        const stockTxs = transactions
+            .filter(t => t.type === 'metric' && t.metricType === 'estoque')
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // Soma total do volume de estoque (já respeita o filtro de segmento/unidade vindo do pai)
         const totalStock = stockTxs.reduce((acc, t) => acc + t.value, 0);
-        const mpExpenses = transactions.filter(t => t.type === 'expense' && t.accountPlan === '03.02').reduce((acc, t) => acc + t.value, 0);
-        const productionVol = transactions.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
-        const avgCost = productionVol > 0 ? mpExpenses / productionVol : 0;
-        const evolution = stockTxs.map(t => ({ date: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), Estoque: t.value }));
-        return { total: totalStock, avgCost, totalValue: totalStock * avgCost, evolution };
-    }, [transactions]);
-    return (<div className="space-y-6"><div className="grid grid-cols-3 gap-4"><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Estoque Total</p><h3 className="text-2xl font-bold dark:text-white">{stockData.total.toLocaleString()} {measureUnit}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Custo Médio (Período)</p><h3 className="text-2xl font-bold dark:text-white">R$ {stockData.avgCost.toFixed(2)}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700"><p className="text-slate-500 text-xs font-bold uppercase">Valor Total Estoque</p><h3 className="text-2xl font-bold text-emerald-600">R$ {stockData.totalValue.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</h3></div></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80"><h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque</h3><ResponsiveContainer width="100%" height="100%"><AreaChart data={stockData.evolution}><defs><linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/><stop offset="95%" stopColor="#8884d8" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="date" /><YAxis /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} /><Area type="monotone" dataKey="Estoque" stroke="#8884d8" fillOpacity={1} fill="url(#colorStock)" /></AreaChart></ResponsiveContainer></div></div>);
-};
-const AIReportModal = ({ onClose, transactions, period }) => {
-    const [report, setReport] = useState(''); const [loading, setLoading] = useState(true);
-    useEffect(() => { const run = async () => { const res = await aiService.analyze(transactions, period); setReport(res); setLoading(false); }; run(); }, []);
+        
+        // Usa o custo médio vindo do App (que é o Custo p/ Ton do período/segmento)
+        // Se não houver custo (ex: sem produção), assume 0
+        const avgCost = globalCostPerUnit || 0;
+        
+        const totalValue = totalStock * avgCost;
+
+        // Prepara dados do gráfico
+        const evolution = stockTxs.map(t => ({ 
+            date: new Date(t.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), 
+            Estoque: t.value 
+        }));
+
+        return { total: totalStock, avgCost, totalValue, evolution };
+    }, [transactions, globalCostPerUnit]);
+
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm"><div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-[85vh] flex flex-col"><div className="flex justify-between mb-4"><h3 className="text-xl font-bold dark:text-white">Análise IA</h3><button onClick={onClose}><X /></button></div><div className="flex-1 overflow-y-auto mb-4 text-slate-700 dark:text-slate-300 whitespace-pre-line">{loading ? <div className="text-center"><Loader2 className="animate-spin mx-auto"/> Analisando...</div> : report}</div><button onClick={() => aiService.generatePDF(report, transactions, period)} className="bg-indigo-600 text-white py-2 rounded flex justify-center gap-2"><Download size={18}/> Baixar PDF</button></div></div>
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
+                    <p className="text-slate-500 text-xs font-bold uppercase">Estoque Total</p>
+                    <h3 className="text-2xl font-bold dark:text-white">{stockData.total.toLocaleString()} {measureUnit}</h3>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
+                    <p className="text-slate-500 text-xs font-bold uppercase">Custo Médio ({measureUnit})</p>
+                    <h3 className="text-2xl font-bold dark:text-white">R$ {stockData.avgCost.toFixed(2)}</h3>
+                    <p className="text-[10px] text-slate-400 mt-1">Baseado no Custo/Ton do período</p>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
+                    <p className="text-slate-500 text-xs font-bold uppercase">Valor Total Estoque</p>
+                    <h3 className="text-2xl font-bold text-emerald-600">
+                        {stockData.totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                    </h3>
+                </div>
+            </div>
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 h-80">
+                <h3 className="font-bold mb-4 dark:text-white">Evolução do Estoque (Soma Unidades)</h3>
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={stockData.evolution}>
+                        <defs>
+                            <linearGradient id="colorStock" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
+                                <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="date" />
+                        <YAxis />
+                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff' }} />
+                        <Area type="monotone" dataKey="Estoque" stroke="#8884d8" fillOpacity={1} fill="url(#colorStock)" />
+                    </AreaChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
     );
 };
 
@@ -907,23 +960,24 @@ export default function App() {
         .filter(t => t.type === 'metric' && t.metricType === 'producao')
         .reduce((acc, t) => acc + t.value, 0);
   }, [filteredData]);
+  // ADICIONAR ESTA LINHA DENTRO DO COMPONENTE APP (ANTES DO RETURN)
+  const costPerUnit = totalProduction > 0 ? kpis.expense / totalProduction : 0;
 
   if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
 
-  return (
+ return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
       {toast && <div className={`fixed top-4 right-4 z-50 p-4 rounded shadow-xl flex gap-2 ${toast.type==='success'?'bg-emerald-500 text-white':'bg-rose-500 text-white'}`}>{toast.type==='success'?<CheckCircle/>:<AlertTriangle/>}{toast.message}</div>}
       
       <aside className="w-20 lg:w-64 bg-slate-900 dark:bg-slate-950 text-white flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800">
         <div className="p-6 border-b border-slate-800 flex items-center gap-3"><div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center"><Building2 size={18} /></div><span className="text-xl font-bold hidden lg:block">Fechamento Custos</span></div>
         <nav className="flex-1 p-4 space-y-2">
-          <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /><span className="hidden lg:block">Visão Geral</span></button>
+           <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /><span className="hidden lg:block">Visão Geral</span></button>
           <button onClick={() => setActiveTab('lancamentos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'lancamentos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><List size={20} /><span className="hidden lg:block">Lançamentos</span></button>
           <button onClick={() => setActiveTab('dre')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dre' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><FileText size={20} /><span className="hidden lg:block">DRE</span></button>
           <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos e Despesas</span></button>
           <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'estoque' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Zap size={20} /><span className="hidden lg:block">Estoque</span></button>
           <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção</span></button>
-          {/* Importar sempre visível para admin */}
           <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>
         </nav>
         <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-sm text-slate-400"><div className="p-1 bg-slate-800 rounded"><UserCircle size={16} /></div><div className="flex-1 min-w-0"><p className="truncate font-bold text-white">{user.email}</p><p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p></div></div></div>
@@ -942,14 +996,14 @@ export default function App() {
           </div>
         </header>
 
-        {/* CONTEÚDO DAS ABAS */}
-        
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6"> {/* Mudado para 4 colunas */}
               <KpiCard title="Receitas" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" />
               <KpiCard title="Despesas" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" />
               <KpiCard title="Resultado" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} />
+              {/* NOVO KPI CUSTO P/ TON */}
+              <KpiCard title={`Custo p/ ${currentMeasureUnit}`} value={costPerUnit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={Factory} color="indigo" />
             </div>
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm h-80 border dark:border-slate-700">
               <h3 className="mb-4 font-bold dark:text-white">Fluxo do Período</h3>
@@ -974,10 +1028,8 @@ export default function App() {
              <div className="overflow-x-auto">
                  <table className="w-full text-left text-sm">
                      <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400">
-                         <tr>
-                             <th className="p-4 w-10">
-                                 <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length === filteredData.length && filteredData.length > 0} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                             </th>
+                          <tr>
+                             <th className="p-4 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length === filteredData.length && filteredData.length > 0} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></th>
                              <th className="p-4">Data</th>
                              <th className="p-4">Descrição</th>
                              <th className="p-4">Unidade</th>
@@ -988,21 +1040,19 @@ export default function App() {
                      </thead>
                      <tbody className="divide-y dark:divide-slate-700">
                          {filteredData.map(t => (
-                             <tr key={t.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${selectedIds.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
-                                 <td className="p-4">
-                                     <input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                                 </td>
+                              <tr key={t.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${selectedIds.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
+                                 <td className="p-4"><input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></td>
                                  <td className="p-4 dark:text-white">{formatDate(t.date)}</td>
                                  <td className="p-4 dark:text-white">{t.description}</td>
                                  <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
                                  <td className="p-4 text-xs dark:text-slate-300">{t.type === 'metric' ? t.metricType.toUpperCase() : t.accountPlan}</td>
                                  <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>{t.value.toLocaleString()}</td>
                                  <td className="p-4 flex gap-2">
-                                     {['admin', 'editor'].includes(userRole) && <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>}
+                                      {['admin', 'editor'].includes(userRole) && <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>}
                                  </td>
                              </tr>
                          ))}
-                     </tbody>
+                      </tbody>
                  </table>
              </div>
           </div>
@@ -1010,7 +1060,8 @@ export default function App() {
 
         {activeTab === 'dre' && <DREComponent transactions={filteredData} />}
         {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
-        {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
+        {/* Passando globalCostPerUnit para o componente de estoque */}
+        {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} />}
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
         {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
