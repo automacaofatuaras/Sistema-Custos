@@ -850,6 +850,7 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         } catch(e) { 
             showToast("Erro ao salvar.", 'error');
         }
+      };
     const unitMeasure = form.segment ? getMeasureUnit(form.segment) : 'un';
 
     return (
