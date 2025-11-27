@@ -90,7 +90,9 @@ const getParentSegment = (unitName) => {
 
 const formatDate = (dateString) => {
     if (!dateString) return '-';
-    const parts = dateString.split('-'); 
+    // Pega apenas os primeiros 10 caracteres (YYYY-MM-DD) para ignorar tempo/fuso visualmente
+    const cleanDate = dateString.substring(0, 10);
+    const parts = cleanDate.split('-'); 
     if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     return dateString;
 };
@@ -482,11 +484,14 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
                             if (rootData.total === 0) return null;
                             return (
                             <React.Fragment key={rootName}>
-                                <tr className="bg-slate-200 dark:bg-slate-800 font-bold cursor-pointer" onClick={() => toggleGroup(rootName)}>
+                                    <tr className="bg-slate-200 dark:bg-slate-800 font-bold cursor-pointer" onClick={() => toggleGroup(rootName)}>
                                     <td className="p-3 text-center">{expandedGroups[rootName] ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</td>
                                     <td className="p-3 uppercase text-indigo-800 dark:text-indigo-400">{rootName}</td>
                                     <td className="p-3 text-right text-rose-600 dark:text-rose-400">{rootData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
-                                    <td className="p-3 text-right">-</td>
+                                    {/* ALTERAÇÃO AQUI: Exibe o calculo Custo/Ton no grupo principal também */}
+                                    <td className="p-3 text-right font-mono text-xs text-slate-600 dark:text-slate-400">
+                                        {totalProduction > 0 ? (rootData.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
+                                    </td>
                                     <td className="p-3 text-right font-mono">{groupedData.grandTotal > 0 ? ((rootData.total / groupedData.grandTotal) * 100).toFixed(1) : 0}%</td>
                                 </tr>
                                 {expandedGroups[rootName] && Object.entries(rootData.subgroups).sort(([, a], [, b]) => b.total - a.total).map(([subName, subData]) => {
@@ -624,14 +629,111 @@ const UsersScreen = ({ user, myRole, showToast }) => {
 };
 const DREComponent = ({ transactions }) => {
     const dreData = useMemo(() => {
-        const rows = JSON.parse(JSON.stringify(DRE_BLUEPRINT)); const accMap = {};
-        transactions.forEach(t => { if (!t.accountPlan) return; const match = rows.find(r => t.accountPlan.startsWith(r.code) && !r.formula); if (match) { const val = t.type === 'revenue' ? t.value : -t.value; accMap[match.code] = (accMap[match.code] || 0) + val; } });
-        rows.forEach(row => { if (accMap[row.code]) row.value = accMap[row.code]; });
-        for(let i=0; i<2; i++) { rows.forEach(row => { if (row.parent) { const parent = rows.find(r => r.code === row.parent); if (parent) parent.value = (parent.value || 0) + (row.value || 0); } }); }
-        rows.forEach(row => { if (row.formula) { const parts = row.formula.split(' '); let total = 0; let op = '+'; parts.forEach(part => { if (part === '+' || part === '-') { op = part; return; } const refRow = rows.find(r => r.code === part || r.code === part.replace('LUCRO_BRUTO', 'LUCRO_BRUTO')); const refVal = refRow ? (refRow.value || 0) : 0; if (op === '+') total += refVal; else total -= refVal; }); row.value = total; } });
-        return rows;
+        // 1. Clona a estrutura base (Blueprint)
+        let rows = JSON.parse(JSON.stringify(DRE_BLUEPRINT));
+        const blueprintCodes = new Set(rows.map(r => r.code));
+        
+        // 2. Agrupa transações por código exato para preservar o detalhe lançado
+        const accountTotals = {};
+        const accountNames = {};
+
+        transactions.forEach(t => {
+            if (!t.accountPlan) return;
+            // Lógica padrão: Receita (+) Despesa (-) para cálculo
+            const val = t.type === 'revenue' ? t.value : -t.value; 
+            const code = t.accountPlan;
+            
+            accountTotals[code] = (accountTotals[code] || 0) + val;
+            if (!accountNames[code]) accountNames[code] = t.planDescription;
+        });
+
+        // 3. Mescla os dados: Se existir no blueprint soma, se não, cria nova linha filha (Nível 3)
+        Object.keys(accountTotals).forEach(code => {
+            if (blueprintCodes.has(code)) {
+                // Se o código já existe no modelo (ex: 01.01), soma nele
+                const row = rows.find(r => r.code === code);
+                row.value = (row.value || 0) + accountTotals[code];
+            } else {
+                // Se não existe (ex: 04.01.99), descobre quem é o pai (ex: 04.01) e adiciona como filho
+                // Assume formato XX.XX.XX, pega os primeiros 5 chars para o pai
+                const parentCode = code.length >= 5 ? code.substring(0, 5) : null;
+                const parentExists = blueprintCodes.has(parentCode);
+
+                if (parentExists) {
+                    rows.push({
+                        code: code,
+                        name: accountNames[code] || 'Outros',
+                        parent: parentCode,
+                        level: 3, // Nível de detalhe
+                        value: accountTotals[code],
+                        isDynamic: true
+                    });
+                }
+            }
+        });
+
+        // 4. Ordena para ficar visualmente correto (Código 01, depois 01.01, depois 01.01.01...)
+        rows.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+
+        // 5. Soma Hierárquica (Filhos somam nos Pais) - Roda 2 vezes para garantir profundidade (N3 -> N2 -> N1)
+        for(let i=0; i<2; i++) {
+            rows.forEach(row => {
+                if (row.parent) {
+                    const parent = rows.find(r => r.code === row.parent);
+                    // Só soma no pai se o pai não for uma fórmula (como Lucro Bruto)
+                    if (parent && !parent.formula) {
+                        parent.value = (parent.value || 0) + (row.value || 0);
+                    }
+                }
+            });
+        }
+
+        // 6. Calcula Fórmulas (Resultado Líquido, etc)
+        rows.forEach(row => {
+            if (row.formula) {
+                const parts = row.formula.split(' ');
+                let total = 0;
+                let op = '+';
+                parts.forEach(part => {
+                    if (part === '+' || part === '-') {
+                        op = part;
+                        return;
+                    }
+                    const refRow = rows.find(r => r.code === part || r.code === part.replace('LUCRO_BRUTO', 'LUCRO_BRUTO'));
+                    const refVal = refRow ? (refRow.value || 0) : 0;
+                    if (op === '+') total += refVal; else total -= refVal;
+                });
+                row.value = total;
+            }
+        });
+        
+        // Remove linhas zeradas que são dinâmicas (opcional, para limpar visualização)
+        return rows.filter(r => r.level < 3 || (r.value !== 0));
     }, [transactions]);
-    return (<div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden"><div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial</div><div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{dreData.map((row, i) => (<tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''}`}><td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>{row.code} {row.name}</td><td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>{(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>))}</tbody></table></div></div>);
+
+    return (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden">
+            <div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial Detalhado</div>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                    <tbody>
+                        {dreData.map((row, i) => (
+                            <tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 
+                                ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''} 
+                                ${row.isDynamic ? 'text-slate-500 italic' : ''}`}>
+                                <td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>
+                                    {row.code} {row.name}
+                                </td>
+                                <td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>
+                                    {(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
 };
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
     const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 7), type: 'expense', description: '', value: '', segment: '', accountPlan: '', metricType: 'producao' });
