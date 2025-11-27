@@ -1122,7 +1122,7 @@ const FechamentoComponent = ({ transactions, totalSales, measureUnit }) => {
             totalCustoOperacional, despUnidade, combustivel,
             margemContribuicao,
             custoAdm,
-            manutencaoTotal, manuPrev, manuCorr, manuReform, manuFrete, manuPneus, manuRessolado, manuNovos
+            manutencaoTotal, manuPrev, manuCorr, manuReform, manuFrete, manuPneus, manuRessolado, manuNovos,
             residualTransporte,
             transpTerceiros,
             impostos,
