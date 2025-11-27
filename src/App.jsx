@@ -16,10 +16,7 @@ import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { 
-  getAuth, onAuthStateChanged, signInWithEmailAndPassword, 
-  signOut, sendPasswordResetEmail, createUserWithEmailAndPassword
-} from 'firebase/auth';
+// Imports de Auth removidos pois não serão usados para login real nesta versão
 import { 
   getFirestore, collection, addDoc, getDocs, deleteDoc, 
   doc, updateDoc, writeBatch, setDoc, getDoc, query, where
@@ -46,7 +43,6 @@ const GEMINI_API_KEY = "SUA_KEY_GEMINI";
 
 // Inicialização do Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
 
@@ -66,27 +62,14 @@ const SEGMENT_CONFIG = {
     "Construtora": "ton", "Fábrica de Tubos": "m³", "Noromix Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "ton", "Usinas de Asfalto": "ton"
 };
 
-// REGRAS DE CUSTOS POR SEGMENTO
-const COST_CENTER_RULES = {
-    "Portos de Areia": {
-        "DESPESAS DA UNIDADE": {
-            "CUSTO OPERACIONAL ADMINISTRATIVO": [13000, 14000, 14103],
-            "CUSTO OPERACIONAL INDÚSTRIA": [13100, 13002, 14003, 14101, 1042],
-            "CUSTO COMERCIAL VENDEDORES": [13103, 14113],
-            "CUSTO COMERCIAL GERÊNCIA": [13123, 14123]
-        },
-        "TRANSPORTE": {
-            "CUSTO TRANSPORTE": [13101, 14102]
-        },
-        "ADMINISTRATIVO": {
-            "CUSTO RATEIO DESPESAS ADMINISTRATIVAS": [1087, 1089]
-        }
-    }
-};
-
+// LISTA DE CENTROS DE CUSTO ADMINISTRATIVOS (CÓDIGOS BASE)
 const ADMIN_CC_CODES = [
-    13000, 14000, 27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, 
-    10000, 20000, 5000, 4000, 3000, 26000, 2000, 32000, 6000, 17000, 31000, 7000, 21000, 40000
+    13000, 14000, // Portos
+    27000, 22000, 25000, 33000, 38000, 34000, 29000, 9000, 8000, // Concreteiras
+    10000, // Fabrica
+    20000, 5000, 4000, 3000, 26000, 2000, // Pedreiras
+    32000, 6000, 17000, 31000, 7000, 21000, // Usinas
+    40000 // Construtora
 ];
 
 const getMeasureUnit = (unitOrSegment) => {
@@ -97,6 +80,7 @@ const getMeasureUnit = (unitOrSegment) => {
     return "un"; 
 };
 
+// Helper para descobrir o Segmento Pai de uma Unidade
 const getParentSegment = (unitName) => {
     for (const [segment, units] of Object.entries(BUSINESS_HIERARCHY)) {
         if (units.includes(unitName) || unitName.includes(segment)) return segment;
@@ -104,61 +88,45 @@ const getParentSegment = (unitName) => {
     return "Geral";
 };
 
-// FORMATADOR DE DATA (Trata data com ou sem hora)
 const formatDate = (dateString) => {
     if (!dateString) return '-';
-    // Se tiver 'T', pega só a parte da data
-    const cleanDate = dateString.includes('T') ? dateString.split('T')[0] : dateString;
-    const parts = cleanDate.split('-'); 
+    const parts = dateString.split('-'); 
     if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
     return dateString;
 };
 
-// --- MAPEAMENTO AUTOMÁTICO DE UNIDADES (Nomes Completos para Bater com Filtro) ---
+// --- MAPEAMENTO AUTOMÁTICO DE UNIDADES POR CENTRO DE CUSTO ---
 const getUnitByCostCenter = (ccCode) => {
     const cc = parseInt(ccCode, 10);
     if (isNaN(cc)) return null;
     
-    // Rateios Especiais
-    if (cc === 1087 || cc === 1089 || cc === 1042) return "Portos de Areia: Porto de Areia Saara - Mira Estrela"; 
+    if (cc === 1087 || cc === 1089 || cc === 1042) return "Porto de Areia Saara - Mira Estrela"; // Rateio cai aqui para split
 
-    // Portos
-    if (cc >= 13000 && cc <= 13999) return "Portos de Areia: Porto de Areia Saara - Mira Estrela";
-    if (cc >= 14000 && cc <= 14999) return "Portos de Areia: Porto Agua Amarela - Riolândia";
-    
-    // Concreteiras
-    if (cc >= 27000 && cc <= 27999) return "Noromix Concreteiras: Noromix Concreto S/A - Fernandópolis";
-    if (cc >= 22000 && cc <= 22999) return "Noromix Concreteiras: Noromix Concreto S/A - Ilha Solteira";
-    if (cc >= 25000 && cc <= 25999) return "Noromix Concreteiras: Noromix Concreto S/A - Jales";
-    if (cc >= 33000 && cc <= 33999) return "Noromix Concreteiras: Noromix Concreto S/A - Ouroeste";
-    if (cc >= 38000 && cc <= 38999) return "Noromix Concreteiras: Noromix Concreto S/A - Paranaíba";
-    if (cc >= 34000 && cc <= 34999) return "Noromix Concreteiras: Noromix Concreto S/A - Monções";
-    if (cc >= 29000 && cc <= 29999) return "Noromix Concreteiras: Noromix Concreto S/A - Pereira Barreto";
-    if (cc >= 9000 && cc <= 9999) return "Noromix Concreteiras: Noromix Concreto S/A - Três Fronteiras";
-    if (cc >= 8000 && cc <= 8999) return "Noromix Concreteiras: Noromix Concreto S/A - Votuporanga";
-    
-    // Fábrica
+    if (cc >= 13000 && cc <= 13999) return "Porto de Areia Saara - Mira Estrela";
+    if (cc >= 14000 && cc <= 14999) return "Porto Agua Amarela - Riolândia";
+    if (cc >= 27000 && cc <= 27999) return "Noromix Concreto S/A - Fernandópolis";
+    if (cc >= 22000 && cc <= 22999) return "Noromix Concreto S/A - Ilha Solteira";
+    if (cc >= 25000 && cc <= 25999) return "Noromix Concreto S/A - Jales";
+    if (cc >= 33000 && cc <= 33999) return "Noromix Concreto S/A - Ouroeste";
+    if (cc >= 38000 && cc <= 38999) return "Noromix Concreto S/A - Paranaíba";
+    if (cc >= 34000 && cc <= 34999) return "Noromix Concreto S/A - Monções";
+    if (cc >= 29000 && cc <= 29999) return "Noromix Concreto S/A - Pereira Barreto";
+    if (cc >= 9000 && cc <= 9999) return "Noromix Concreto S/A - Três Fronteiras";
+    if (cc >= 8000 && cc <= 8999) return "Noromix Concreto S/A - Votuporanga";
     if (cc >= 10000 && cc <= 10999) return "Fábrica de Tubos: Noromix Concreto S/A - Votuporanga (Fábrica)";
-    
-    // Pedreiras
-    if (cc >= 20000 && cc <= 20999) return "Pedreiras: Mineração Grandes Lagos - Icém";
-    if (cc >= 5000 && cc <= 5999) return "Pedreiras: Mineração Grandes Lagos - Itapura";
-    if (cc >= 4000 && cc <= 4999) return "Pedreiras: Mineração Grandes Lagos - Riolândia";
-    if (cc >= 3000 && cc <= 3999) return "Pedreiras: Mineração Grandes Lagos - Três Fronteiras";
-    if (cc >= 26000 && cc <= 26999) return "Pedreiras: Noromix Concreto S/A - Rinópolis";
-    if (cc >= 2000 && cc <= 2999) return "Pedreiras: Mineração Noroeste Paulista - Monções";
-    
-    // Usinas
-    if (cc >= 32000 && cc <= 32999) return "Usinas de Asfalto: Noromix Concreto S/A - Assis";
-    if (cc >= 6000 && cc <= 6999) return "Usinas de Asfalto: Noromix Concreto S/A - Monções (Usina)";
-    if (cc >= 17000 && cc <= 17999) return "Usinas de Asfalto: Noromix Concreto S/A - Itapura (Usina)";
-    if (cc >= 31000 && cc <= 31999) return "Usinas de Asfalto: Noromix Concreto S/A - Rinópolis (Usina)";
-    if (cc >= 7000 && cc <= 7999) return "Usinas de Asfalto: Demop Participações LTDA - Três Fronteiras";
-    if (cc >= 21000 && cc <= 21999) return "Usinas de Asfalto: Mineração Grandes Lagos - Icém (Usina)";
-    
-    // Construtora
-    if (cc >= 40000 && cc <= 94999 && cc !== 94901) return "Construtora: Noromix Construtora";
-    
+    if (cc >= 20000 && cc <= 20999) return "Mineração Grandes Lagos - Icém";
+    if (cc >= 5000 && cc <= 5999) return "Mineração Grandes Lagos - Itapura";
+    if (cc >= 4000 && cc <= 4999) return "Mineração Grandes Lagos - Riolândia";
+    if (cc >= 3000 && cc <= 3999) return "Mineração Grandes Lagos - Três Fronteiras";
+    if (cc >= 26000 && cc <= 26999) return "Noromix Concreto S/A - Rinópolis";
+    if (cc >= 2000 && cc <= 2999) return "Mineração Noroeste Paulista - Monções";
+    if (cc >= 32000 && cc <= 32999) return "Noromix Concreto S/A - Assis";
+    if (cc >= 6000 && cc <= 6999) return "Noromix Concreto S/A - Monções (Usina)";
+    if (cc >= 17000 && cc <= 17999) return "Noromix Concreto S/A - Itapura (Usina)";
+    if (cc >= 31000 && cc <= 31999) return "Noromix Concreto S/A - Rinópolis (Usina)";
+    if (cc >= 7000 && cc <= 7999) return "Demop Participações LTDA - Três Fronteiras";
+    if (cc >= 21000 && cc <= 21999) return "Mineração Grandes Lagos - Icém (Usina)";
+    if (cc >= 40000 && cc <= 94999 && cc !== 94901) return "Noromix Construtora";
     return null;
 };
 
@@ -203,18 +171,39 @@ const useToast = () => {
     return [toast, showToast];
 };
 
-// --- SERVIÇOS ---
+// --- REGRAS DE CUSTOS POR SEGMENTO ---
+const COST_CENTER_RULES = {
+    "Portos de Areia": {
+        "DESPESAS DA UNIDADE": {
+            "CUSTO OPERACIONAL ADMINISTRATIVO": [13000, 14000, 14103],
+            "CUSTO OPERACIONAL INDÚSTRIA": [13100, 13002, 14003, 14101, 1042],
+            "CUSTO COMERCIAL VENDEDORES": [13103, 14113],
+            "CUSTO COMERCIAL GERÊNCIA": [13123, 14123]
+        },
+        "TRANSPORTE": {
+            "CUSTO TRANSPORTE": [13101, 14102]
+        },
+        "ADMINISTRATIVO": {
+            "CUSTO RATEIO DESPESAS ADMINISTRATIVAS": [1087, 1089]
+        }
+    }
+};
+
+// --- SERVIÇOS (SEM AUTH) ---
 const dbService = {
   getCollRef: (user, colName) => {
-    // Sem validação de usuário para teste
+    // Ignora validação de usuário, usa pasta pública da empresa
     return collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', colName);
   },
   syncSystem: async (user) => {
-      return 'admin';
+      return 'admin'; // Sempre admin
   },
-  getAllUsers: async () => { const usersColl = collection(db, 'artifacts', appId, 'users'); const snap = await getDocs(usersColl); return snap.docs.map(d => ({ id: d.id, ...d.data() })); },
-  updateUserRole: async (userId, newRole) => { const userRef = doc(db, 'artifacts', appId, 'users', userId); await updateDoc(userRef, { role: newRole }); },
-  deleteUserAccess: async (userId) => { const userRef = doc(db, 'artifacts', appId, 'users', userId); await deleteDoc(userRef); },
+  getAllUsers: async () => { 
+      // Retorna lista vazia ou mockada, já que login foi removido
+      return []; 
+  },
+  updateUserRole: async () => {}, 
+  deleteUserAccess: async () => {}, 
   add: async (user, col, item) => addDoc(dbService.getCollRef(user, col), item),
   update: async (user, col, id, data) => updateDoc(doc(dbService.getCollRef(user, col), id), data),
   del: async (user, col, id) => deleteDoc(doc(dbService.getCollRef(user, col), id)),
@@ -222,6 +211,7 @@ const dbService = {
   getAll: async (user, col) => { const snapshot = await getDocs(dbService.getCollRef(user, col)); return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); },
   addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
 };
+
 const aiService = { analyze: async () => "IA Placeholder" };
 
 /**
@@ -292,13 +282,13 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             if (isNaN(value) || value === 0) continue;
 
-            // --- CORREÇÃO DE DATA E HORA (T10:00:00) ---
-            // Isso força a data para 10h da manhã do dia informado, evitando regressão de dia pelo fuso horário
+            // CORREÇÃO DE DATA (SEM FUSO)
             let isoDate = new Date().toISOString().split('T')[0];
             if (dateStr && dateStr.length === 10) {
                 const parts = dateStr.split('/');
                 if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
+            // Adiciona hora fixa para evitar regressão de dia em browsers
             const safeDateWithTime = `${isoDate}T10:00:00`;
 
             if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
@@ -313,8 +303,8 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
                     value: splitValue, type: type, source: 'automatic_import', createdAt: new Date().toISOString()
                 };
-                parsed.push({ ...baseObj, segment: "Portos de Areia: Porto de Areia Saara - Mira Estrela" });
-                parsed.push({ ...baseObj, segment: "Portos de Areia: Porto Agua Amarela - Riolândia" });
+                parsed.push({ ...baseObj, segment: "Porto de Areia Saara - Mira Estrela" });
+                parsed.push({ ...baseObj, segment: "Porto Agua Amarela - Riolândia" });
                 continue;
             }
 
@@ -325,17 +315,16 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
                     value: splitValue, type: type, source: 'automatic_import', createdAt: new Date().toISOString()
                 };
-                parsed.push({ ...baseObj, segment: "Portos de Areia: Porto de Areia Saara - Mira Estrela" });
-                parsed.push({ ...baseObj, segment: "Portos de Areia: Porto Agua Amarela - Riolândia" });
+                parsed.push({ ...baseObj, segment: "Porto de Areia Saara - Mira Estrela" });
+                parsed.push({ ...baseObj, segment: "Porto Agua Amarela - Riolândia" });
                 continue;
             }
 
             const detectedUnit = getUnitByCostCenter(ccCode);
-            // Fallback se não achar unidade
             const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
 
             parsed.push({
-                date: safeDateWithTime, // Data com hora fixa
+                date: safeDateWithTime,
                 segment: finalSegment,
                 costCenter: `${ccCode} - ${ccDesc}`,
                 accountPlan: planCode || '00.00',
@@ -555,8 +544,6 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
     );
 };
 
-// ... (Resto dos Componentes: HierarchicalSelect, PeriodSelector, LoginScreen, UsersScreen, DREComponent, ManualEntryModal, ProductionComponent, StockComponent, App - MANTIDOS)
-
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
@@ -626,11 +613,7 @@ const PeriodSelector = ({ filter, setFilter, years }) => {
         </div>
     );
 };
-const LoginScreen = ({ showToast }) => {
-    const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [isReset, setIsReset] = useState(false); const [loading, setLoading] = useState(false);
-    const handleAuth = async (e) => { e.preventDefault(); setLoading(true); try { if (isReset) { await sendPasswordResetEmail(auth, email); showToast("Link enviado.", 'success'); setIsReset(false); } else { await signInWithEmailAndPassword(auth, email, password); } } catch (err) { showToast("Erro de acesso.", 'error'); } finally { setLoading(false); } };
-    return (<div className="min-h-screen bg-slate-900 flex items-center justify-center p-4"><div className="bg-white dark:bg-slate-800 w-full max-w-md p-8 rounded-2xl shadow-2xl"><div className="text-center mb-6"><Building2 className="text-indigo-600 mx-auto mb-2" size={40}/><h1 className="text-2xl font-bold dark:text-white">Acesso Restrito</h1><p className="text-slate-500 text-sm">Fechamento Custos</p></div><form onSubmit={handleAuth} className="space-y-4"><input className="w-full border p-3 rounded dark:bg-slate-700 dark:text-white" placeholder="Email Corporativo" value={email} onChange={e => setEmail(e.target.value)} />{!isReset && <input type="password" className="w-full border p-3 rounded dark:bg-slate-700 dark:text-white" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} />}<button disabled={loading} className="w-full bg-indigo-600 text-white py-3 rounded hover:bg-indigo-700 font-bold">{loading ? <Loader2 className="animate-spin mx-auto"/> : (isReset ? 'Recuperar Senha' : 'Entrar no Sistema')}</button></form><button onClick={() => setIsReset(!isReset)} className="w-full mt-4 text-slate-500 text-sm hover:underline">{isReset ? 'Voltar' : 'Esqueci a senha'}</button></div></div>);
-};
+
 const UsersScreen = ({ user, myRole, showToast }) => {
     const [users, setUsers] = useState([]); const [newUserEmail, setNewUserEmail] = useState(''); const [newUserPass, setNewUserPass] = useState('');
     const loadUsers = async () => { const list = await dbService.getAllUsers(); setUsers(list); }; useEffect(() => { loadUsers(); }, []);
@@ -659,7 +642,6 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
         if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
-        
         const [year, month] = form.date.split('-');
         const lastDay = new Date(year, month, 0).getDate();
         const fullDate = `${form.date}-${lastDay}`;
@@ -708,9 +690,9 @@ const AIReportModal = ({ onClose, transactions, period }) => {
  * ------------------------------------------------------------------
  */
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState('viewer');
-  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
+  const [userRole, setUserRole] = useState('admin');
+  const [loadingAuth, setLoadingAuth] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const [toast, showToast] = useToast();
 
@@ -732,11 +714,8 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      if (u) { const role = await dbService.syncSystem(u); setUserRole(role); }
-      setUser(u); setLoadingAuth(false);
-    });
-    return () => unsubscribe();
+      const init = async () => { await loadData(); };
+      init();
   }, []);
 
   const loadData = async () => {
@@ -749,9 +728,8 @@ export default function App() {
         setSelectedIds([]);
     } catch (e) { showToast("Erro ao carregar dados.", 'error'); }
   };
-  useEffect(() => { if (user) loadData(); }, [user]);
 
-  const handleLogout = async () => await signOut(auth);
+  const handleLogout = async () => { window.location.reload(); };
 
   const handleImport = async (data) => {
     setIsProcessing(true);
@@ -813,7 +791,6 @@ export default function App() {
   }, [filteredData]);
 
   if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
-  if (!user) return <LoginScreen showToast={showToast} />;
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
@@ -828,8 +805,8 @@ export default function App() {
           <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos e Despesas</span></button>
           <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'estoque' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Zap size={20} /><span className="hidden lg:block">Estoque</span></button>
           <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção</span></button>
-          {['admin', 'editor'].includes(userRole) && <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>}
-          {userRole === 'admin' && <button onClick={() => setActiveTab('users')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-slate-400 hover:bg-slate-800`}><Users size={20} /><span className="hidden lg:block">Usuários</span></button>}
+          {/* Importar sempre visível para admin */}
+          <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>
         </nav>
         <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-sm text-slate-400"><div className="p-1 bg-slate-800 rounded"><UserCircle size={16} /></div><div className="flex-1 min-w-0"><p className="truncate font-bold text-white">{user.email}</p><p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p></div></div></div>
       </aside>
