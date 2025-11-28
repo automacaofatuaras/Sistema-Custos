@@ -1697,7 +1697,7 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
         return { groups: sortedGroups, totalGeral };
     }, [transactions, searchTerm, selectedUnits]);
 
-    // 4. Função de Exportar PDF
+    // 4. Função de Exportar PDF (Com Quebra de Linha e Nome Seguro)
     const generatePDF = () => {
         const doc = new jsPDF();
         
@@ -1706,27 +1706,51 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
         const colorSlateLight = [241, 245, 249]; 
         const colorTextDark = [15, 23, 42];  
 
-        let nomeArquivo = "Geral";
+        // --- 1. LÓGICA DO NOME (Contexto) ---
+        let nomeContexto = "Geral";
+        
         if (selectedUnits.length === 1) {
-            nomeArquivo = selectedUnits[0].split(':')[1]?.trim() || selectedUnits[0];
+            // Remove o prefixo do segmento se houver (ex: "Portos: Porto X" vira "Porto X")
+            nomeContexto = selectedUnits[0].split(':')[1]?.trim() || selectedUnits[0];
         } else if (selectedUnits.length > 1) {
             const primeiroSegmento = getParentSegment(selectedUnits[0]);
+            // Verifica se todas são do mesmo segmento
             const mesmoSegmento = selectedUnits.every(u => getParentSegment(u) === primeiroSegmento);
-            nomeArquivo = mesmoSegmento ? primeiroSegmento : "Consolidado";
+            nomeContexto = mesmoSegmento ? primeiroSegmento : "Consolidado";
         }
 
+        // --- 2. CABEÇALHO COM AJUSTE DE TEXTO LONGO ---
         doc.setFontSize(18);
         doc.setTextColor(...colorIndigo);
-        doc.text(`Relatório de Investimentos - ${nomeArquivo}`, 14, 20);
         
+        const fullTitle = `Relatório de Investimentos - ${nomeContexto}`;
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const margin = 14;
+        const maxTitleWidth = pageWidth - (margin * 2); // Largura útil da página
+
+        // Quebra o texto em linhas se for maior que a largura da página
+        const splitTitle = doc.splitTextToSize(fullTitle, maxTitleWidth);
+        doc.text(splitTitle, margin, 20);
+
+        // Calcula onde o próximo texto deve começar (baseado em quantas linhas o título ocupou)
+        // Cada linha tem aprox. 7-8 pontos de altura no tamanho 18
+        const titleHeight = splitTitle.length * 8; 
+        let currentY = 20 + (titleHeight - 5); // Ajuste fino
+
         doc.setFontSize(10);
         doc.setTextColor(...colorTextDark);
-        doc.text(`Período: ${filter.month + 1}/${filter.year}`, 14, 28);
-        doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 14, 33);
+        doc.text(`Período: ${filter.month + 1}/${filter.year}`, margin, currentY);
+        currentY += 5;
+        doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, margin, currentY);
+        
+        // Define onde a tabela começa (dá um espaço extra)
+        const startTableY = currentY + 10;
 
+        // --- 3. DADOS DA TABELA ---
         const tableBody = [];
 
         groupedData.groups.forEach(group => {
+            // NÍVEL 1: UNIDADE
             tableBody.push([
                 { 
                     content: `${group.unitName.toUpperCase()}\n${group.ccName}`, 
@@ -1740,6 +1764,7 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
             ]);
 
             group.accounts.forEach(account => {
+                // NÍVEL 2: CONTA
                 tableBody.push([
                     { 
                         content: `${account.code} - ${account.name}`, 
@@ -1752,6 +1777,7 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
                     }
                 ]);
 
+                // NÍVEL 3: ITENS
                 account.items.forEach(item => {
                     tableBody.push([
                         formatDate(item.date),
@@ -1763,13 +1789,14 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
             tableBody.push([{ content: '', colSpan: 3, styles: { minCellHeight: 5, fillColor: [255, 255, 255] } }]);
         });
 
+        // TOTAL GERAL
         tableBody.push([
             { content: 'TOTAL GERAL INVESTIMENTOS', colSpan: 2, styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'middle' } },
             { content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'right' } }
         ]);
 
         autoTable(doc, { 
-            startY: 40,
+            startY: startTableY, // Usa a posição dinâmica calculada
             head: [['Data', 'Fornecedor / Matéria', 'Valor']], 
             body: tableBody,
             theme: 'grid',
@@ -1789,7 +1816,10 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
             }
         });
 
-        doc.save(`Investimentos_${nomeArquivo}.pdf`);
+        // --- 4. NOME DO ARQUIVO LIMPO ---
+        // Remove caracteres proibidos em nomes de arquivo (/ \ : * ? " < > |)
+        const safeName = nomeContexto.replace(/[<>:"/\\|?*]/g, "").trim();
+        doc.save(`Investimentos - ${safeName}.pdf`);
     };
 
     return (
