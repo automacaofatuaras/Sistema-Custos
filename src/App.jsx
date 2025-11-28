@@ -3245,49 +3245,73 @@ const stockDataRaw = useMemo(() => {
                      </thead>
                      <tbody className="divide-y dark:divide-slate-700">
                          {filteredData.filter(t => {
-                             // FILTRO APENAS DE TEXTO (Data já vem filtrada do filteredData)
-                             const searchLower = lancamentosSearch.toLowerCase();
-                             const matchesSearch = !lancamentosSearch || 
-                                 t.description.toLowerCase().includes(searchLower) ||
-                                 t.accountPlan.toLowerCase().includes(searchLower) ||
-                                 t.value.toString().includes(searchLower);
-                             
-                             return matchesSearch;
-                         }).map(t => (
-                              <tr key={t.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${selectedIds.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
-                                 <td className="p-4"><input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></td>
-                                 <td className="p-4 dark:text-white">{formatDate(t.date)}</td>
-                                 <td className="p-4 dark:text-white">
-                                     {t.description}
-                                     {t.materialDescription && <span className="block text-[10px] text-slate-500 italic">{t.materialDescription}</span>}
-                                 </td>
-                                 <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
-                                 <td className="p-4">
-    {(() => {
-        const baseStyle = "px-2 py-1 rounded border font-bold text-[10px] uppercase inline-block max-w-[200px] truncate";
+    // Lógica de filtro (MANTIDA)
+    const searchLower = lancamentosSearch.toLowerCase();
+    const matchesSearch = !lancamentosSearch || 
+        t.description.toLowerCase().includes(searchLower) ||
+        (t.accountPlan && t.accountPlan.toLowerCase().includes(searchLower)) || // Proteção extra aqui
+        t.value.toString().includes(searchLower);
+    
+    return matchesSearch;
+}).map(t => (
+    <tr key={t.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${selectedIds.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
+        
+        {/* 1. CHECKBOX */}
+        <td className="p-4"><input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></td>
+        
+        {/* 2. DATA */}
+        <td className="p-4 dark:text-white">{formatDate(t.date)}</td>
+        
+        {/* 3. DESCRIÇÃO */}
+        <td className="p-4 dark:text-white">
+            {t.description}
+            {t.materialDescription && <span className="block text-[10px] text-slate-500 italic">{t.materialDescription}</span>}
+        </td>
+        
+        {/* 4. UNIDADE */}
+        <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
+        
+        {/* 5. CONTA/TIPO (NOVO ESTILO) */}
+        <td className="p-4">
+            {(() => {
+                const baseStyle = "px-2 py-1 rounded border font-bold text-[10px] uppercase inline-block max-w-[200px] truncate";
 
-        if (t.type === 'metric') {
-            return (
-                <span className={`${baseStyle} bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:border-indigo-700`}>
-                    {t.metricType}
-                </span>
-            );
-        }
+                if (t.type === 'metric') {
+                    return (
+                        <span className={`${baseStyle} bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:border-indigo-700`}>
+                            {t.metricType}
+                        </span>
+                    );
+                }
 
-        const label = t.planDescription || t.accountPlan;
-        const colorStyle = t.type === 'revenue' 
-            ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800' 
-            : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600';
+                const label = t.planDescription || t.accountPlan;
+                const colorStyle = t.type === 'revenue' 
+                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800' 
+                    : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600';
 
-        return (
-            <span className={`${baseStyle} ${colorStyle}`} title={label}>
-                {label}
-            </span>
-        );
-    })()}
-</td>
-                             </tr>
-                         ))}
+                return (
+                    <span className={`${baseStyle} ${colorStyle}`} title={label}>
+                        {label}
+                    </span>
+                );
+            })()}
+        </td>
+
+        {/* 6. VALOR (O que estava faltando) */}
+        <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>
+            {t.value.toLocaleString()}
+        </td>
+
+        {/* 7. AÇÕES (O que estava faltando) */}
+        <td className="p-4 flex gap-2">
+            {['admin', 'editor'].includes(userRole) && (
+                <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500 hover:text-blue-700 transition-colors">
+                    <Edit2 size={16}/>
+                </button>
+            )}
+        </td>
+    </tr>
+))}
                       </tbody>
                  </table>
              </div>
