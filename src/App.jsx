@@ -1984,11 +1984,17 @@ const stockDataRaw = useMemo(() => {
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-          <div className="flex gap-2 w-full md:w-auto items-center">
-             {/* ALTERAÇÃO: Removido o condicional, agora aparece sempre */}
-             <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
-             <HierarchicalSelect value={globalUnitFilter} onChange={setGlobalUnitFilter} options={segments} isFilter={true} placeholder="Selecione Unidade ou Segmento" />
-          </div>
+          
+          {/* LÓGICA NOVA: Se a aba for 'global', esconde os filtros da esquerda */}
+          {activeTab !== 'global' ? (
+            <div className="flex gap-2 w-full md:w-auto items-center">
+               <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
+               <HierarchicalSelect value={globalUnitFilter} onChange={setGlobalUnitFilter} options={segments} isFilter={true} placeholder="Selecione Unidade ou Segmento" />
+            </div>
+          ) : (
+            <div>{/* Div vazio para manter o alinhamento à direita */}</div>
+          )}
+
           <div className="flex gap-2">
              <button onClick={() => setShowAIModal(true)} className="p-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg shadow-lg"><Sparkles size={20} /></button>
              <button onClick={toggleTheme} className="p-2 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg">{theme === 'dark' ? <Sun size={20}/> : <Moon size={20}/>}</button>
