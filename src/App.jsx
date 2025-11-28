@@ -1512,6 +1512,207 @@ const AIReportModal = ({ onClose, transactions, period }) => {
         </div>
     );
 };
+const InvestimentosReportComponent = ({ transactions, filter }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+
+    // 1. Filtrar e Agrupar Dados
+    const groupedData = useMemo(() => {
+        // Filtra apenas contas de Investimento (Iniciadas por 06)
+        const investments = transactions.filter(t => 
+            t.accountPlan && 
+            t.accountPlan.startsWith('06') &&
+            t.type === 'expense' &&
+            (t.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
+             t.planDescription.toLowerCase().includes(searchTerm.toLowerCase()))
+        );
+
+        const groups = {};
+        let totalGeral = 0;
+
+        investments.forEach(t => {
+            const classCode = t.accountPlan;
+            const className = t.planDescription || 'Sem Classificação';
+            const key = `${classCode} - ${className}`;
+
+            if (!groups[key]) {
+                groups[key] = {
+                    id: key,
+                    code: classCode,
+                    name: className,
+                    total: 0,
+                    items: []
+                };
+            }
+
+            groups[key].items.push(t);
+            groups[key].total += t.value;
+            totalGeral += t.value;
+        });
+
+        // Ordena pelo código da conta
+        const sortedGroups = Object.values(groups).sort((a, b) => a.code.localeCompare(b.code));
+
+        return { groups: sortedGroups, totalGeral };
+    }, [transactions, searchTerm]);
+
+    // 2. Função de Exportar PDF
+    const generatePDF = () => {
+        const doc = new jsPDF();
+        
+        // Título
+        doc.setFontSize(18);
+        doc.text("Relatório de Investimentos", 14, 20);
+        
+        doc.setFontSize(10);
+        doc.text(`Período: ${filter.month + 1}/${filter.year}`, 14, 28);
+        doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 14, 33);
+
+        const tableBody = [];
+
+        groupedData.groups.forEach(group => {
+            // Linha de Cabeçalho do Grupo (Cinza)
+            tableBody.push([
+                { content: `${group.code} - ${group.name}`, colSpan: 4, styles: { fillColor: [220, 220, 220], fontStyle: 'bold', textColor: [0, 0, 0] } },
+                { content: group.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fillColor: [220, 220, 220], fontStyle: 'bold', halign: 'right', textColor: [0, 0, 0] } }
+            ]);
+
+            // Linhas dos Itens
+            group.items.forEach(item => {
+                const materialInfo = item.materialDescription ? `\nMat: ${item.materialDescription}` : '';
+                tableBody.push([
+                    formatDate(item.date),
+                    { content: `${item.description}${materialInfo}` }, // Descrição + Matéria
+                    item.segment.split(':')[1]?.trim() || item.segment, // Unidade simplificada
+                    item.costCenter.split('-')[0], // Apenas Código CC
+                    { content: item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { halign: 'right' } }
+                ]);
+            });
+        });
+
+        // Linha Final de Total
+        tableBody.push([
+            { content: 'TOTAL GERAL INVESTIMENTOS', colSpan: 4, styles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold', halign: 'center' } },
+            { content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold', halign: 'right' } }
+        ]);
+
+        doc.autoTable({
+            startY: 40,
+            head: [['Data', 'Fornecedor / Matéria', 'Unidade', 'C.C.', 'Valor']],
+            body: tableBody,
+            theme: 'grid',
+            styles: { fontSize: 8, cellPadding: 2 },
+            headStyles: { fillColor: [30, 41, 59] }, // Cor escura do tema
+            columnStyles: {
+                0: { cellWidth: 20 },
+                1: { cellWidth: 'auto' },
+                2: { cellWidth: 40 },
+                3: { cellWidth: 15 },
+                4: { cellWidth: 30 }
+            }
+        });
+
+        doc.save(`Investimentos_${filter.year}_${filter.month + 1}.pdf`);
+    };
+
+    return (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border dark:border-slate-700 h-full flex flex-col">
+            {/* Cabeçalho */}
+            <div className="p-6 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                    <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
+                        <TrendingUp className="text-purple-600" /> Relatório Executivo de Investimentos
+                    </h3>
+                    <p className="text-sm text-slate-500 mt-1">Detalhamento analítico do grupo 06 (Ativo Permanente)</p>
+                </div>
+                
+                <div className="flex gap-2 w-full md:w-auto">
+                    <div className="relative flex-1 md:w-64">
+                        <Search className="absolute left-3 top-2.5 text-slate-400" size={16}/>
+                        <input 
+                            className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" 
+                            placeholder="Filtrar fornecedor ou classe..." 
+                            value={searchTerm} 
+                            onChange={e => setSearchTerm(e.target.value)} 
+                        />
+                    </div>
+                    <button 
+                        onClick={generatePDF} 
+                        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors shadow-lg"
+                    >
+                        <Printer size={18}/> Exportar PDF
+                    </button>
+                </div>
+            </div>
+
+            {/* Totalizador */}
+            <div className="bg-purple-50 dark:bg-slate-900/50 p-4 border-b dark:border-slate-700 flex justify-end items-center px-8">
+                <span className="text-slate-500 font-bold uppercase text-xs mr-4">Total Investido no Período:</span>
+                <span className="text-2xl font-bold text-purple-700 dark:text-purple-400">
+                    {groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </span>
+            </div>
+
+            {/* Lista Estilo Acordeão (Visual igual à imagem) */}
+            <div className="flex-1 overflow-y-auto p-4 bg-slate-50 dark:bg-slate-900">
+                <div className="space-y-4">
+                    {groupedData.groups.map((group) => (
+                        <div key={group.id} className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+                            {/* Cabeçalho do Grupo (Classe) */}
+                            <div className="bg-slate-100 dark:bg-slate-700/50 p-3 flex justify-between items-center border-b dark:border-slate-700">
+                                <div className="flex items-center gap-2">
+                                    <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-mono font-bold border border-purple-200">
+                                        {group.code}
+                                    </span>
+                                    <span className="font-bold text-slate-700 dark:text-slate-200 text-sm uppercase">
+                                        {group.name}
+                                    </span>
+                                </div>
+                                <span className="font-bold text-slate-700 dark:text-white">
+                                    {group.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </span>
+                            </div>
+
+                            {/* Itens do Grupo */}
+                            <div className="divide-y dark:divide-slate-700">
+                                {group.items.map((item) => (
+                                    <div key={item.id} className="p-3 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors flex justify-between items-start text-sm">
+                                        <div className="flex-1">
+                                            <div className="font-bold text-slate-700 dark:text-slate-300">
+                                                {item.description}
+                                                <span className="font-normal text-slate-400 ml-2 text-xs">
+                                                    {formatDate(item.date)}
+                                                </span>
+                                            </div>
+                                            <div className="text-xs text-slate-500 mt-1 flex gap-4">
+                                                <span>CC: <span className="font-mono text-slate-400">{item.costCenter.split('-')[0]}</span></span>
+                                                <span className="italic text-slate-400">{item.segment.includes(':') ? item.segment.split(':')[1] : item.segment}</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="text-right">
+                                            <div className="text-xs text-slate-500 italic mb-1 max-w-[200px] truncate">
+                                                {item.materialDescription || "Lançamento SAF"}
+                                            </div>
+                                            <div className="font-bold text-rose-600 dark:text-rose-400">
+                                                {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                    
+                    {groupedData.groups.length === 0 && (
+                        <div className="text-center py-10 text-slate-400">
+                            Nenhum investimento encontrado para este período.
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
 /**
  * ------------------------------------------------------------------
  * 4. APP PRINCIPAL
@@ -2149,6 +2350,7 @@ const stockDataRaw = useMemo(() => {
           <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>
           <button onClick={() => setActiveTab('fechamento')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'fechamento' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><FileUp size={20} /><span className="hidden lg:block">Fechamento</span></button>
           <button onClick={() => setActiveTab('global')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'global' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Globe size={20} /><span className="hidden lg:block">Global</span></button>
+          <button onClick={() => setActiveTab('investimentos_report')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'investimentos_report' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><TrendingUp size={20} /><span className="hidden lg:block">Relatório Investimentos</span></button>
         </nav>
         <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-sm text-slate-400"><div className="p-1 bg-slate-800 rounded"><UserCircle size={16} /></div><div className="flex-1 min-w-0"><p className="truncate font-bold text-white">{user.email}</p><p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p></div></div></div>
       </aside>
@@ -2363,6 +2565,7 @@ const stockDataRaw = useMemo(() => {
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
         {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
+        {activeTab === 'investimentos_report' && <InvestimentosReportComponent transactions={filteredData} filter={filter} />}
         
       </main>
 
