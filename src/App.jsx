@@ -11,7 +11,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
 } from 'recharts';
 
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
@@ -1635,7 +1635,8 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                             onChange={e => setSearchTerm(e.target.value)} 
                         />
                     </div>
-                    <button 
+                    <button
+                        type="button"
                         onClick={generatePDF} 
                         className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors shadow-lg"
                     >
