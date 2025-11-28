@@ -16,6 +16,7 @@ import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 import { initializeApp, getApp, getApps } from 'firebase/app';
+import { PLANO_CONTAS } from './planoContas';
 // Imports de Auth removidos pois não serão usados para login real nesta versão
 import { 
   getFirestore, collection, addDoc, getDocs, deleteDoc, 
@@ -131,228 +132,6 @@ const getUnitByCostCenter = (ccCode) => {
     if (cc >= 40000 && cc <= 94999 && cc !== 94901) return "Noromix Construtora";
     return null;
 };
-
-const PLANO_CONTAS = [
-    // --- OPÇÃO DE SISTEMA ---
-    { code: '00.00', name: '00.00 - Lançamento Manual / Ajuste' },
-
-    // --- 01. RECEITAS ---
-    { code: '01.01.01.01.0006', name: 'AREIA' },
-    { code: '01.01.01.01.0008', name: 'CONCRETO' },
-    { code: '01.01.01.01.0005', name: 'CREDITO DE CLIENTES' },
-    { code: '01.01.01.01.0003', name: 'MASSA ASFALTICA' },
-    { code: '01.01.01.01.0004', name: 'PEDRAS BRITADAS' },
-    { code: '01.01.01.01.0007', name: 'PRE-MOLDADOS' },
-    { code: '01.02.01.01.0001', name: 'PRESTACAO DE SERVICOS - OBRAS' },
-
-    // --- 02. DEDUÇÕES ---
-    { code: '02.01.01.01.0005', name: 'CFEM' },
-    { code: '02.01.01.01.0001', name: 'COFINS' },
-    { code: '02.01.01.01.0002', name: 'ICMS' },
-    { code: '02.01.01.01.0004', name: 'IPI' },
-    { code: '02.01.01.01.0003', name: 'PIS' },
-    { code: '02.01.01.01.0006', name: 'SUBSTITUICAO TRIBUTARIA' },
-    { code: '02.01.01.02.0007', name: 'CPRB-CONTRIB PREVID RECEITA BRUTA' },
-    { code: '02.01.01.02.0008', name: 'INSS S/SERVICOS PRESTADOS' },
-    { code: '02.01.01.02.0009', name: 'ISSQN S/SERVICOS PRESTADOS' },
-
-    // --- 03. CUSTOS - MÃO DE OBRA ---
-    { code: '03.01.01.01.0001', name: 'FGTS' },
-    { code: '03.01.01.01.0005', name: 'FGTS-10% MULTA RESCISORIA' },
-    { code: '03.01.01.01.0013', name: 'FGTS-RESCISAO 20%' },
-    { code: '03.01.01.01.0003', name: 'FGTS-RESCISAO 40%' },
-    { code: '03.01.01.01.0002', name: 'INSS' },
-    { code: '03.01.01.01.0009', name: 'INSS (SISTEMAS)' },
-    { code: '03.01.01.01.0007', name: 'INSS - RECLAMATORIA TRABALHISTA' },
-    { code: '03.01.01.01.0006', name: 'INSS-SEGURADO' },
-    { code: '03.01.01.01.0010', name: 'IRRF-RECLAMATORIA TRABALHISTA' },
-    { code: '03.01.01.01.0011', name: 'IRRF S/ FOLHA' },
-    { code: '03.01.01.01.0012', name: 'MULTA FISCALIZACAO TRABALHISTA' },
-    { code: '03.01.01.02.0001', name: '13° SALARIOS' },
-    { code: '03.01.01.02.0006', name: 'CONTRIB CONFED ASSIST' },
-    { code: '03.01.01.02.0009', name: 'CONTRIB. SINDICAL (ANUAL)' },
-    { code: '03.01.01.02.0005', name: 'DEPOSITO JUDICIAL' },
-    { code: '03.01.01.02.0002', name: 'FERIAS' },
-    { code: '03.01.01.02.0013', name: 'INDENIZACAO P/ACAO TRABALHISTA' },
-    { code: '03.01.01.02.0004', name: 'ORDENADOS' },
-    { code: '03.01.01.02.0015', name: 'PLR (PARTICIPACAO LUCROS E RESULTADOS)' },
-    { code: '03.01.01.02.0018', name: 'VALE TRANSPORTE' },
-    { code: '03.01.01.02.0003', name: 'VERBAS RESCISORIAS' },
-    { code: '03.01.01.03.0003', name: 'CAFE DA MANHA' },
-    { code: '03.01.01.03.0001', name: 'CESTA BASICA' },
-    { code: '03.01.01.03.0004', name: 'DESPESAS DE VIAGENS E HOSPEDAGENS' },
-    { code: '03.01.01.03.0002', name: 'REFEICAO E LANCHES' },
-    { code: '03.01.01.04.0002', name: 'UNIFORMES' },
-    { code: '03.01.01.04.0001', name: 'EPIs' },
-    { code: '03.01.01.05.0001', name: 'SEGURO DE VIDA' },
-    { code: '03.01.01.05.0003', name: 'SEGURO SAUDE' },
-
-    // --- 03. CUSTOS - SERVIÇOS TERCEIROS ---
-    { code: '03.01.01.07.0005', name: 'AGUA POTAVEL - SERV.TERCEIROS' },
-    { code: '03.01.01.07.0002', name: 'DRENAGEM - SERV.TERCEIROS' },
-    { code: '03.01.01.07.0012', name: 'ENSAIOS TECNOLOG. SERV. TERCEIROS' },
-    { code: '03.01.01.07.0006', name: 'ESGOTO-SERV. TERCEIROS' },
-    { code: '03.01.01.07.0013', name: 'ILUMINACAO - SERV. TERCEIROS' },
-    { code: '03.01.01.07.0004', name: 'OUTROS SERVICOS-SERV.TERCEIROS' },
-    { code: '03.01.01.07.0003', name: 'PAV. ASFALTICA-SERV.TERCEIROS' },
-    { code: '03.01.01.07.0011', name: 'REDE ELETRICA - SERV. TERCEIROS' },
-    { code: '03.01.01.07.0007', name: 'SINALIZACAO - SERV. TERCEIROS' },
-    { code: '03.01.01.07.0001', name: 'TERRAPLANAGEM-SERV.TERCEIROS' },
-    { code: '03.01.01.08.0004', name: 'CIVIL-ALVENARIA-SERV TERC' },
-    { code: '03.01.01.08.0013', name: 'CIVIL-INSTAL.ELETRICAS-SERV TERC' },
-    { code: '03.01.01.08.0015', name: 'CIVIL-INSTAL.HIDROSSANIT/GAS-SERV TERC' },
-    { code: '03.01.01.08.0019', name: 'CIVIL-PINTURA-SERV TERC' },
-    { code: '03.01.01.09.0001', name: 'PRO LABORE' },
-    { code: '03.01.01.10.0001', name: 'BOMBEAMENTO DE CONCRETO' },
-    { code: '03.01.01.10.0005', name: 'ENGENHARIA E TOPOGRAFIA' },
-    { code: '03.01.01.10.0003', name: 'SERVICOS DE TERCEIROS' },
-    { code: '03.01.01.10.0007', name: 'SERVICOS DE TERCEIROS (EQUIPAMENTOS)' },
-    { code: '03.01.01.10.0002', name: 'SERVICOS DE TERCEIROS (FROTA E MAQ)' },
-    { code: '03.01.01.10.0008', name: 'VIGILANCIA' },
-
-    // --- 03. CUSTOS - MATERIAIS ---
-    { code: '03.02.01.01.0028', name: 'ADITIVO' },
-    { code: '03.02.01.01.0011', name: 'CAP' },
-    { code: '03.02.01.01.0012', name: 'CM 30' },
-    { code: '03.02.01.01.0026', name: 'CM IMPRIMA' },
-    { code: '03.02.01.01.0009', name: 'EMULSAO' },
-    { code: '03.02.01.01.0027', name: 'MASSA ASFALTICA - CBUQ' },
-    { code: '03.02.01.01.0014', name: 'OLEO DIESEL' },
-    { code: '03.02.01.01.0006', name: 'PEDRAS E AREIAS' },
-    { code: '03.02.01.02.0038', name: 'AGLOMERANTE' },
-    { code: '03.02.01.02.0044', name: 'AGUA POTAVEL - MAT. APLICADO' },
-    { code: '03.02.01.02.0025', name: 'AREIA FINA GRANEL' },
-    { code: '03.02.01.02.0026', name: 'AREIA GROSSA GRANEL' },
-    { code: '03.02.01.02.0012', name: 'CIMENTO' },
-    { code: '03.02.01.02.0001', name: 'COMBUSTIVEL' },
-    { code: '03.02.01.02.0013', name: 'CONCRETO' },
-    { code: '03.02.01.02.0058', name: 'CORREIAS TRANSPORTADORAS' },
-    { code: '03.02.01.02.0003', name: 'EXPLOSIVOS' },
-    { code: '03.02.01.02.0004', name: 'FERRAMENTAS' },
-    { code: '03.02.01.02.0017', name: 'FERRO' },
-    { code: '03.02.01.02.0009', name: 'LUBRIFICANTES' },
-    { code: '03.02.01.02.0016', name: 'MADEIRA' },
-    { code: '03.02.01.02.0007', name: 'MATERIAL APLICADO / OBRA' },
-    { code: '03.02.01.02.0054', name: 'MATERIAL DE SEGURANCA E PROTECAO' },
-    { code: '03.02.01.02.0008', name: 'MATERIAL DE USO E CONSUMO' },
-    { code: '03.02.01.02.0023', name: 'OXIGENIO/GAS P/SOLDA' },
-    { code: '03.02.01.02.0006', name: 'PNEUS E CAMARAS' },
-    { code: '03.02.01.02.0015', name: 'TIJOLOS' },
-    { code: '03.02.01.02.0018', name: 'TINTA' },
-    { code: '03.02.01.02.0014', name: 'TUBOS E CONEXOES' },
-    
-    // --- 03.04 CUSTOS GERAIS ---
-    { code: '03.04.01.01.0022', name: 'AGUA MINERAL' },
-    { code: '03.04.01.01.0002', name: 'ENERGIA ELETRICA' },
-    { code: '03.04.01.01.0023', name: 'ALUGUEL' },
-    { code: '03.04.01.01.0021', name: 'EQUIPAMENTOS INFORMATICA' },
-    { code: '03.04.01.01.0005', name: 'LIMPEZA E HIGIENE' },
-    { code: '03.04.01.01.0015', name: 'LOCAÇÃO DE BANHEIROS QUIMICOS' },
-    { code: '03.04.01.01.0011', name: 'LOCAÇÃO DE EQUIPAMENTOS LEVES' },
-    { code: '03.04.01.01.0009', name: 'LOCAÇÃO DE MAQUINAS E EQUIPAMENTOS' },
-    { code: '03.04.01.01.0018', name: 'LOCAÇÃO DE VEICULOS' },
-    { code: '03.04.01.01.0014', name: 'SEGUROS E CAUCAO DE OBRAS' },
-
-    // --- 03.05 MANUTENÇÃO ---
-    { code: '03.05.01.01.0003', name: 'BENS PEQUENO VALOR (ATIVO PERMANENTE)' },
-    { code: '03.05.01.01.0010', name: 'LAVAGEM DE FROTAS' },
-    { code: '03.05.01.01.0001', name: 'MANUT. MAQUINAS E EQUIPAMENTOS' },
-    { code: '03.05.01.01.0008', name: 'MANUT/PECAS E ACESSORIOS EQUIPAMENTOS' },
-    { code: '03.05.01.01.0006', name: 'MANUT/PECAS E ACESSORIOS MAQUINAS' },
-    { code: '03.05.01.01.0005', name: 'MANUTENCAO DE AR CONDICIONADO' },
-    { code: '03.05.01.01.0002', name: 'MANUTENCAO DE INSTALACOES' },
-    { code: '03.05.01.01.0009', name: 'MANUTENÇÃO ELETRICA' },
-    { code: '03.05.01.01.0004', name: 'REFORMA DE INSTALAÇÕES' },
-
-    // --- 03.06 FRETES ---
-    { code: '03.06.01.01.0002', name: 'FRETE DE MASSA PROPRIO' },
-    { code: '03.06.01.02.0006', name: 'FRETE CAP' },
-    { code: '03.06.01.02.0003', name: 'FRETE MASSA TERCEIROS' },
-    { code: '03.06.01.02.0005', name: 'FRETE S/VENDAS' },
-    { code: '03.06.01.02.0002', name: 'FRETE TERCEIROS EXTERNO' },
-    { code: '03.06.01.02.0008', name: 'FRETES S/COMPRAS' },
-
-    // --- 03.07 CUSTOS DE VEÍCULOS ---
-    { code: '03.07.01.01.0006', name: 'ANTT' },
-    { code: '03.07.01.01.0015', name: 'DPVAT (SEGURO OBRIGATORIO)' },
-    { code: '03.07.01.01.0013', name: 'EMPLACAMENTO DE VEICULO' },
-    { code: '03.07.01.01.0012', name: 'INSPECAO VEICULAR' },
-    { code: '03.07.01.01.0002', name: 'IPVA' },
-    { code: '03.07.01.01.0001', name: 'LICENCIAMENTO' },
-    { code: '03.07.01.01.0017', name: 'MANUT. CORRETIVA (FROTA/MAQ)' },
-    { code: '03.07.01.01.0025', name: 'MANUT. POR ACIDENTE (FROTA / MAQ)' },
-    { code: '03.07.01.01.0018', name: 'MANUT. PREVENTIVA (FROTA/MAQ)' },
-    { code: '03.07.01.01.0004', name: 'MANUTENCAO / PECAS E ACES. VEICULOS' },
-    { code: '03.07.01.01.0005', name: 'MULTAS DE TRANSITO' },
-    { code: '03.07.01.01.0008', name: 'PEDAGIOS' },
-    { code: '03.07.01.01.0009', name: 'PNEUS E CAMERAS - NOVOS' },
-    { code: '03.07.01.01.0010', name: 'PNEUS RESSOLADOS' },
-    { code: '03.07.01.01.0016', name: 'REFORMA DE FROTA (VEICULOS/EQUIP.)' },
-    { code: '03.07.01.01.0007', name: 'SEGUROS' },
-    { code: '03.07.01.01.0014', name: 'SERVICOS DE PNEUS/BORRACHARIA' },
-    { code: '03.07.01.01.0011', name: 'SERVIÇOS DE GUINCHO' },
-
-    // --- 04. DESPESAS ADMINISTRATIVAS ---
-    { code: '04.01.02.01.0001', name: 'CORREIO E XEROX' },
-    { code: '04.01.02.01.0003', name: 'DESPESAS DE CARTORIO' },
-    { code: '04.01.02.01.0005', name: 'MATERIAL DE ESCRITORIO' },
-    { code: '04.01.02.01.0002', name: 'MATERIAL DE USO E CONSUMO (ADM)' },
-    { code: '04.01.03.01.0028', name: 'CERTIFICAÇÃO DIGITAL' },
-    { code: '04.01.03.01.0022', name: 'COMISSAO' },
-    { code: '04.01.03.01.0027', name: 'CONSULTORIA E ASSESSORIA' },
-    { code: '04.01.03.01.0006', name: 'CONVENIO MEDICO' },
-    { code: '04.01.03.01.0020', name: 'CUSTAS PROCESSUAIS' },
-    { code: '04.01.03.01.0004', name: 'HONORARIOS ADVOCATICIOS' },
-    { code: '04.01.03.01.0029', name: 'LICENCA DE USO DE SOFTWARE' },
-    { code: '04.01.03.01.0014', name: 'LICENCA ESTADUAL' },
-    { code: '04.01.03.01.0015', name: 'LICENCA MUNICIPAL' },
-    { code: '04.01.03.01.0090', name: 'MENSALIDADES' },
-    { code: '04.01.03.01.0012', name: 'PROCESS. DE DADOS' },
-    { code: '04.01.03.01.0019', name: 'PUBLICIDADE E PROPAGANDA' },
-    { code: '04.01.03.01.0030', name: 'SERVIÇOS DE INTERNET' },
-    { code: '04.01.03.01.0008', name: 'TELEFONE' },
-    { code: '04.01.03.04.0001', name: 'IPTU' },
-    { code: '04.01.03.04.0009', name: 'TAXA DE LICENÇA / ALVARA FUNCIONAMENTO' },
-    { code: '04.01.03.04.0006', name: 'TAXAS AMBIENTAIS' },
-    { code: '04.01.03.04.0004', name: 'TAXAS E EMOLUMENTOS' },
-    { code: '04.02.01.01.0002', name: 'DESPESAS BANCARIAS' },
-    { code: '04.02.01.01.0025', name: 'IOF' },
-    { code: '04.02.01.01.0001', name: 'JUROS PAGOS/RECEBIDOS' },
-    { code: '04.03.01.01.0005', name: 'DOAÇÕES' },
-    { code: '04.03.01.01.0003', name: 'MULTA POR INFRACAO' },
-
-    // --- 05. IMPOSTOS ---
-    { code: '05.01.01.01.0002', name: 'CSSL' },
-    { code: '05.01.01.01.0001', name: 'IRPJ' },
-    { code: '05.01.01.01.0006', name: 'ITBI' },
-    { code: '05.01.01.01.0005', name: 'ITR' },
-    { code: '05.01.01.01.0003', name: 'SIMPLES NACIONAL' },
-    { code: '05.01.01.03.0001', name: 'PARCELAM. PGFN FAZENDARIO' },
-    { code: '05.01.01.03.0010', name: 'PARCELAM. SIMPLES NACIONAL' },
-    { code: '05.01.01.04.0001', name: 'PARCELAMENTO INSS' },
-
-    // --- 06. INVESTIMENTOS (ATIVO PERMANENTE) ---
-    { code: '06.01.01.01.0004', name: 'IMOVEIS/TERRENOS' },
-    { code: '06.01.01.01.0006', name: 'MAQUINAS E EQUIPAMENTOS' },
-    { code: '06.01.01.01.0007', name: 'MOVEIS E UTENSILIOS' },
-    { code: '06.01.01.01.0008', name: 'VEICULOS' },
-    { code: '06.01.02.01.0004', name: 'INVEST-ALVENARIA-SERV TERC' },
-    { code: '06.01.02.01.0003', name: 'INVEST-ESTRUTURA-SERV TERC' },
-    { code: '06.01.02.01.0013', name: 'INVEST-INSTAL.ELETRICAS-SERV TERC' },
-    { code: '06.01.02.01.0001', name: 'INVEST-SERV. PRELIMINARES-SER TERC' },
-    { code: '06.01.02.02.0004', name: 'INVEST-ALVENARIA - MAT.APLIC.' },
-    { code: '06.01.02.02.0003', name: 'INVEST-ESTRUTURA - MAT.APLIC.' },
-    { code: '06.01.02.02.0013', name: 'INVEST-INSTAL.ELETRICAS - MAT.APLIC.' },
-    { code: '06.01.02.03.0002', name: 'INVEST-LOCAÇÃO EQUIP. LEVES' },
-    { code: '06.01.02.03.0001', name: 'INVEST-LOCAÇÃO MAQ EQUIP' },
-    { code: '06.01.03.01.0001', name: 'CONSORCIOS NÃO CONTEMPLADOS' },
-    
-    // --- 07. FINANCIAMENTOS ---
-    { code: '07.01.01.01.0004', name: 'CDC' },
-    { code: '07.01.01.01.0001', name: 'CONSORCIO' },
-    { code: '07.01.01.01.0002', name: 'FINAME' },
-    { code: '07.01.01.01.0003', name: 'LEASING' }
-];
 const useTheme = () => {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   useEffect(() => {
@@ -699,67 +478,70 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     };
 
     return (
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="font-bold text-lg dark:text-white">Auditoria e Importação</h3>
-                {previewData.length > 0 && (
-    <div className="flex gap-3">
-        {/* Botão Cancelar/Limpar */}
-        <button 
-            onClick={() => { setPreviewData([]); setFileText(''); }}
-            className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-colors"
-        >
-            Cancelar
-        </button>
-
-        {/* Botão Confirmar (Com lógica de aviso) */}
-        <button 
-            onClick={handleConfirmImport} 
-            disabled={isProcessing} 
-            className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all text-white
-                ${problematicRows.length > 0 
-                    ? 'bg-amber-500 hover:bg-amber-600' // Amarelo se tiver pendências (Aviso)
-                    : 'bg-emerald-600 hover:bg-emerald-700' // Verde se estiver tudo OK
-                }`}
-        >
-            {isProcessing ? <Loader2 className="animate-spin"/> : (problematicRows.length > 0 ? <AlertTriangle size={18}/> : <CheckCircle size={18}/>)} 
+    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
+        
+        {/* --- 1. CABEÇALHO (Título + Botões) --- */}
+        <div className="flex justify-between items-center mb-6">
+            <h3 className="font-bold text-lg dark:text-white">Auditoria e Importação</h3>
             
-            {/* Texto Dinâmico */}
-            {problematicRows.length > 0 
-                ? `Importar com ${problematicRows.length} Avisos` 
-                : 'Confirmar Importação'}
-        </button>
-    </div>
-)}
-            
-            {previewData.length === 0 && (
-                <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
-                    <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
-                    <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
-                    <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
-                </div>
-            )}
-
             {previewData.length > 0 && (
-                <div className="animate-in fade-in space-y-6">
-                    {/* BLOCO DE ERROS (SEMPRE NO TOPO) */}
-                    <TableBlock 
-                        title="Inconsistências Encontradas (Verifique C. Custo e Conta)" 
-                        rows={problematicRows} 
-                        isProblematic={true} 
-                    />
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => { setPreviewData([]); setFileText(''); }}
+                        className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-colors"
+                    >
+                        Cancelar
+                    </button>
 
-                    {/* BLOCO DE ITENS CORRETOS */}
-                    <TableBlock 
-                        title="Itens Validados" 
-                        rows={cleanRows} 
-                        isProblematic={false} 
-                    />
+                    <button 
+                        onClick={handleConfirmImport} 
+                        disabled={isProcessing} 
+                        className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all text-white
+                            ${problematicRows.length > 0 
+                                ? 'bg-amber-500 hover:bg-amber-600' 
+                                : 'bg-emerald-600 hover:bg-emerald-700'
+                            }`}
+                    >
+                        {isProcessing ? <Loader2 className="animate-spin"/> : (problematicRows.length > 0 ? <AlertTriangle size={18}/> : <CheckCircle size={18}/>)} 
+                        
+                        {problematicRows.length > 0 
+                            ? `Importar com ${problematicRows.length} Avisos` 
+                            : 'Confirmar Importação'}
+                    </button>
                 </div>
             )}
-        </div>
-    );
-};
+        </div> 
+        {/* ^^^ AQUI FALTAVA FECHAR A DIV DO CABEÇALHO ^^^ */}
+
+        {/* --- 2. ÁREA DE UPLOAD (Se não houver dados) --- */}
+        {previewData.length === 0 && (
+            <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
+                <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
+                <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
+                <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
+            </div>
+        )}
+
+        {/* --- 3. TABELAS DE DADOS (Se houver dados) --- */}
+        {previewData.length > 0 && (
+            <div className="animate-in fade-in space-y-6">
+                {/* BLOCO DE ERROS (SEMPRE NO TOPO) */}
+                <TableBlock 
+                    title="Inconsistências Encontradas (Verifique C. Custo e Conta)" 
+                    rows={problematicRows} 
+                    isProblematic={true} 
+                />
+
+                {/* BLOCO DE ITENS CORRETOS */}
+                <TableBlock 
+                    title="Itens Validados" 
+                    rows={cleanRows} 
+                    isProblematic={false} 
+                />
+            </div>
+        )}
+    </div>
+);       
 
 const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
