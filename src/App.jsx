@@ -2951,10 +2951,9 @@ const stockDataRaw = useMemo(() => {
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-          {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
           
-          {/* LÓGICA NOVA: Se a aba for 'global', esconde os filtros da esquerda */}
-          {activeTab !== 'global' ? (
+          {/* LÓGICA CORRETA: Esconde os filtros se a aba for 'global' OU 'rateios' */}
+          {!['global', 'rateios'].includes(activeTab) ? (
             <div className="flex gap-2 w-full md:w-auto items-center">
                <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
                <HierarchicalSelect value={globalUnitFilter} onChange={setGlobalUnitFilter} options={segments} isFilter={true} placeholder="Selecione Unidade ou Segmento" />
@@ -2971,6 +2970,7 @@ const stockDataRaw = useMemo(() => {
         </header>
         
 {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
+{activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
 {activeTab === 'dashboard' && (
           <div className="space-y-6 animate-in fade-in duration-500">
             {/* LINHA 1: FINANCEIRO PRINCIPAL + CUSTO P/ TON COM VARIAÇÃO */}
