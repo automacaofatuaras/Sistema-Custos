@@ -1675,13 +1675,11 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
 
     // --- LÓGICA DE PROCESSAMENTO ---
     const consolidatedData = useMemo(() => {
-        // 1. Prepara a estrutura base
         const segments = Object.keys(BUSINESS_HIERARCHY);
         const data = {
             'Total Global': { 
                 name: 'Total Global', isGlobal: true, 
                 vendas: 0, producao: 0, receitas: 0, despesas: 0, 
-                // Buckets específicos para o detalhamento
                 recGrupo: 0, recClientes: 0,
                 despUnidade: 0, despTransporte: 0, impostos: 0,
                 despAdm: 0, despDiversas: 0, credMatTerceiro: 0, credTransp: 0,
@@ -1710,7 +1708,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
             };
         });
 
-        // 2. Filtra Data e Processa Transações
         transactions.forEach(t => {
             let y, m;
             if (typeof t.date === 'string' && t.date.length >= 10) {
@@ -1778,18 +1775,75 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
             }
         });
 
-        // 3. Cálculos Derivados
         Object.values(data).forEach(d => {
             d.resultado = d.receitas - d.despesas;
             d.margem = d.receitas > 0 ? (d.resultado / d.receitas) * 100 : 0;
             d.unidadeMedida = SEGMENT_CONFIG[d.name] || 'un';
             d.custoMedioUnitario = d.producao > 0 ? (d.despesas / d.producao) : 0;
-            // Total Faturamento base para %
             d.totalFaturamentoCalculado = d.recGrupo + d.recClientes;
         });
 
         return data;
     }, [transactions, filter]);
+
+    // --- HELPER PARA AS LINHAS DOS CARDS (USANDO GRID PARA ALINHAMENTO) ---
+    const SummaryRow = ({ label, val, totalRevenue, isBold = false, isResult = false, type = 'money' }) => {
+        let percentStr = '-';
+        if (type === 'money' && totalRevenue > 0) {
+            const pct = (val / totalRevenue) * 100;
+            percentStr = `${pct.toFixed(1)}%`;
+        } else if (type === 'money' && label === 'Receitas' && val > 0) {
+            percentStr = '100.0%';
+        }
+
+        const colorClass = isResult 
+            ? (val >= 0 ? 'text-emerald-400' : 'text-rose-400') 
+            : (label === 'Despesas' ? 'text-rose-400' : 'text-slate-100');
+
+        return (
+            // ALTERAÇÃO: Usando GRID (1fr auto 50px) para alinhar colunas perfeitamente
+            <div className={`grid grid-cols-[1fr_auto_50px] gap-2 items-center ${isBold ? 'font-bold' : ''}`}>
+                <span className="opacity-90 truncate">{label}</span>
+                
+                <span className={`${colorClass} text-right whitespace-nowrap`}>
+                    {type === 'money' ? val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : `${val.toLocaleString()} un`}
+                </span>
+                
+                <span className="text-xs opacity-60 text-right font-mono">
+                    {percentStr}
+                </span>
+            </div>
+        );
+    };
+
+    const SummaryRowLight = ({ label, val, totalRevenue, isBold = false, isResult = false, type = 'money' }) => {
+        let percentStr = '-';
+        if (type === 'money' && totalRevenue > 0) {
+            const pct = (val / totalRevenue) * 100;
+            percentStr = `${pct.toFixed(1)}%`;
+        } else if (type === 'money' && label === 'Receitas' && val > 0) {
+             percentStr = '100.0%';
+        }
+
+        const valColor = isResult 
+            ? (val >= 0 ? 'text-emerald-600' : 'text-rose-600') 
+            : (label === 'Receitas' ? 'text-emerald-600' : (label === 'Despesas' ? 'text-rose-600' : 'text-slate-800 dark:text-slate-200'));
+
+        return (
+            // ALTERAÇÃO: Usando GRID (1fr auto 50px) para alinhar colunas perfeitamente
+            <div className={`grid grid-cols-[1fr_auto_50px] gap-2 items-center ${isBold ? 'font-bold' : 'text-slate-600 dark:text-slate-300'}`}>
+                <span className="truncate">{label}</span>
+                
+                <span className={`${valColor} text-right whitespace-nowrap`}>
+                    {type === 'money' ? val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : val.toLocaleString()}
+                </span>
+                
+                <span className="text-xs text-slate-400 dark:text-slate-500 text-right font-mono">
+                    {percentStr}
+                </span>
+            </div>
+        );
+    };
 
     // --- COMPONENTE INTERNO: MODAL DE DETALHE ---
     const DetailModal = ({ data, onClose }) => {
@@ -1821,23 +1875,18 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
         const demPosFinanceiro = demonstrativoComEstoque + resFinanceiro;
         const demPosEndividamento = demPosFinanceiro - data.pagtoTributos - data.endividamento - data.acertoEmpresas;
 
-        // --- ROW COM PORCENTAGEM (MODIFICADO) ---
         const Row = ({ label, val, bold = false, indent = 0, isResult = false, color = "text-slate-700", type = 'money' }) => {
-            // Calcula % baseado no Faturamento Total (Exceto se for volume)
             const percent = (type === 'money' && totalFaturamento !== 0) ? (val / totalFaturamento) * 100 : 0;
             const showPercent = type === 'money';
 
             return (
                 <div className={`flex items-center justify-between p-2 border-b dark:border-slate-700 ${bold ? 'font-bold bg-slate-50 dark:bg-slate-700/50' : ''} ${isResult ? 'bg-slate-100 dark:bg-slate-600' : ''}`}>
                     <span className={`flex-1 ${color} dark:text-slate-200`} style={{ paddingLeft: `${indent * 20}px` }}>{label}</span>
-                    
-                    {/* Valor e % alinhados */}
                     <div className="flex items-center gap-4">
                         <span className={`${isResult ? (val >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-600 dark:text-slate-300'} text-right w-32`}>
                             {type === 'money' ? val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 
                              type === 'vol' ? val.toLocaleString('pt-BR') : val}
                         </span>
-                        
                         <span className="text-right w-16 text-xs font-mono text-slate-500 dark:text-slate-400">
                             {showPercent ? `${percent.toFixed(1)}%` : '-'}
                         </span>
@@ -1940,61 +1989,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
         );
     };
 
-    // Helper para exibir linha de resumo no Card
-    const SummaryRow = ({ label, val, totalRevenue, isBold = false, isResult = false, type = 'money' }) => {
-        // Se for Receita, a % é 100%. Se for despesa/resultado, calcula.
-        // Se type for 'vol', não mostra %.
-        let percentStr = '-';
-        if (type === 'money' && totalRevenue > 0) {
-            const pct = (val / totalRevenue) * 100;
-            percentStr = `${pct.toFixed(1)}%`;
-        } else if (type === 'money' && label === 'Receitas' && val > 0) {
-            percentStr = '100%';
-        }
-
-        const colorClass = isResult 
-            ? (val >= 0 ? 'text-emerald-400' : 'text-rose-400') 
-            : (label === 'Despesas' ? 'text-rose-400' : 'text-slate-100');
-
-        return (
-            <div className={`flex justify-between items-center ${isBold ? 'font-bold' : ''}`}>
-                <span className="opacity-90">{label}</span>
-                <div className="flex items-center gap-3">
-                    <span className={colorClass}>
-                        {type === 'money' ? val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : `${val.toLocaleString()} un`}
-                    </span>
-                    <span className="text-xs opacity-60 w-10 text-right font-mono">{percentStr}</span>
-                </div>
-            </div>
-        );
-    };
-
-    const SummaryRowLight = ({ label, val, totalRevenue, isBold = false, isResult = false, type = 'money' }) => {
-        let percentStr = '-';
-        if (type === 'money' && totalRevenue > 0) {
-            const pct = (val / totalRevenue) * 100;
-            percentStr = `${pct.toFixed(1)}%`;
-        } else if (type === 'money' && label === 'Receitas' && val > 0) {
-             percentStr = '100%';
-        }
-
-        const valColor = isResult 
-            ? (val >= 0 ? 'text-emerald-600' : 'text-rose-600') 
-            : (label === 'Receitas' ? 'text-emerald-600' : (label === 'Despesas' ? 'text-rose-600' : 'text-slate-800 dark:text-slate-200'));
-
-        return (
-            <div className={`flex justify-between items-center ${isBold ? 'font-bold' : 'text-slate-600 dark:text-slate-300'}`}>
-                <span>{label}</span>
-                <div className="flex items-center gap-3">
-                    <span className={valColor}>
-                        {type === 'money' ? val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : val.toLocaleString()}
-                    </span>
-                    <span className="text-xs text-slate-400 dark:text-slate-500 w-10 text-right font-mono">{percentStr}</span>
-                </div>
-            </div>
-        );
-    };
-
     return (
         <div className="space-y-6 animate-in fade-in">
              <div className="flex justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 shadow-sm">
@@ -2035,8 +2029,8 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                         className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700 cursor-pointer hover:border-indigo-500 transition-colors group"
                     >
                         <div className="flex justify-between items-start mb-4">
-                            <h3 className="font-bold text-lg dark:text-white group-hover:text-indigo-600">{d.name}</h3>
-                            <span className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-slate-500">{d.unidadeMedida}</span>
+                            <h3 className="font-bold text-lg dark:text-white group-hover:text-indigo-600 line-clamp-1" title={d.name}>{d.name}</h3>
+                            <span className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-slate-500 shrink-0">{d.unidadeMedida}</span>
                         </div>
                         <div className="space-y-3 text-sm">
                             <SummaryRowLight label="Vendas" val={d.vendas} type="vol" totalRevenue={d.receitas} />
@@ -2051,7 +2045,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                 ))}
             </div>
 
-            {/* MODAL DETALHADO */}
             {selectedSegment && <DetailModal data={selectedSegment} onClose={() => setSelectedSegment(null)} />}
         </div>
     );
