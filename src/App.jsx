@@ -1728,7 +1728,7 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
         doc.text(splitTitle, margin, 20);
 
         const titleHeight = splitTitle.length * 8; 
-        let currentY = 20 + (titleHeight - 5); 
+        let currentY = 20 + (titleHeight + 2); 
 
         doc.setFontSize(10);
         doc.setTextColor(...colorTextDark);
