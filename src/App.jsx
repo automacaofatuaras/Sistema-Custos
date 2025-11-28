@@ -1676,7 +1676,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         return { groups: sortedGroups, totalGeral };
     }, [transactions, searchTerm, selectedUnits]); // Dependência adicionada: selectedUnits
 
-    // 4. Função de Exportar PDF
+    // 4. Função de Exportar PDF (Nome do Arquivo Dinâmico)
     const generatePDF = () => {
         const doc = new jsPDF();
         
@@ -1685,15 +1685,32 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         const colorSlateLight = [241, 245, 249]; 
         const colorTextDark = [15, 23, 42];  
 
+        // --- LÓGICA DO NOME DO ARQUIVO ---
+        let nomeArquivo = "Geral";
+        
+        if (selectedUnits.length === 1) {
+            // Caso 1: Uma única unidade selecionada -> Usa o nome dela
+            nomeArquivo = selectedUnits[0].split(':')[1]?.trim() || selectedUnits[0];
+        } else if (selectedUnits.length > 1) {
+            // Caso 2: Várias unidades -> Verifica se são do mesmo segmento
+            // (Usa a função auxiliar getParentSegment que já existe no App.jsx)
+            const primeiroSegmento = getParentSegment(selectedUnits[0]);
+            const mesmoSegmento = selectedUnits.every(u => getParentSegment(u) === primeiroSegmento);
+            
+            nomeArquivo = mesmoSegmento ? primeiroSegmento : "Consolidado";
+        }
+        // ----------------------------------
+
         doc.setFontSize(18);
         doc.setTextColor(...colorIndigo);
-        doc.text("Relatório de Investimentos por Unidade", 14, 20);
+        // Ajusta o título interno também para refletir o contexto
+        doc.text(`Relatório de Investimentos - ${nomeArquivo}`, 14, 20);
         
         doc.setFontSize(10);
         doc.setTextColor(...colorTextDark);
         doc.text(`Período: ${filter.month + 1}/${filter.year}`, 14, 28);
         doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 14, 33);
-        
+
         const tableBody = [];
 
         groupedData.groups.forEach(group => {
@@ -1743,7 +1760,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         ]);
 
         autoTable(doc, { 
-            startY: selectedUnits.length !== availableUnits.length ? 45 : 40,
+            startY: 40,
             head: [['Data', 'Fornecedor / Matéria', 'Valor']], 
             body: tableBody,
             theme: 'grid',
@@ -1758,12 +1775,13 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                 const pageSize = doc.internal.pageSize;
                 doc.setFontSize(8);
                 doc.setTextColor(150);
-                doc.text("Gerado pelo Sistema de Fechamento de Custos", 14, pageSize.height - 10);
+                doc.text("Gerado pelo sistema de fechamento de custos", 14, pageSize.height - 10);
                 doc.text(`Página ${data.pageNumber}`, pageSize.width - 25, pageSize.height - 10);
             }
         });
 
-        doc.save(`Investimentos_Por_Unidade_${filter.year}_${filter.month + 1}.pdf`);
+        // Gravar com o novo nome
+        doc.save(`Investimentos - ${nomeArquivo}.pdf`);
     };
 
     return (
