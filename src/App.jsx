@@ -1692,11 +1692,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         doc.setFontSize(10);
         doc.setTextColor(...colorTextDark);
         doc.text(`Período: ${filter.month + 1}/${filter.year}`, 14, 28);
-        // Mostra no PDF se houve filtro de unidades
-        if (selectedUnits.length !== availableUnits.length) {
-            doc.setFontSize(8);
-            doc.setTextColor(150);
-            doc.text(`(Filtro personalizado: ${selectedUnits.length} de ${availableUnits.length} unidades)`, 14, 37);
         }
         
         const tableBody = [];
@@ -1743,7 +1738,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
 
         // TOTAL GERAL
         tableBody.push([
-            { content: 'TOTAL GERAL INVESTIMENTOS', colSpan: 2, styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'center' } },
+            { content: 'TOTAL GERAL INVESTIMENTOS', colSpan: 2, styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'middle' } },
             { content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'right' } }
         ]);
 
@@ -1768,7 +1763,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
             }
         });
 
-        doc.save(`Investimentos_PorUnidade_${filter.year}_${filter.month + 1}.pdf`);
+        doc.save(`Investimentos_Por_Unidade_${filter.year}_${filter.month + 1}.pdf`);
     };
 
     return (
