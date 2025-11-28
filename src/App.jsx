@@ -12,7 +12,7 @@ import {
 } from 'recharts';
 
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 import { initializeApp, getApp, getApps } from 'firebase/app';
@@ -1555,7 +1555,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         return { groups: sortedGroups, totalGeral };
     }, [transactions, searchTerm]);
 
-    // 2. Função de Exportar PDF
+    // 2. Função de Exportar PDF (CORRIGIDA)
     const generatePDF = () => {
         const doc = new jsPDF();
         
@@ -1581,9 +1581,9 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                 const materialInfo = item.materialDescription ? `\nMat: ${item.materialDescription}` : '';
                 tableBody.push([
                     formatDate(item.date),
-                    { content: `${item.description}${materialInfo}` }, // Descrição + Matéria
-                    item.segment.split(':')[1]?.trim() || item.segment, // Unidade simplificada
-                    item.costCenter.split('-')[0], // Apenas Código CC
+                    { content: `${item.description}${materialInfo}` }, 
+                    item.segment.split(':')[1]?.trim() || item.segment, 
+                    item.costCenter.split('-')[0], 
                     { content: item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { halign: 'right' } }
                 ]);
             });
@@ -1595,13 +1595,14 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
             { content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold', halign: 'right' } }
         ]);
 
-        doc.autoTable({
+        // --- AQUI ESTÁ A CORREÇÃO PRINCIPAL ---
+        autoTable(doc, {  // Usamos a função importada, passando o 'doc' como primeiro argumento
             startY: 40,
             head: [['Data', 'Fornecedor / Matéria', 'Unidade', 'C.C.', 'Valor']],
             body: tableBody,
             theme: 'grid',
             styles: { fontSize: 8, cellPadding: 2 },
-            headStyles: { fillColor: [30, 41, 59] }, // Cor escura do tema
+            headStyles: { fillColor: [30, 41, 59] },
             columnStyles: {
                 0: { cellWidth: 20 },
                 1: { cellWidth: 'auto' },
