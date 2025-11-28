@@ -1574,7 +1574,7 @@ const AIReportModal = ({ onClose, transactions, period }) => {
         </div>
     );
 };
-const InvestimentosReportComponent = ({ transactions, filter }) => {
+const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedUnits, setSelectedUnits] = useState([]);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -1591,16 +1591,38 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // 1. Identificar todas as Unidades que têm Investimentos (Grupo 06) neste período
+    // 1. Identificar Unidades Disponíveis (Respeitando Filtro Global)
     const availableUnits = useMemo(() => {
-        const invTxs = transactions.filter(t => t.accountPlan && t.accountPlan.startsWith('06'));
+        // Filtra transações de investimento (Grupo 06)
+        let invTxs = transactions.filter(t => t.accountPlan && t.accountPlan.startsWith('06'));
+
+        // --- CORREÇÃO: APLICAR FILTRO GLOBAL AQUI ---
+        if (selectedUnit && selectedUnit !== 'ALL') {
+            if (BUSINESS_HIERARCHY[selectedUnit]) {
+                // Se for um Segmento (ex: "Usinas de Asfalto"), pega todas as unidades dele
+                const unitsInSegment = BUSINESS_HIERARCHY[selectedUnit];
+                invTxs = invTxs.filter(t => {
+                    const cleanName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                    // Verifica se o nome da unidade está na lista do segmento
+                    return unitsInSegment.some(u => u.includes(cleanName));
+                });
+            } else {
+                // Se for uma Unidade específica, filtra só ela
+                const cleanFilter = selectedUnit.includes(':') ? selectedUnit.split(':')[1].trim() : selectedUnit;
+                invTxs = invTxs.filter(t => {
+                    const cleanName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                    return cleanName === cleanFilter;
+                });
+            }
+        }
+        // ---------------------------------------------
+
         const units = [...new Set(invTxs.map(t => t.segment))];
         return units.sort();
-    }, [transactions]);
+    }, [transactions, selectedUnit]); // Recalcula se mudar o filtro global
 
-    // 2. Sincronizar seleção quando os dados mudam (ex: mudar de mês)
+    // 2. Sincronizar seleção quando as unidades disponíveis mudam
     useEffect(() => {
-        // Por padrão, seleciona todas as unidades disponíveis ao carregar
         setSelectedUnits(availableUnits);
     }, [availableUnits]);
 
@@ -1614,19 +1636,19 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
 
     const toggleAll = () => {
         if (selectedUnits.length === availableUnits.length) {
-            setSelectedUnits([]); // Desmarca tudo
+            setSelectedUnits([]); 
         } else {
-            setSelectedUnits(availableUnits); // Marca tudo
+            setSelectedUnits(availableUnits); 
         }
     };
 
-    // 3. Filtrar e Agrupar Dados (Com filtro de Unidade)
+    // 3. Filtrar e Agrupar Dados
     const groupedData = useMemo(() => {
         const investments = transactions.filter(t => 
             t.accountPlan && 
             t.accountPlan.startsWith('06') &&
             t.type === 'expense' &&
-            selectedUnits.includes(t.segment) && // <--- FILTRO DE UNIDADE AQUI
+            selectedUnits.includes(t.segment) && 
             (t.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
              t.planDescription.toLowerCase().includes(searchTerm.toLowerCase()) ||
              t.segment.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -1661,7 +1683,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
 
             groups[ccKey].subGroups[accKey].items.push(t);
             groups[ccKey].subGroups[accKey].total += t.value;
-            
             groups[ccKey].total += t.value;
             totalGeral += t.value;
         });
@@ -1674,9 +1695,9 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
             }));
 
         return { groups: sortedGroups, totalGeral };
-    }, [transactions, searchTerm, selectedUnits]); // Dependência adicionada: selectedUnits
+    }, [transactions, searchTerm, selectedUnits]);
 
-    // 4. Função de Exportar PDF (Nome do Arquivo Dinâmico)
+    // 4. Função de Exportar PDF
     const generatePDF = () => {
         const doc = new jsPDF();
         
@@ -1685,25 +1706,17 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         const colorSlateLight = [241, 245, 249]; 
         const colorTextDark = [15, 23, 42];  
 
-        // --- LÓGICA DO NOME DO ARQUIVO ---
         let nomeArquivo = "Geral";
-        
         if (selectedUnits.length === 1) {
-            // Caso 1: Uma única unidade selecionada -> Usa o nome dela
             nomeArquivo = selectedUnits[0].split(':')[1]?.trim() || selectedUnits[0];
         } else if (selectedUnits.length > 1) {
-            // Caso 2: Várias unidades -> Verifica se são do mesmo segmento
-            // (Usa a função auxiliar getParentSegment que já existe no App.jsx)
             const primeiroSegmento = getParentSegment(selectedUnits[0]);
             const mesmoSegmento = selectedUnits.every(u => getParentSegment(u) === primeiroSegmento);
-            
             nomeArquivo = mesmoSegmento ? primeiroSegmento : "Consolidado";
         }
-        // ----------------------------------
 
         doc.setFontSize(18);
         doc.setTextColor(...colorIndigo);
-        // Ajusta o título interno também para refletir o contexto
         doc.text(`Relatório de Investimentos - ${nomeArquivo}`, 14, 20);
         
         doc.setFontSize(10);
@@ -1714,7 +1727,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         const tableBody = [];
 
         groupedData.groups.forEach(group => {
-            // NÍVEL 1: UNIDADE
             tableBody.push([
                 { 
                     content: `${group.unitName.toUpperCase()}\n${group.ccName}`, 
@@ -1728,7 +1740,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
             ]);
 
             group.accounts.forEach(account => {
-                // NÍVEL 2: CONTA
                 tableBody.push([
                     { 
                         content: `${account.code} - ${account.name}`, 
@@ -1741,7 +1752,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                     }
                 ]);
 
-                // NÍVEL 3: ITENS
                 account.items.forEach(item => {
                     tableBody.push([
                         formatDate(item.date),
@@ -1753,7 +1763,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
             tableBody.push([{ content: '', colSpan: 3, styles: { minCellHeight: 5, fillColor: [255, 255, 255] } }]);
         });
 
-        // TOTAL GERAL
         tableBody.push([
             { content: 'TOTAL GERAL INVESTIMENTOS', colSpan: 2, styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'middle' } },
             { content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'right' } }
@@ -1775,18 +1784,16 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                 const pageSize = doc.internal.pageSize;
                 doc.setFontSize(8);
                 doc.setTextColor(150);
-                doc.text("Gerado pelo sistema de fechamento de custos", 14, pageSize.height - 10);
+                doc.text("Gerado pelo Sistema de Fechamento de Custos", 14, pageSize.height - 10);
                 doc.text(`Página ${data.pageNumber}`, pageSize.width - 25, pageSize.height - 10);
             }
         });
 
-        // Gravar com o novo nome
-        doc.save(`Investimentos - ${nomeArquivo}.pdf`);
+        doc.save(`Investimentos_${nomeArquivo}.pdf`);
     };
 
     return (
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border dark:border-slate-700 h-full flex flex-col">
-            {/* Cabeçalho */}
             <div className="p-6 border-b dark:border-slate-700 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                 <div>
                     <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
@@ -1796,8 +1803,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                 </div>
                 
                 <div className="flex flex-col md:flex-row gap-2 w-full xl:w-auto">
-                    
-                    {/* DROPDOWN DE FILTRO DE UNIDADES */}
                     <div className="relative" ref={filterRef}>
                         <button 
                             onClick={() => setIsFilterOpen(!isFilterOpen)}
@@ -1833,13 +1838,12 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                                             </div>
                                         )
                                     })}
-                                    {availableUnits.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Nenhuma unidade com investimento no período.</div>}
+                                    {availableUnits.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Nenhuma unidade disponível no filtro atual.</div>}
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* CAMPO DE BUSCA */}
                     <div className="relative flex-1 md:w-64">
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={16}/>
                         <input 
@@ -1850,7 +1854,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                         />
                     </div>
 
-                    {/* BOTÃO EXPORTAR */}
                     <button 
                         type="button"
                         onClick={generatePDF} 
@@ -1861,7 +1864,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                 </div>
             </div>
 
-            {/* Totalizador */}
             <div className="bg-purple-50 dark:bg-slate-900/50 p-4 border-b dark:border-slate-700 flex justify-end items-center px-8">
                 <span className="text-slate-500 font-bold uppercase text-xs mr-4">Total ({selectedUnits.length} un.):</span>
                 <span className="text-2xl font-bold text-purple-700 dark:text-purple-400">
@@ -1869,13 +1871,11 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                 </span>
             </div>
 
-            {/* LISTAGEM */}
             <div className="flex-1 overflow-y-auto p-4 bg-slate-50 dark:bg-slate-900">
                 <div className="space-y-6">
                     {groupedData.groups.map((group) => (
                         <div key={group.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                             
-                            {/* CABEÇALHO UNIDADE */}
                             <div className="bg-slate-800 p-4 flex justify-between items-center text-white">
                                 <div>
                                     <div className="text-xs opacity-70 uppercase tracking-wider font-bold">Unidade / Local</div>
@@ -1890,7 +1890,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                                 </div>
                             </div>
 
-                            {/* CONTAS */}
                             <div className="p-2">
                                 {group.accounts.map((account) => (
                                     <div key={account.code} className="mb-2 last:mb-0 border border-slate-100 dark:border-slate-700 rounded-lg overflow-hidden">
@@ -1935,7 +1934,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                     {groupedData.groups.length === 0 && (
                         <div className="text-center py-10 text-slate-400">
                             {availableUnits.length === 0 
-                                ? "Nenhum investimento lançado neste período." 
+                                ? "Nenhuma unidade deste segmento possui investimentos no período." 
                                 : "Nenhuma unidade selecionada ou encontrada com os filtros atuais."}
                         </div>
                     )}
@@ -2796,7 +2795,7 @@ const stockDataRaw = useMemo(() => {
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
         {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
-        {activeTab === 'investimentos_report' && <InvestimentosReportComponent transactions={filteredData} filter={filter} />}
+        {activeTab === 'investimentos_report' && <InvestimentosReportComponent transactions={filteredData} filter={filter} selectedUnit={globalUnitFilter} />}
         
       </main>
 
