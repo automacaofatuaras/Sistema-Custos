@@ -1709,7 +1709,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                 content: 'TOTAL GERAL INVESTIMENTOS', 
                 colSpan: 2, 
                 // Alterado de colorIndigo para colorSlateDark
-                styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'center' } 
+                styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'middle' } 
             },
             { 
                 content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 
@@ -1736,7 +1736,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
             columnStyles: {
                 0: { cellWidth: 25 }, // Data
                 1: { cellWidth: 'auto' }, // Descrição (Expande)
-                2: { cellWidth: 35, halign: 'right' } // Valor (Alinhado à DIREITA para TUDO nessa coluna)
+                2: { cellWidth: 35, halign: 'middle' } // Valor (Alinhado à DIREITA para TUDO nessa coluna)
             },
 
             didDrawPage: (data) => {
@@ -1748,7 +1748,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
             }
         });
 
-        doc.save(`Investimentos_PorUnidade_${filter.year}_${filter.month + 1}.pdf`);
+        doc.save(`Investimentos_Por_Unidade_${filter.year}_${filter.month + 1}.pdf`);
     };
 
     return (
