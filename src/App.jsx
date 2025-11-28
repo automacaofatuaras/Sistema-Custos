@@ -465,24 +465,26 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     // --- REGRAS DE INCONSISTÊNCIA ---
     const analyzeConsistency = (row) => {
         const issues = [];
-        const desc = row.description.toLowerCase() + " " + (row.materialDescription || "").toLowerCase();
-        const plan = row.planDescription.toLowerCase();
-        const code = row.accountPlan;
+        const desc = (row.description || "") + " " + (row.materialDescription || "");
+        const descLower = desc.toLowerCase();
+        const plan = (row.planDescription || "").toLowerCase();
+        const code = row.accountPlan || "";
         
-        // Regra 1: Palavras-chave vs Classe (Exemplos comuns)
-        if (desc.includes('diesel') || desc.includes('combustivel')) {
+        // Regra 1: Palavras-chave vs Classe
+        if (descLower.includes('diesel') || descLower.includes('combustivel')) {
             if (!plan.includes('combustível') && !plan.includes('veículos') && !code.includes('03.07')) issues.push("Item parece Combustível, mas classe difere.");
         }
-        if (desc.includes('pneu') || desc.includes('manuten') || desc.includes('peça')) {
+        if (descLower.includes('pneu') || descLower.includes('manuten') || descLower.includes('peça')) {
             if (!plan.includes('manutenção') && !code.includes('03.05')) issues.push("Item parece Manutenção, mas classe difere.");
         }
-        if (desc.includes('energia') || desc.includes('eletrica')) {
+        if (descLower.includes('energia') || descLower.includes('eletrica')) {
             if (!plan.includes('energia') && !plan.includes('administrativa')) issues.push("Item parece Energia, verifique a classe.");
         }
 
         // Regra 2: Coerência CC (Local) vs Classe (Tipo)
         const ccCode = parseInt(row.costCenter.split(' ')[0]);
-        const isAdminCC = ADMIN_CC_CODES.includes(ccCode);
+        // Garante que ADMIN_CC_CODES esteja disponível no escopo (definido no início do App.jsx)
+        const isAdminCC = typeof ADMIN_CC_CODES !== 'undefined' ? ADMIN_CC_CODES.includes(ccCode) : false;
         const isCostClass = code.startsWith('03'); // Custos Operacionais
         const isExpClass = code.startsWith('04');  // Despesas Adm
 
@@ -490,7 +492,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             issues.push("Alerta: Custo Operacional lançado em Centro de Custo Administrativo.");
         }
         if (!isAdminCC && isExpClass && !plan.includes('rateio')) {
-            // Ignoramos "Rateio" pois é comum despesa adm cair em obra via rateio
             issues.push("Alerta: Despesa Administrativa lançada em Centro de Custo Operacional.");
         }
 
@@ -559,11 +560,11 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
             
-            // Lógica de Unidade
             const detectedUnit = getUnitByCostCenter(ccCode);
             const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
 
             parsed.push({
+                id: i, // ID temporário para controle
                 date: safeDateWithTime,
                 segment: finalSegment,
                 costCenter: `${ccCode} - ${ccDesc}`,
@@ -581,17 +582,28 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     };
 
     // Função para alterar dados na tabela
-    const handleEditRow = (index, field, value) => {
-        const newData = [...previewData];
-        newData[index] = { ...newData[index], [field]: value };
-        
-        // Se alterou o código da conta, tenta atualizar a descrição automaticamente baseada no PLANO_CONTAS
-        if (field === 'accountPlan') {
-            const found = PLANO_CONTAS.find(p => p.code === value);
-            if (found) newData[index].planDescription = found.name;
-        }
+    const handleEditRow = (id, field, value) => {
+        setPreviewData(prev => prev.map(row => {
+            if (row.id !== id) return row;
+            
+            const updatedRow = { ...row, [field]: value };
 
-        setPreviewData(newData);
+            // Se alterou o código da conta, atualiza descrição
+            if (field === 'accountPlan') {
+                const found = PLANO_CONTAS.find(p => p.code === value);
+                if (found) updatedRow.planDescription = found.name;
+            }
+
+            // Se alterou o Centro de Custo, tenta atualizar a Unidade automaticamente
+            if (field === 'costCenter') {
+                // Tenta extrair apenas o número caso o usuário digite texto junto
+                const cleanCode = value.split(' ')[0];
+                const newUnit = getUnitByCostCenter(cleanCode);
+                if (newUnit) updatedRow.segment = newUnit;
+            }
+
+            return updatedRow;
+        }));
     };
 
     const handleConfirmImport = () => {
@@ -600,11 +612,125 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         setFileText(''); setPreviewData([]);
     };
 
+    // SEPARAÇÃO DOS DADOS
+    const problematicRows = previewData.filter(row => analyzeConsistency(row).length > 0);
+    const cleanRows = previewData.filter(row => analyzeConsistency(row).length === 0);
+
+    const TableBlock = ({ title, rows, isProblematic }) => {
+        if (rows.length === 0) return null;
+        return (
+            <div className={`mb-8 rounded-xl border overflow-hidden ${isProblematic ? 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/10' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'}`}>
+                <div className={`p-4 font-bold flex items-center justify-between ${isProblematic ? 'text-amber-700 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-500' : 'text-slate-700 bg-slate-50 dark:bg-slate-900 dark:text-slate-300'}`}>
+                    <div className="flex items-center gap-2">
+                        {isProblematic ? <AlertTriangle size={20}/> : <CheckCircle size={20}/>}
+                        {title}
+                    </div>
+                    <span className="text-xs px-2 py-1 rounded bg-white/50">{rows.length} itens</span>
+                </div>
+                <div className="overflow-x-auto max-h-[400px]">
+                    <table className="w-full text-xs text-left">
+                        <thead className={`sticky top-0 z-10 ${isProblematic ? 'bg-amber-100/50' : 'bg-slate-100 dark:bg-slate-900'}`}>
+                            <tr>
+                                <th className="p-3">Data</th>
+                                <th className="p-3 w-1/4">Descrição</th>
+                                <th className="p-3">Centro de Custo (Editável)</th>
+                                <th className="p-3">Unidade (Automático)</th>
+                                <th className="p-3">Conta (Editável)</th>
+                                <th className="p-3 text-right">Valor</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                            {rows.map((row) => {
+                                const issues = analyzeConsistency(row);
+                                return (
+                                    <tr key={row.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                        <td className="p-2 whitespace-nowrap text-slate-500">{formatDate(row.date)}</td>
+                                        
+                                        <td className="p-2">
+                                            <div className="font-bold text-slate-700 dark:text-slate-200">{row.description}</div>
+                                            <div className="text-[10px] text-slate-400">{row.materialDescription}</div>
+                                            {isProblematic && issues.map((issue, idx) => (
+                                                <div key={idx} className="mt-1 text-[10px] font-bold text-amber-600 flex items-center gap-1">
+                                                    <AlertTriangle size={10}/> {issue}
+                                                </div>
+                                            ))}
+                                        </td>
+
+                                        <td className="p-2">
+                                            {/* EDIÇÃO DO CENTRO DE CUSTO */}
+                                            <input 
+                                                className={`w-full bg-transparent border-b border-dashed outline-none text-xs py-1 ${isProblematic ? 'border-amber-400 focus:border-amber-600' : 'border-slate-300 focus:border-indigo-500'} dark:text-slate-300`}
+                                                value={row.costCenter}
+                                                onChange={(e) => handleEditRow(row.id, 'costCenter', e.target.value)}
+                                            />
+                                        </td>
+
+                                        <td className="p-2">
+                                            {/* UNIDADE AGORA É APENAS LEITURA (AUTOMÁTICA) */}
+                                            <div className="text-slate-600 dark:text-slate-400 italic">
+                                                {row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}
+                                            </div>
+                                        </td>
+
+                                        <td className="p-2">
+                                            <select 
+                                                className={`w-full bg-transparent border rounded px-1 py-1 text-xs outline-none cursor-pointer ${issues.length > 0 ? 'border-amber-400 text-amber-700 font-bold' : 'border-slate-200 text-slate-600 dark:text-slate-300 dark:border-slate-600'}`}
+                                                value={row.accountPlan}
+                                                onChange={(e) => handleEditRow(row.id, 'accountPlan', e.target.value)}
+                                            >
+                                                <option value={row.accountPlan}>{row.accountPlan} - {row.planDescription} (Original)</option>
+                                                {PLANO_CONTAS.map(p => (
+                                                    <option key={p.code} value={p.code}>{p.code} - {p.name}</option>
+                                                ))}
+                                            </select>
+                                        </td>
+
+                                        <td className={`p-2 text-right font-bold whitespace-nowrap ${row.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                            {row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
             <div className="flex justify-between items-center mb-6">
-                <h3 className="font-bold text-lg dark:text-white">Auditoria de Importação (TXT)</h3>
-            </div>
+                <h3 className="font-bold text-lg dark:text-white">Auditoria e Importação</h3>
+                {previewData.length > 0 && (
+    <div className="flex gap-3">
+        {/* Botão Cancelar/Limpar */}
+        <button 
+            onClick={() => { setPreviewData([]); setFileText(''); }}
+            className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-colors"
+        >
+            Cancelar
+        </button>
+
+        {/* Botão Confirmar (Com lógica de aviso) */}
+        <button 
+            onClick={handleConfirmImport} 
+            disabled={isProcessing} 
+            className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all text-white
+                ${problematicRows.length > 0 
+                    ? 'bg-amber-500 hover:bg-amber-600' // Amarelo se tiver pendências (Aviso)
+                    : 'bg-emerald-600 hover:bg-emerald-700' // Verde se estiver tudo OK
+                }`}
+        >
+            {isProcessing ? <Loader2 className="animate-spin"/> : (problematicRows.length > 0 ? <AlertTriangle size={18}/> : <CheckCircle size={18}/>)} 
+            
+            {/* Texto Dinâmico */}
+            {problematicRows.length > 0 
+                ? `Importar com ${problematicRows.length} Avisos` 
+                : 'Confirmar Importação'}
+        </button>
+    </div>
+)}
             
             {previewData.length === 0 && (
                 <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
@@ -615,81 +741,20 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             )}
 
             {previewData.length > 0 && (
-                <div className="mt-6 animate-in fade-in">
-                    <div className="flex justify-between items-center mb-4 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800">
-                        <div className="text-sm text-blue-800 dark:text-blue-200">
-                            <strong>Modo de Auditoria:</strong> As linhas em <span className="bg-amber-100 text-amber-800 px-1 rounded font-bold border border-amber-300">amarelo</span> indicam possíveis inconsistências. 
-                            Verifique e altere a <strong>Conta</strong> ou <strong>Unidade</strong> diretamente na tabela abaixo antes de confirmar.
-                        </div>
-                        <button onClick={handleConfirmImport} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg hover:shadow-xl transition-all">
-                            {isProcessing ? <Loader2 className="animate-spin"/> : <CheckCircle size={18}/>} 
-                            Confirmar {previewData.length} Lançamentos
-                        </button>
-                    </div>
+                <div className="animate-in fade-in space-y-6">
+                    {/* BLOCO DE ERROS (SEMPRE NO TOPO) */}
+                    <TableBlock 
+                        title="Inconsistências Encontradas (Verifique C. Custo e Conta)" 
+                        rows={problematicRows} 
+                        isProblematic={true} 
+                    />
 
-                    <div className="max-h-[600px] overflow-y-auto border dark:border-slate-700 rounded-lg shadow-inner">
-                        <table className="w-full text-xs text-left relative">
-                            <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 z-10 shadow-sm">
-                                <tr>
-                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300">Data</th>
-                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 w-1/4">Descrição / Fornecedor</th>
-                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300">Unidade (Local)</th>
-                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300">Conta (Classificação)</th>
-                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 text-right">Valor</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y dark:divide-slate-700 bg-white dark:bg-slate-800">
-                                {previewData.map((row, i) => {
-                                    const issues = analyzeConsistency(row);
-                                    const hasIssue = issues.length > 0;
-                                    
-                                    return (
-                                        <tr key={i} className={`transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 ${hasIssue ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}>
-                                            <td className="p-2 whitespace-nowrap text-slate-500">{formatDate(row.date)}</td>
-                                            
-                                            <td className="p-2">
-                                                <div className="font-bold text-slate-700 dark:text-slate-200">{row.description}</div>
-                                                <div className="text-[10px] text-slate-400">{row.materialDescription}</div>
-                                                {hasIssue && (
-                                                    <div className="mt-1 text-[10px] font-bold text-amber-600 flex items-center gap-1">
-                                                        <AlertTriangle size={10}/> {issues[0]}
-                                                    </div>
-                                                )}
-                                            </td>
-
-                                            <td className="p-2">
-                                                {/* CAMPO DE EDIÇÃO DE UNIDADE */}
-                                                <input 
-                                                    className="w-full bg-transparent border-b border-dashed border-slate-300 focus:border-indigo-500 outline-none text-xs py-1"
-                                                    value={row.segment}
-                                                    onChange={(e) => handleEditRow(i, 'segment', e.target.value)}
-                                                />
-                                                <div className="text-[10px] text-slate-400 mt-1">CC: {row.costCenter.split('-')[0]}</div>
-                                            </td>
-
-                                            <td className="p-2">
-                                                {/* CAMPO DE EDIÇÃO DE CONTA (COM DROPDOWN) */}
-                                                <select 
-                                                    className={`w-full bg-transparent border rounded px-1 py-1 text-xs outline-none cursor-pointer ${hasIssue ? 'border-amber-400 text-amber-700 font-bold' : 'border-slate-200 text-slate-600 dark:text-slate-300 dark:border-slate-600'}`}
-                                                    value={row.accountPlan}
-                                                    onChange={(e) => handleEditRow(i, 'accountPlan', e.target.value)}
-                                                >
-                                                    <option value={row.accountPlan}>{row.accountPlan} - {row.planDescription} (Original)</option>
-                                                    {PLANO_CONTAS.map(p => (
-                                                        <option key={p.code} value={p.code}>{p.code} - {p.name}</option>
-                                                    ))}
-                                                </select>
-                                            </td>
-
-                                            <td className={`p-2 text-right font-bold whitespace-nowrap ${row.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                                {row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                    {/* BLOCO DE ITENS CORRETOS */}
+                    <TableBlock 
+                        title="Itens Validados" 
+                        rows={cleanRows} 
+                        isProblematic={false} 
+                    />
                 </div>
             )}
         </div>
