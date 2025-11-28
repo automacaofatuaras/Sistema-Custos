@@ -132,28 +132,30 @@ const getUnitByCostCenter = (ccCode) => {
     return null;
 };
 
-const DRE_BLUEPRINT = [
-    { code: '01', name: '(+) RECEITA BRUTA', type: 'revenue', level: 1 },
-    { code: '01.01', name: 'Receita de Vendas/Serviços', parent: '01', level: 2 },
-    { code: '02', name: '(-) DEDUÇÕES', type: 'deduction', level: 1 },
-    { code: '02.01', name: 'Impostos s/ Venda', parent: '02', level: 2 },
-    { code: 'RESULT_LIQ', name: '= RECEITA LÍQUIDA', formula: '01 - 02', level: 1, bold: true },
-    { code: '03', name: '(-) CUSTOS (CPV/CSV)', type: 'cost', level: 1 },
-    { code: '03.01', name: 'Custos Mão-de-Obra', parent: '03', level: 2 },
-    { code: '03.02', name: 'Custos Materiais (MP)', parent: '03', level: 2 },
-    { code: '03.04', name: 'Custos Gerais / Adm Obra', parent: '03', level: 2 },
-    { code: '03.05', name: 'Custos de Manutenção', parent: '03', level: 2 },
-    { code: '03.06', name: 'Custos de Frete', parent: '03', level: 2 },
-    { code: '03.07', name: 'Custos de Veículos', parent: '03', level: 2 },
-    { code: 'LUCRO_BRUTO', name: '= LUCRO BRUTO', formula: 'RESULT_LIQ - 03', level: 1, bold: true },
-    { code: '04', name: '(-) DESPESAS OPERACIONAIS', type: 'expense', level: 1 },
-    { code: '04.01', name: 'Despesas Administrativas', parent: '04', level: 2 },
-    { code: '04.02', name: 'Despesas Financeiras', parent: '04', level: 2 },
-    { code: '04.03', name: 'Indedutíveis', parent: '04', level: 2 },
-    { code: '05', name: '(-) IMPOSTOS (IRPJ/CSLL)', type: 'tax', level: 1 },
-    { code: 'RESULT_FINAL', name: '= RESULTADO LÍQUIDO', formula: 'LUCRO_BRUTO - 04 - 05', level: 1, bold: true, color: true },
-];
+const PLANO_CONTAS = [
+    // RECEITAS
+    { code: '01.01', name: 'Receita de Vendas/Serviços' },
+    
+    // DEDUÇÕES / IMPOSTOS
+    { code: '02.01', name: 'Impostos s/ Venda' },
+    
+    // CUSTOS
+    { code: '03.01', name: 'Custos Mão-de-Obra' },
+    { code: '03.02', name: 'Custos Materiais (MP)' },
+    { code: '03.04', name: 'Custos Gerais / Adm Obra' },
+    { code: '03.05', name: 'Custos de Manutenção' },
+    { code: '03.06', name: 'Custos de Frete' },
+    { code: '03.07', name: 'Custos de Veículos' },
+    
+    // DESPESAS
+    { code: '04.01', name: 'Despesas Administrativas' },
+    { code: '04.02', name: 'Despesas Financeiras' },
+    { code: '04.03', name: 'Indedutíveis' },
 
+    // INVESTIMENTOS (Adicionados anteriormente)
+    { code: '06.01', name: 'Aquisição de Ativos/Equipamentos' },
+    { code: '06.02', name: 'Obras de Melhoria/Expansão' }
+];
 const useTheme = () => {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   useEffect(() => {
@@ -410,6 +412,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
         'DESPESAS DA UNIDADE': true,
         'CUSTO OPERACIONAL INDÚSTRIA': true,
         'CUSTO OPERACIONAL ADMINISTRATIVO': true
+        'INVESTIMENTOS': true
     });
 
     useEffect(() => {
@@ -431,6 +434,7 @@ const groupedData = useMemo(() => {
             'TRANSPORTE': { total: 0, subgroups: { 'CUSTO TRANSPORTE': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
             'ADMINISTRATIVO': { total: 0, subgroups: { 'CUSTO RATEIO DESPESAS ADMINISTRATIVAS': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
             'IMPOSTOS': { total: 0, subgroups: { 'CUSTO IMPOSTOS': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
+            'INVESTIMENTOS': { total: 0, subgroups: { 'INVESTIMENTOS GERAIS': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
             'OUTROS': { total: 0, subgroups: { 'Geral': {total:0, classes:{}} } }
         };
 
@@ -460,10 +464,14 @@ const groupedData = useMemo(() => {
             }
 
             if (!matched) {
-                if (t.accountPlan === '02.01') { targetRoot = "IMPOSTOS"; targetSub = "CUSTO IMPOSTOS"; } 
+                if (t.accountPlan?.startsWith('06')) { 
+                targetRoot = "INVESTIMENTOS"; 
+                targetSub = "INVESTIMENTOS GERAIS";
+                }
+                else if (t.accountPlan === '02.01') { targetRoot = "IMPOSTOS"; targetSub = "CUSTO IMPOSTOS"; }
                 else if (ADMIN_CC_CODES.includes(ccCode)) { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'CUSTO OPERACIONAL ADMINISTRATIVO'; } 
                 else if (t.accountPlan?.startsWith('03')) { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'CUSTO OPERACIONAL INDÚSTRIA'; } 
-                else if (t.accountPlan?.startsWith('04')) { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'CUSTO OPERACIONAL ADMINISTRATIVO'; } 
+                else if (t.accountPlan?.startsWith('04')) { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'CUSTO OPERACIONAL ADMINISTRATIVO'; }
                 else { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'OUTRAS DESPESAS'; }
             }
 
@@ -668,115 +676,7 @@ const UsersScreen = ({ user, myRole, showToast }) => {
     const handleDelete = async (uid) => { if (!confirm("Remover acesso?")) return; await dbService.deleteUserAccess(uid); loadUsers(); showToast("Acesso revogado.", 'success'); };
     return (<div className="p-6 max-w-4xl mx-auto"><h2 className="text-2xl font-bold mb-6 dark:text-white">Gestão de Acessos</h2><div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-8 border dark:border-slate-700"><h3 className="font-bold mb-4 flex items-center gap-2 dark:text-white"><PlusCircle size={20}/> Cadastrar Novo Usuário</h3><div className="flex gap-4 items-end"><div className="flex-1"><label className="text-xs font-bold text-slate-500">Email</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserEmail} onChange={e=>setNewUserEmail(e.target.value)}/></div><div className="flex-1"><label className="text-xs font-bold text-slate-500">Senha Provisória</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserPass} onChange={e=>setNewUserPass(e.target.value)}/></div><button onClick={handleCreateUser} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700">Criar</button></div></div><div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700"><table className="w-full text-left"><thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{users.map(u => (<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{u.email}</td><td className="p-4"><select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select></td><td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td></tr>))}</tbody></table></div></div>);
 };
-const DREComponent = ({ transactions }) => {
-    const dreData = useMemo(() => {
-        // 1. Clona a estrutura base (Blueprint)
-        let rows = JSON.parse(JSON.stringify(DRE_BLUEPRINT));
-        const blueprintCodes = new Set(rows.map(r => r.code));
-        
-        // 2. Agrupa transações por código exato para preservar o detalhe lançado
-        const accountTotals = {};
-        const accountNames = {};
 
-        transactions.forEach(t => {
-            if (!t.accountPlan) return;
-            const val = t.type === 'revenue' ? t.value : -t.value; 
-            const code = t.accountPlan;
-            
-            accountTotals[code] = (accountTotals[code] || 0) + val;
-            if (!accountNames[code]) accountNames[code] = t.planDescription;
-        });
-
-        // 3. Mescla os dados
-        Object.keys(accountTotals).forEach(code => {
-            if (blueprintCodes.has(code)) {
-                const row = rows.find(r => r.code === code);
-                row.value = (row.value || 0) + accountTotals[code];
-            } else {
-                const parentCode = code.length >= 5 ? code.substring(0, 5) : null;
-                const parentExists = blueprintCodes.has(parentCode);
-
-                if (parentExists) {
-                    rows.push({
-                        code: code,
-                        name: accountNames[code] || 'Outros',
-                        parent: parentCode,
-                        level: 3, 
-                        value: accountTotals[code],
-                        isDynamic: true
-                    });
-                }
-            }
-        });
-
-        // --- CORREÇÃO DO CÁLCULO DUPLICADO ---
-        // 4. Ordena por Nível Decrescente (3 -> 2 -> 1) para somar de baixo para cima
-        rows.sort((a, b) => b.level - a.level);
-
-        // 5. Soma Hierárquica (Roda apenas uma vez)
-        rows.forEach(row => {
-            if (row.parent) {
-                const parent = rows.find(r => r.code === row.parent);
-                if (parent && !parent.formula) {
-                    parent.value = (parent.value || 0) + (row.value || 0);
-                }
-            }
-        });
-
-        // 6. Calcula Fórmulas (Resultado Líquido, etc)
-        // Antes de calcular fórmulas, reordenamos por código para garantir que as referências existam
-        rows.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
-
-        rows.forEach(row => {
-            if (row.formula) {
-                const parts = row.formula.split(' ');
-                let total = 0;
-                let op = '+';
-                parts.forEach(part => {
-                    if (part === '+' || part === '-') {
-                        op = part;
-                        return;
-                    }
-                    // Busca pelo código exato ou substituição de alias
-                    const refCode = part === 'LUCRO_BRUTO' ? 'LUCRO_BRUTO' : part;
-                    // A busca deve ser feita no array atualizado
-                    const refRow = rows.find(r => r.code === refCode);
-                    const refVal = refRow ? (refRow.value || 0) : 0;
-                    
-                    if (op === '+') total += refVal; else total -= refVal;
-                });
-                row.value = total;
-            }
-        });
-        
-        // Filtra para exibição final (remove linhas zeradas apenas se forem dinâmicas/detalhe)
-        return rows.filter(r => r.level < 3 || (r.value !== 0));
-    }, [transactions]);
-
-    return (
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden">
-            <div className="p-4 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white">DRE Gerencial Detalhado</div>
-            <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                    <tbody>
-                        {dreData.map((row, i) => (
-                            <tr key={i} className={`border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 
-                                ${row.bold ? 'font-bold bg-slate-100 dark:bg-slate-800' : ''} 
-                                ${row.isDynamic ? 'text-slate-500 italic' : ''}`}>
-                                <td className="p-3 dark:text-slate-300" style={{paddingLeft: `${row.level * 15}px`}}>
-                                    {row.code} {row.name}
-                                </td>
-                                <td className={`p-3 text-right ${row.value < 0 ? 'text-rose-600' : 'text-emerald-600'} dark:text-white`}>
-                                    {(row.value || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-};
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
     const [form, setForm] = useState({ 
         date: new Date().toISOString().slice(0, 7), 
@@ -900,9 +800,11 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                             <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição Manual..." value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
                             
                             <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.accountPlan} onChange={e=>setForm({...form, accountPlan: e.target.value})}>
-                                <option value="">Conta do DRE...</option>
-                                <option value="00.00">00.00 - Lançamento Manual (Fechamento)</option>
-                                {DRE_BLUEPRINT.filter(r => r.level === 2).map(r => <option key={r.code} value={r.code}>{r.code} - {r.name}</option>)}
+                                <option value="">Selecione a Classe Analítica...</option>
+                                <option value="00.00">00.00 - Lançamento Manual (Ajuste)</option>
+                                {PLANO_CONTAS.map(r => (<option key={r.code} value={r.code}>{r.code} - {r.name}
+                            </option>
+                            ))}
                             </select>
                         </>
                     )}
@@ -1131,7 +1033,11 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const resultPosDespesas = resultOperacional - rateioAdm - multas - frotaParada;
 
         // INVESTIMENTOS
-        const investimentos = sum(t => t.type === 'expense' && (t.description.toLowerCase().includes('consórcio') || t.description.toLowerCase().includes('investimento')));
+        const investimentos = sum(t => t.type === 'expense' && (
+    t.accountPlan.startsWith('06') || // Pega tudo que começa com 06
+    t.description.toLowerCase().includes('consórcio') || 
+    t.description.toLowerCase().includes('investimento')
+));
         const resultFinal = resultPosDespesas - investimentos;
 
         return {
@@ -2068,7 +1974,6 @@ const stockDataRaw = useMemo(() => {
         <nav className="flex-1 p-4 space-y-2">
            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all $ ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /><span className="hidden lg:block">Visão Geral</span></button>
           <button onClick={() => setActiveTab('lancamentos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'lancamentos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><List size={20} /><span className="hidden lg:block">Lançamentos</span></button>
-          <button onClick={() => setActiveTab('dre')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dre' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><FileText size={20} /><span className="hidden lg:block">DRE</span></button>
           <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos e Despesas</span></button>
           <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'estoque' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Package size={20} /><span className="hidden lg:block">Estoque</span></button>
           <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção vs Vendas</span></button>
@@ -2276,7 +2181,6 @@ const stockDataRaw = useMemo(() => {
              </div>
           </div>
         )}
-        {activeTab === 'dre' && <DREComponent transactions={filteredData} />}
         {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
         {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
         {/* Passando globalCostPerUnit para o componente de estoque */}
