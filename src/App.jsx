@@ -904,27 +904,39 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
     // Carregar dados na Edição
     useEffect(() => { 
         if (initialData) { 
-            // Extrai apenas a data YYYY-MM para o input
-            const safeDate = initialData.date && initialData.date.length >= 7 
-                ? initialData.date.slice(0, 7) 
-                : new Date().toISOString().slice(0, 7);
+            // Extrai apenas a data YYYY-MM de forma segura
+            let safeDate = new Date().toISOString().slice(0, 7);
+            if (initialData.date) {
+                // Tenta lidar com data completa ISO ou YYYY-MM
+                safeDate = initialData.date.substring(0, 7);
+            }
 
             setForm({ 
-                ...initialData, // Carrega dados existentes
+                ...initialData, 
                 date: safeDate,
-                // Garante que campos opcionais nunca sejam undefined/null
                 materialDescription: initialData.materialDescription || '',
                 costCenter: initialData.costCenter || 'GERAL',
-                source: initialData.source || 'manual'
+                source: initialData.source || 'manual',
+                // Garante que accountPlan seja string válida
+                accountPlan: initialData.accountPlan || ''
             }); 
-            setActiveTab(initialData.type === 'metric' ? 'metric' : (initialData.type || 'expense')); 
+            
+            // Define a aba correta
+            const type = initialData.type || 'expense';
+            setActiveTab(type === 'metric' ? 'metric' : type); 
         } 
     }, [initialData]);
 
     const handleSubmit = async () => {
+        // Validação de segurança para PLANO_CONTAS
+        if (typeof PLANO_CONTAS === 'undefined' || !Array.isArray(PLANO_CONTAS)) {
+            console.error("ERRO CRÍTICO: PLANO_CONTAS não foi carregado corretamente.");
+            return showToast("Erro interno: Plano de contas indisponível. Recarregue a página.", 'error');
+        }
+
         const val = parseFloat(form.value);
         
-        // 1. Validações
+        // 1. Validações de Campos
         if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
         if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do Plano.", 'error');
@@ -942,19 +954,18 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
             planDesc = planItem ? planItem.name : '';
         }
 
-        // 4. Construção do Objeto Limpo (Sanitização)
-        // Criamos um novo objeto explicitamente para evitar lixo do state anterior
+        // 4. Construção do Objeto Limpo (Sanitização Completa)
         const tx = {
             date: fullDate,
             value: val,
             type: activeTab,
-            segment: form.segment,
-            description: form.description,
-            costCenter: form.costCenter,
-            source: form.source,
+            segment: form.segment || '',
+            description: form.description || '',
+            costCenter: form.costCenter || 'GERAL',
+            source: form.source || 'manual',
             
-            // Campos opcionais (envia string vazia se não tiver, para evitar undefined)
-            accountPlan: activeTab === 'metric' ? 'METRICS' : form.accountPlan,
+            // Campos condicionais
+            accountPlan: activeTab === 'metric' ? 'METRICS' : (form.accountPlan || ''),
             planDescription: activeTab === 'metric' ? '' : planDesc,
             metricType: activeTab === 'metric' ? form.metricType : null,
             materialDescription: form.materialDescription || '',
@@ -962,31 +973,32 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
             updatedAt: new Date().toISOString()
         };
 
-        // Lógica Específica para Métricas
+        // Ajuste descrição para métricas
         if (activeTab === 'metric') { 
             const matDesc = form.metricType === 'estoque' ? ` - ${form.materialDescription}` : '';
             tx.description = `Lançamento de ${form.metricType.toUpperCase()}${matDesc}`; 
         }
 
-        // Adiciona data de criação apenas se for novo
+        // Adiciona createdAt apenas se for novo
         if (!initialData?.id) {
             tx.createdAt = new Date().toISOString();
         }
 
        try { 
             if(initialData?.id) {
-                // EDIÇÃO
-                await dbService.update(user, 'transactions', initialData.id, tx);
+                // MODO EDIÇÃO: Garante que ID é string
+                const docId = String(initialData.id); 
+                await dbService.update(user, 'transactions', docId, tx);
                 showToast("Lançamento atualizado!", 'success');
                 onSave(); 
                 onClose(); 
             } else {
-                // CRIAÇÃO
+                // MODO CRIAÇÃO
                 await dbService.add(user, 'transactions', tx); 
                 showToast("Salvo! Pode fazer o próximo.", 'success');
                 onSave(); 
                 
-                // Reset parcial para facilitar digitação em série
+                // Reset parcial
                 setForm(prev => ({ 
                     ...prev, 
                     value: '', 
@@ -994,7 +1006,7 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                 }));
             }
         } catch(e) { 
-            console.error("Erro detalhado ao salvar:", e);
+            console.error("Erro ao salvar:", e);
             showToast("Erro ao salvar: " + e.message, 'error');
         }
       };
