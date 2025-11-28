@@ -4,7 +4,7 @@ import {
   DollarSign, Trash2, Building2, PlusCircle, Settings, Edit2, 
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, Globe, 
-  AlertTriangle, CheckCircle, Zap, ChevronRight, ChevronDown, Printer,
+  AlertTriangle, CheckCircle, Zap, Calculator, Percent, Share2, ChevronRight, ChevronDown, Printer,
   BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
 } from 'lucide-react';
 import { 
@@ -2352,6 +2352,354 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
         </div>
     );
 };
+const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList }) => {
+    // Estado local
+    const [selectedSegment, setSelectedSegment] = useState('Portos de Areia');
+    const [activeRateioType, setActiveRateioType] = useState('ADMINISTRATIVO');
+    
+    // Estado para porcentagens manuais (Rateio Vendedores)
+    // Estrutura: { 'Nome da Unidade': { '2105': 10, '3105': 5... } }
+    const [manualPercents, setManualPercents] = useState({});
+
+    // --- CONFIGURAÇÃO DOS RATEIOS ---
+    const RATEIO_CONFIG = {
+        'Portos de Areia': [
+            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo' },
+            { id: 'PRODUCAO', label: 'Encarregado Produção' },
+            { id: 'VENDEDORES', label: 'Rateio Vendedores' },
+            { id: 'COMERCIAL', label: 'Rateio Comercial' }
+        ],
+        'Pedreiras': [
+            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo' },
+            { id: 'PRODUCAO', label: 'Encarregado Produção' },
+            { id: 'VENDEDORES', label: 'Rateio Vendedores' },
+            { id: 'COMERCIAL', label: 'Rateio Comercial' },
+            { id: 'LIMPEZA', label: 'Rateio Limpeza' },
+            { id: 'PERFURATRIZ', label: 'Rateio Perfuratriz' }
+        ],
+        'Noromix Concreteiras': [
+            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo' },
+            { id: 'COMERCIAL', label: 'Rateio Comercial' },
+            { id: 'VENDEDORES', label: 'Rateio Vendedores' }
+        ]
+    };
+
+    // --- HELPER DE FILTRO DE DATA ---
+    const filterByDate = (txs) => {
+        return txs.filter(t => {
+            let y, m;
+            if (typeof t.date === 'string' && t.date.length >= 10) {
+                y = parseInt(t.date.substring(0, 4));
+                m = parseInt(t.date.substring(5, 7)) - 1; 
+            } else { const d = new Date(t.date); y = d.getFullYear(); m = d.getMonth(); }
+            
+            if (y !== filter.year) return false;
+            if (filter.type === 'month' && m !== filter.month) return false;
+            if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
+            if (filter.type === 'semester' && (m < 6 ? 1 : 2) !== filter.semester) return false;
+            return true;
+        });
+    };
+
+    // --- CÁLCULOS PRINCIPAIS ---
+    const calculatedData = useMemo(() => {
+        const periodTxs = filterByDate(transactions);
+        
+        // Helper para somar CCs
+        const sumCC = (codes) => periodTxs
+            .filter(t => t.type === 'expense')
+            .filter(t => {
+                const txCC = parseInt(t.costCenter.split(' ')[0]);
+                return codes.includes(txCC);
+            })
+            .reduce((acc, t) => acc + t.value, 0);
+
+        // Helper para listar itens (detalhamento)
+        const listItems = (codes) => periodTxs
+            .filter(t => t.type === 'expense')
+            .filter(t => codes.includes(parseInt(t.costCenter.split(' ')[0])));
+
+        // 1. Rateio Administrativo (1087, 1089) - Regra: Divisão por 8
+        const totalAdm = sumCC([1087, 1089]);
+        const itemsAdm = listItems([1087, 1089]);
+        
+        // 2. Encarregado Produção (1042 Portos / 1043 Pedreiras)
+        const ccProd = selectedSegment === 'Portos de Areia' ? [1042] : [1043];
+        const totalProd = sumCC(ccProd);
+        const itemsProd = listItems(ccProd);
+
+        // 3. Vendedores (2105, 3105, 5105)
+        const totalVend2105 = sumCC([2105, 20105]); // Incluindo variação de pedreira se houver
+        const totalVend3105 = sumCC([3105]);
+        const totalVend5105 = sumCC([5105]);
+
+        // 4. Comercial (1104)
+        const totalComercial = sumCC([1104]);
+        
+        // Lógica de Produção Ativa para Comercial
+        // Pega todas as unidades de Pedreiras, Portos e Usinas
+        const targetUnits = [
+            ...BUSINESS_HIERARCHY["Pedreiras"], 
+            ...BUSINESS_HIERARCHY["Portos de Areia"], 
+            ...BUSINESS_HIERARCHY["Usinas de Asfalto"]
+        ];
+        
+        const activeUnits = targetUnits.filter(unit => {
+            const prod = periodTxs
+                .filter(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === unit)
+                .reduce((acc, t) => acc + t.value, 0);
+            return prod > 0;
+        });
+
+        return { 
+            totalAdm, itemsAdm, 
+            totalProd, itemsProd,
+            totalVend2105, totalVend3105, totalVend5105,
+            totalComercial, activeUnits 
+        };
+    }, [transactions, filter, selectedSegment]);
+
+    // Handle change percentage
+    const handlePercChange = (unit, cc, val) => {
+        setManualPercents(prev => ({
+            ...prev,
+            [unit]: {
+                ...prev[unit],
+                [cc]: parseFloat(val) || 0
+            }
+        }));
+    };
+
+    const renderContent = () => {
+        // --- TELA LIMPEZA / PERFURATRIZ (EM BRANCO) ---
+        if (['LIMPEZA', 'PERFURATRIZ'].includes(activeRateioType)) {
+            return (
+                <div className="flex flex-col items-center justify-center h-64 text-slate-400 bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed dark:border-slate-700">
+                    <Construction size={48} className="mb-4 opacity-50"/>
+                    <p>Módulo em desenvolvimento.</p>
+                </div>
+            );
+        }
+
+        // --- TELA ADMINISTRATIVO ---
+        if (activeRateioType === 'ADMINISTRATIVO') {
+            const shareValue = calculatedData.totalAdm / 8;
+            const unitShare = selectedSegment === 'Portos de Areia' ? shareValue / 2 : shareValue; // Pedreira recebe cheia (1/8), Porto recebe (1/8)/2
+            const unitsCount = selectedSegment === 'Portos de Areia' ? 2 : 6;
+
+            return (
+                <div className="space-y-6 animate-in fade-in">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-indigo-600 text-white p-6 rounded-xl shadow-lg">
+                            <p className="text-indigo-200 text-xs font-bold uppercase mb-1">Total Despesas (CC 1087/1089)</p>
+                            <h3 className="text-2xl font-bold">{calculatedData.totalAdm.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                        </div>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
+                            <p className="text-slate-500 text-xs font-bold uppercase mb-1">Valor da Cota (1/8)</p>
+                            <h3 className="text-2xl font-bold text-slate-700 dark:text-white">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                            <p className="text-xs text-slate-400 mt-1">Base de rateio global</p>
+                        </div>
+                        <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
+                            <p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade ({unitsCount}x)</p>
+                            <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{unitShare.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                            <p className="text-xs text-emerald-600/60 mt-1">Valor efetivo por filial</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden">
+                        <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b dark:border-slate-700 font-bold dark:text-white">Detalhamento das Despesas Origem</div>
+                        <div className="max-h-96 overflow-y-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-900 sticky top-0"><tr><th className="p-3">Data</th><th className="p-3">Descrição</th><th className="p-3">CC</th><th className="p-3 text-right">Valor Original</th></tr></thead>
+                                <tbody className="divide-y dark:divide-slate-700">
+                                    {calculatedData.itemsAdm.map((item, i) => (
+                                        <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
+                                            <td className="p-3">{formatDate(item.date)}</td>
+                                            <td className="p-3">{item.description}</td>
+                                            <td className="p-3">{item.costCenter.split('-')[0]}</td>
+                                            <td className="p-3 text-right">{item.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- TELA ENCARREGADO PRODUÇÃO ---
+        if (activeRateioType === 'PRODUCAO') {
+            const ccOrigem = selectedSegment === 'Portos de Areia' ? '1042' : '1043';
+            const divisor = selectedSegment === 'Portos de Areia' ? 2 : 6; // Assumindo divisão igualitária entre as unidades do segmento
+            const unitShare = calculatedData.totalProd / divisor;
+
+            return (
+                <div className="space-y-6 animate-in fade-in">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-blue-600 text-white p-6 rounded-xl shadow-lg">
+                            <p className="text-blue-200 text-xs font-bold uppercase mb-1">Total Despesas (CC {ccOrigem})</p>
+                            <h3 className="text-2xl font-bold">{calculatedData.totalProd.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                        </div>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
+                            <p className="text-slate-500 text-xs font-bold uppercase mb-1">Alocado por Unidade ({divisor}x)</p>
+                            <h3 className="text-2xl font-bold text-slate-700 dark:text-white">{unitShare.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                        </div>
+                    </div>
+                    {/* Tabela de detalhes similar a adm se quiser... */}
+                </div>
+            );
+        }
+
+        // --- TELA VENDEDORES (MATRIZ) ---
+        if (activeRateioType === 'VENDEDORES') {
+            const allUnits = [...BUSINESS_HIERARCHY['Portos de Areia'], ...BUSINESS_HIERARCHY['Pedreiras']];
+            
+            return (
+                <div className="space-y-6 animate-in fade-in">
+                    <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 mb-4 flex gap-4 text-sm">
+                        <div className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded">Total CC 2105: <strong>{calculatedData.totalVend2105.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</strong></div>
+                        <div className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded">Total CC 3105: <strong>{calculatedData.totalVend3105.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</strong></div>
+                        <div className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded">Total CC 5105: <strong>{calculatedData.totalVend5105.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</strong></div>
+                    </div>
+
+                    <div className="overflow-x-auto bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300">
+                                <tr>
+                                    <th className="p-3">Unidade</th>
+                                    <th className="p-3 w-32">% CC 2105</th>
+                                    <th className="p-3 w-32">% CC 3105</th>
+                                    <th className="p-3 w-32">% CC 5105</th>
+                                    <th className="p-3 text-right bg-slate-200 dark:bg-slate-800">Total Alocado (R$)</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y dark:divide-slate-700">
+                                {allUnits.sort().map(unit => {
+                                    const p2105 = manualPercents[unit]?.['2105'] || 0;
+                                    const p3105 = manualPercents[unit]?.['3105'] || 0;
+                                    const p5105 = manualPercents[unit]?.['5105'] || 0;
+                                    
+                                    const val2105 = calculatedData.totalVend2105 * (p2105 / 100);
+                                    const val3105 = calculatedData.totalVend3105 * (p3105 / 100);
+                                    const val5105 = calculatedData.totalVend5105 * (p5105 / 100);
+                                    const totalAlocado = val2105 + val3105 + val5105;
+
+                                    return (
+                                        <tr key={unit} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
+                                            <td className="p-3 font-medium">{unit}</td>
+                                            <td className="p-3"><div className="flex items-center"><input type="number" className="w-16 p-1 border rounded dark:bg-slate-700" value={p2105} onChange={e => handlePercChange(unit, '2105', e.target.value)} /> %</div></td>
+                                            <td className="p-3"><div className="flex items-center"><input type="number" className="w-16 p-1 border rounded dark:bg-slate-700" value={p3105} onChange={e => handlePercChange(unit, '3105', e.target.value)} /> %</div></td>
+                                            <td className="p-3"><div className="flex items-center"><input type="number" className="w-16 p-1 border rounded dark:bg-slate-700" value={p5105} onChange={e => handlePercChange(unit, '5105', e.target.value)} /> %</div></td>
+                                            <td className="p-3 text-right font-bold text-indigo-600 bg-slate-50 dark:bg-slate-800/50">{totalAlocado.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- TELA COMERCIAL ---
+        if (activeRateioType === 'COMERCIAL') {
+            const activeCount = calculatedData.activeUnits.length;
+            const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
+
+            return (
+                <div className="space-y-6 animate-in fade-in">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-amber-500 text-white p-6 rounded-xl shadow-lg">
+                            <p className="text-amber-100 text-xs font-bold uppercase mb-1">Total Comercial (CC 1104)</p>
+                            <h3 className="text-2xl font-bold">{calculatedData.totalComercial.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                        </div>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
+                            <p className="text-slate-500 text-xs font-bold uppercase mb-1">Unidades Ativas</p>
+                            <h3 className="text-2xl font-bold text-slate-700 dark:text-white">{activeCount} <span className="text-sm font-normal text-slate-400">/ 14</span></h3>
+                            <p className="text-xs text-slate-400 mt-1">Com produção no período</p>
+                        </div>
+                        <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
+                            <p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade Ativa</p>
+                            <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden">
+                        <div className="p-4 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white border-b dark:border-slate-700">Distribuição por Unidade</div>
+                        <div className="max-h-96 overflow-y-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 sticky top-0"><tr><th className="p-3">Unidade</th><th className="p-3">Status</th><th className="p-3 text-right">Valor Rateado</th></tr></thead>
+                                <tbody className="divide-y dark:divide-slate-700">
+                                    {[...BUSINESS_HIERARCHY["Pedreiras"], ...BUSINESS_HIERARCHY["Portos de Areia"], ...BUSINESS_HIERARCHY["Usinas de Asfalto"]].sort().map(unit => {
+                                        const isActive = calculatedData.activeUnits.includes(unit);
+                                        return (
+                                            <tr key={unit} className={`dark:text-slate-300 ${!isActive ? 'opacity-50 bg-slate-50 dark:bg-slate-900' : ''}`}>
+                                                <td className="p-3">{unit}</td>
+                                                <td className="p-3">
+                                                    {isActive 
+                                                        ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> 
+                                                        : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}
+                                                </td>
+                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-white">
+                                                    {isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        return <div className="p-10 text-center text-slate-400">Selecione um tipo de rateio acima.</div>;
+    };
+
+    return (
+        <div className="space-y-6">
+            {/* Header com Filtros Simplificados */}
+            <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 shadow-sm gap-4">
+                <div className="flex items-center gap-2">
+                    <Share2 className="text-indigo-500" size={24}/>
+                    <h3 className="font-bold text-lg dark:text-white">Painel de Rateios</h3>
+                </div>
+                <div className="flex gap-2">
+                    <PeriodSelector filter={filter} setFilter={setFilter} years={years} />
+                    <select 
+                        className="bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:text-white outline-none focus:ring-2 ring-indigo-500"
+                        value={selectedSegment}
+                        onChange={(e) => { setSelectedSegment(e.target.value); setActiveRateioType('ADMINISTRATIVO'); }}
+                    >
+                        {Object.keys(RATEIO_CONFIG).map(seg => <option key={seg} value={seg}>{seg}</option>)}
+                    </select>
+                </div>
+            </div>
+
+            {/* Sub-menu de Tipos de Rateio */}
+            <div className="flex gap-2 overflow-x-auto pb-2">
+                {RATEIO_CONFIG[selectedSegment]?.map(type => (
+                    <button
+                        key={type.id}
+                        onClick={() => setActiveRateioType(type.id)}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
+                            activeRateioType === type.id 
+                            ? 'bg-indigo-600 text-white shadow-lg' 
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border dark:border-slate-700 hover:bg-slate-50'
+                        }`}
+                    >
+                        {type.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* Conteúdo Principal */}
+            {renderContent()}
+        </div>
+    );
+};
 export default function App() {
   const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
   const [userRole, setUserRole] = useState('admin');
@@ -2596,12 +2944,14 @@ const stockDataRaw = useMemo(() => {
           <button onClick={() => setActiveTab('fechamento')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'fechamento' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><FileUp size={20} /><span className="hidden lg:block">Fechamento</span></button>
           <button onClick={() => setActiveTab('global')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'global' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Globe size={20} /><span className="hidden lg:block">Global</span></button>
           <button onClick={() => setActiveTab('investimentos_report')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'investimentos_report' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><TrendingUp size={20} /><span className="hidden lg:block">Investimentos</span></button>
+          <button onClick={() => setActiveTab('rateios')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'rateios' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Share2 size={20} /><span className="hidden lg:block">Rateios</span></button>
         </nav>
         <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-sm text-slate-400"><div className="p-1 bg-slate-800 rounded"><UserCircle size={16} /></div><div className="flex-1 min-w-0"><p className="truncate font-bold text-white">{user.email}</p><p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p></div></div></div>
       </aside>
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+          {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
           
           {/* LÓGICA NOVA: Se a aba for 'global', esconde os filtros da esquerda */}
           {activeTab !== 'global' ? (
