@@ -3263,8 +3263,36 @@ const stockDataRaw = useMemo(() => {
                                  </td>
                                  <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
                                  <td className="p-4 text-xs dark:text-slate-300">
-                                     {t.type === 'metric' ? <span className="px-2 py-1 rounded bg-indigo-100 text-indigo-700 font-bold text-[10px]">{t.metricType.toUpperCase()}</span> : t.accountPlan}
-                                 </td>
+                                    <td className="p-4">
+    {(() => {
+        // Estilo base (igual ao VENDAS/PRODUÇÃO)
+        const baseStyle = "px-2 py-1 rounded border font-bold text-[10px] uppercase inline-block max-w-[200px] truncate";
+
+        // 1. Se for Métrica (Vendas, Produção, Estoque)
+        if (t.type === 'metric') {
+            return (
+                <span className={`${baseStyle} bg-indigo-100 text-indigo-700 border-indigo-200`}>
+                    {t.metricType}
+                </span>
+            );
+        }
+
+        // 2. Se for Financeiro (Receita ou Despesa)
+        // Usa a descrição (nome) se existir, senão usa o código
+        const label = t.planDescription || t.accountPlan;
+        
+        // Define cores diferentes para facilitar leitura rápida
+        const colorStyle = t.type === 'revenue' 
+            ? 'bg-emerald-100 text-emerald-700 border-emerald-200' // Receita: Verde
+            : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'; // Despesa: Cinza
+
+        return (
+            <span className={`${baseStyle} ${colorStyle}`} title={label}>
+                {label}
+            </span>
+        );
+    })()}
+</td>
                                  <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>{t.value.toLocaleString()}</td>
                                  <td className="p-4 flex gap-2">
                                       {['admin', 'editor'].includes(userRole) && <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>}
