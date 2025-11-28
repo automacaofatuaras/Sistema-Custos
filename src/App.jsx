@@ -152,6 +152,7 @@ const useToast = () => {
 };
 
 // --- REGRAS DE CUSTOS POR SEGMENTO ---
+// --- REGRAS DE CUSTOS POR SEGMENTO ---
 const COST_CENTER_RULES = {
     "Portos de Areia": {
         "DESPESAS DA UNIDADE": {
@@ -165,6 +166,30 @@ const COST_CENTER_RULES = {
         },
         "ADMINISTRATIVO": {
             "CUSTO RATEIO DESPESAS ADMINISTRATIVAS": [1087, 1089]
+        }
+    },
+    "Pedreiras": {
+        "DESPESAS DA UNIDADE": {
+            "CUSTO OPERACIONAL ADMINISTRAÇÃO": [2000, 3000, 4000, 5000, 20000, 26000],
+            "CUSTO OPERACIONAL BRITAGEM": [
+                2001, 2007, 2011, 2012, 2013, 2015, 2019, 2021, 2024, 2027, 2048, 2093, 2094, 2100, 2103, 2104, 2124, 2128, 2129, 2172, 2188, 2204, 2234, 2237, 2238, 2262, 2277, 2276, 
+                3007, 3008, 3009, 3010, 3014, 3018, 3022, 3023, 3024, 3026, 3028, 3073, 3079, 3100, 3103, 3104, 3108, 3117, 3120, 3200, 3201, 3222, 3223, 3245, 3261, 3275, 3282, 
+                4001, 4002, 4005, 4007, 4008, 4010, 4011, 4012, 4014, 4017, 4018, 4019, 4020, 4021, 4043, 4051, 4059, 4071, 4100, 4102, 4103, 4104, 4114, 4118, 4119, 
+                5003, 5004, 5005, 5006, 5007, 5008, 5011, 5012, 5013, 5019, 5020, 5027, 5053, 5061, 5078, 5100, 5102, 5103, 5104, 5112, 5117, 5131, 5152, 5156, 5172, 5176, 5195, 5206, 5998, 
+                20007, 20008, 20013, 20021, 20029, 20050, 20057, 20062, 20063, 20100, 20103, 20104, 20119, 20137, 20138, 20159, 20195, 20196, 20198, 20204, 
+                26016, 26018, 26019, 26020, 26024, 26026, 20627, 26028, 26031, 26032, 26034, 26036, 26037, 26054, 26059, 26079, 26100, 26103, 26104, 26113, 26114, 26127, 26128, 26129, 26133, 26156, 26183, 26184, 26197, 26201, 26208, 26224, 26231, 26235, 26239, 26247
+            ],
+            "CUSTO OPERACIONAL EXTRAÇÃO": [2102, 3102, 4102, 5102, 20102, 26102],
+            "CUSTO OPERACIONAL PERFURAÇÃO": [1039],
+            "CUSTO OPERACIONAL LIMPEZA ROCHA": [1121],
+            "CUSTO COMERCIAL VENDEDORES": [2105, 3105, 5105, 20105],
+            "CUSTO COMERCIAL GERÊNCIA": [1104]
+        },
+        "TRANSPORTE": {
+            "CUSTO TRANSPORTE": [2101, 2106, 3101, 3106, 4101, 4106, 5101, 5106, 20101, 26101, 26106]
+        },
+        "ADMINISTRATIVO": {
+            "CUSTO RATEIO DESPESAS ADMINISTRATIVAS": [1087, 1089, 99911]
         }
     }
 };
@@ -262,7 +287,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
         // Regra 2: Coerência CC (Local) vs Classe (Tipo)
         const ccCode = parseInt(row.costCenter.split(' ')[0]);
-        // Garante que ADMIN_CC_CODES esteja disponível no escopo (definido no início do App.jsx)
+        // Garante que ADMIN_CC_CODES esteja disponível no escopo
         const isAdminCC = typeof ADMIN_CC_CODES !== 'undefined' ? ADMIN_CC_CODES.includes(ccCode) : false;
         const isCostClass = code.startsWith('03'); // Custos Operacionais
         const isExpClass = code.startsWith('04');  // Despesas Adm
@@ -336,6 +361,44 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             const safeDateWithTime = `${isoDate}T12:00:00`;
 
             if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
+
+            // ------------------------------------------------------------------
+            // NOVA LÓGICA DE RATEIO (PORTOS E PEDREIRAS)
+            // ------------------------------------------------------------------
+            if (['01087', '1087', '01089', '1089', '99911'].includes(ccCode)) {
+                
+                const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
+
+                // O valor total é dividido em 8 cotas "virtuais"
+                const shareValue = value / 8;
+
+                const baseObj = {
+                    date: safeDateWithTime, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
+                    planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
+                    type: currentType, source: 'automatic_import', createdAt: new Date().toISOString()
+                };
+
+                // 1. REGRAS DOS PORTOS (Cota dividida por 2 entre as duas unidades)
+                const portoSplit = shareValue / 2;
+                parsed.push({ ...baseObj, id: `${i}_porto1`, value: portoSplit, segment: "Porto de Areia Saara - Mira Estrela" });
+                parsed.push({ ...baseObj, id: `${i}_porto2`, value: portoSplit, segment: "Porto Agua Amarela - Riolândia" });
+
+                // 2. REGRA DAS PEDREIRAS (1 Cota cheia para cada uma das 6 unidades)
+                const pedreiraUnits = BUSINESS_HIERARCHY["Pedreiras"];
+                if (pedreiraUnits) {
+                    pedreiraUnits.forEach((unit, idx) => {
+                        parsed.push({ 
+                            ...baseObj, 
+                            id: `${i}_ped_${idx}`, // ID único para evitar erros de key
+                            value: shareValue, // Recebe a cota inteira (divisão por 8)
+                            segment: unit 
+                        });
+                    });
+                }
+                
+                continue; // Pula o fluxo normal abaixo
+            }
+            // ------------------------------------------------------------------
 
             const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
             
@@ -458,7 +521,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                                                 onChange={(e) => handleEditRow(row.id, 'accountPlan', e.target.value)}
                                             >
                                                 <option value={row.accountPlan}>{row.accountPlan} - {row.planDescription} (Original)</option>
-                                                {PLANO_CONTAS.map(p => (
+                                                {typeof PLANO_CONTAS !== 'undefined' && PLANO_CONTAS.map(p => (
                                                     <option key={p.code} value={p.code}>{p.code} - {p.name}</option>
                                                 ))}
                                             </select>
@@ -478,70 +541,69 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     };
 
     return (
-    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
-        
-        {/* --- 1. CABEÇALHO (Título + Botões) --- */}
-        <div className="flex justify-between items-center mb-6">
-            <h3 className="font-bold text-lg dark:text-white">Auditoria e Importação</h3>
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
             
-            {previewData.length > 0 && (
-                <div className="flex gap-3">
-                    <button 
-                        onClick={() => { setPreviewData([]); setFileText(''); }}
-                        className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-colors"
-                    >
-                        Cancelar
-                    </button>
+            {/* --- 1. CABEÇALHO (Título + Botões) --- */}
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="font-bold text-lg dark:text-white">Auditoria e Importação</h3>
+                
+                {previewData.length > 0 && (
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => { setPreviewData([]); setFileText(''); }}
+                            className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-colors"
+                        >
+                            Cancelar
+                        </button>
 
-                    <button 
-                        onClick={handleConfirmImport} 
-                        disabled={isProcessing} 
-                        className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all text-white
-                            ${problematicRows.length > 0 
-                                ? 'bg-amber-500 hover:bg-amber-600' 
-                                : 'bg-emerald-600 hover:bg-emerald-700'
-                            }`}
-                    >
-                        {isProcessing ? <Loader2 className="animate-spin"/> : (problematicRows.length > 0 ? <AlertTriangle size={18}/> : <CheckCircle size={18}/>)} 
-                        
-                        {problematicRows.length > 0 
-                            ? `Importar com ${problematicRows.length} Avisos` 
-                            : 'Confirmar Importação'}
-                    </button>
+                        <button 
+                            onClick={handleConfirmImport} 
+                            disabled={isProcessing} 
+                            className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all text-white
+                                ${problematicRows.length > 0 
+                                    ? 'bg-amber-500 hover:bg-amber-600' 
+                                    : 'bg-emerald-600 hover:bg-emerald-700'
+                                }`}
+                        >
+                            {isProcessing ? <Loader2 className="animate-spin"/> : (problematicRows.length > 0 ? <AlertTriangle size={18}/> : <CheckCircle size={18}/>)} 
+                            
+                            {problematicRows.length > 0 
+                                ? `Importar com ${problematicRows.length} Avisos` 
+                                : 'Confirmar Importação'}
+                        </button>
+                    </div>
+                )}
+            </div> 
+
+            {/* --- 2. ÁREA DE UPLOAD (Se não houver dados) --- */}
+            {previewData.length === 0 && (
+                <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
+                    <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
+                    <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
+                    <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
                 </div>
             )}
-        </div> 
-        {/* ^^^ AQUI FALTAVA FECHAR A DIV DO CABEÇALHO ^^^ */}
 
-        {/* --- 2. ÁREA DE UPLOAD (Se não houver dados) --- */}
-        {previewData.length === 0 && (
-            <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
-                <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
-                <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
-                <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
-            </div>
-        )}
+            {/* --- 3. TABELAS DE DADOS (Se houver dados) --- */}
+            {previewData.length > 0 && (
+                <div className="animate-in fade-in space-y-6">
+                    {/* BLOCO DE ERROS (SEMPRE NO TOPO) */}
+                    <TableBlock 
+                        title="Inconsistências Encontradas (Verifique C. Custo e Conta)" 
+                        rows={problematicRows} 
+                        isProblematic={true} 
+                    />
 
-        {/* --- 3. TABELAS DE DADOS (Se houver dados) --- */}
-        {previewData.length > 0 && (
-            <div className="animate-in fade-in space-y-6">
-                {/* BLOCO DE ERROS (SEMPRE NO TOPO) */}
-                <TableBlock 
-                    title="Inconsistências Encontradas (Verifique C. Custo e Conta)" 
-                    rows={problematicRows} 
-                    isProblematic={true} 
-                />
-
-                {/* BLOCO DE ITENS CORRETOS */}
-                <TableBlock 
-                    title="Itens Validados" 
-                    rows={cleanRows} 
-                    isProblematic={false} 
-                />
-            </div>
-        )}
-    </div>
-);       
+                    {/* BLOCO DE ITENS CORRETOS */}
+                    <TableBlock 
+                        title="Itens Validados" 
+                        rows={cleanRows} 
+                        isProblematic={false} 
+                    />
+                </div>
+            )}
+        </div>
+    );
 };
 const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
