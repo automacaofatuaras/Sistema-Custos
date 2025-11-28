@@ -1698,7 +1698,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
             data[seg] = { 
                 name: seg, isGlobal: false, 
                 vendas: 0, producao: 0, receitas: 0, despesas: 0,
-                // Inicia zerado os buckets específicos
                 recGrupo: 0, recClientes: 0,
                 despUnidade: 0, despTransporte: 0, impostos: 0,
                 despAdm: 0, despDiversas: 0, credMatTerceiro: 0, credTransp: 0,
@@ -1706,7 +1705,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                 investimentos: 0, maqVenda: 0, furto: 0, veicLeveVenda: 0,
                 maqObraOficina: 0, camObraOficina: 0, veicLeveObraOficina: 0,
                 manutMaqDeprec: 0, manutCamDeprec: 0, deprecPedreira: 0,
-                // Financeiro Global (Geralmente fica só no global, mas mantemos estrutura)
                 recFinanceira: 0, despFinanceira: 0,
                 pagtoTributos: 0, endividamento: 0, acertoEmpresas: 0
             };
@@ -1714,7 +1712,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
 
         // 2. Filtra Data e Processa Transações
         transactions.forEach(t => {
-            // Filtro de Data (Reutilizando lógica existente)
             let y, m;
             if (typeof t.date === 'string' && t.date.length >= 10) {
                 y = parseInt(t.date.substring(0, 4));
@@ -1731,41 +1728,27 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
 
             if (!matchesDate) return;
 
-            // Identifica Segmento
             const segmentName = getParentSegment(t.segment);
             const target = data[segmentName];
             const global = data['Total Global'];
 
-            if (!target) return; // Segurança
+            if (!target) return;
 
             const val = t.value;
             const desc = (t.description || '').toLowerCase();
             const plan = (t.accountPlan || '');
 
-            // --- CLASSIFICAÇÃO MACRO ---
             if (t.type === 'metric') {
-                if (t.metricType === 'vendas') {
-                    target.vendas += val; global.vendas += val;
-                } else if (t.metricType === 'producao') {
-                    target.producao += val; global.producao += val;
-                } else if (t.metricType === 'estoque') {
-                    // Valor monetário de inventário se houver
-                    target.estoqueInv += val; global.estoqueInv += val;
-                }
+                if (t.metricType === 'vendas') { target.vendas += val; global.vendas += val; }
+                else if (t.metricType === 'producao') { target.producao += val; global.producao += val; }
+                else if (t.metricType === 'estoque') { target.estoqueInv += val; global.estoqueInv += val; }
             } else if (t.type === 'revenue') {
                 target.receitas += val; global.receitas += val;
-                
-                // Detalhe Receitas
                 if (desc.includes('grupo') || desc.includes('filial')) { target.recGrupo += val; global.recGrupo += val; }
                 else { target.recClientes += val; global.recClientes += val; }
-
                 if (desc.includes('financeira')) { target.recFinanceira += val; global.recFinanceira += val; }
-
             } else if (t.type === 'expense') {
                 target.despesas += val; global.despesas += val;
-
-                // --- CLASSIFICAÇÃO MICRO (DETALHADA) ---
-                // Ajuste essas keywords conforme seu plano de contas real
                 if (plan.startsWith('02') || desc.includes('imposto')) { target.impostos += val; global.impostos += val; }
                 else if (desc.includes('transporte')) { target.despTransporte += val; global.despTransporte += val; }
                 else if (desc.includes('administrativa')) { target.despAdm += val; global.despAdm += val; }
@@ -1784,30 +1767,25 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                 else if (desc.includes('máquina') && desc.includes('oficina')) { target.maqObraOficina += val; global.maqObraOficina += val; }
                 else if (desc.includes('caminhão') && desc.includes('oficina')) { target.camObraOficina += val; global.camObraOficina += val; }
                 else if (desc.includes('veículo') && desc.includes('oficina')) { target.veicLeveObraOficina += val; global.veicLeveObraOficina += val; }
-                // Específicos Manutenção/Depreciação final
                 else if (desc.includes('manutenção') && desc.includes('máquina')) { target.manutMaqDeprec += val; global.manutMaqDeprec += val; }
                 else if (desc.includes('manutenção') && desc.includes('caminhão')) { target.manutCamDeprec += val; global.manutCamDeprec += val; }
                 else if (desc.includes('depreciação') && desc.includes('pedreira')) { target.deprecPedreira += val; global.deprecPedreira += val; }
-                
-                // Financeiro Global
                 else if (desc.includes('financeira')) { target.despFinanceira += val; global.despFinanceira += val; }
                 else if (desc.includes('parcelamento') || desc.includes('tributo')) { target.pagtoTributos += val; global.pagtoTributos += val; }
                 else if (desc.includes('endividamento')) { target.endividamento += val; global.endividamento += val; }
                 else if (desc.includes('acerto empresa')) { target.acertoEmpresas += val; global.acertoEmpresas += val; }
-                
-                // Default: Despesa Unidade (se não caiu em nenhum acima e não é imposto/transporte)
                 else { target.despUnidade += val; global.despUnidade += val; }
             }
         });
 
-        // 3. Cálculos Derivados (Resultados) para os Cards
+        // 3. Cálculos Derivados
         Object.values(data).forEach(d => {
             d.resultado = d.receitas - d.despesas;
             d.margem = d.receitas > 0 ? (d.resultado / d.receitas) * 100 : 0;
             d.unidadeMedida = SEGMENT_CONFIG[d.name] || 'un';
-            
-            // Custo Médio Unitário (Necessário para cálculo de Estoque Monetário no detalhe)
             d.custoMedioUnitario = d.producao > 0 ? (d.despesas / d.producao) : 0;
+            // Total Faturamento base para %
+            d.totalFaturamentoCalculado = d.recGrupo + d.recClientes;
         });
 
         return data;
@@ -1817,14 +1795,13 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
     const DetailModal = ({ data, onClose }) => {
         if (!data) return null;
 
-        // FÓRMULAS ESTRUTURAIS
-        const totalFaturamento = data.recGrupo + data.recClientes;
+        const totalFaturamento = data.totalFaturamentoCalculado || 0;
         const resOperacional = totalFaturamento - data.despUnidade - data.despTransporte - data.impostos;
         
         const resComFinal = resOperacional 
             - data.despAdm - data.despDiversas + data.credMatTerceiro + data.credTransp 
             - data.perdaTubos - data.ajusteProd + data.resUsinas + data.subsidio 
-            - data.depreciacao + data.estoqueInv; // Estoque inv aqui soma ou subtrai? Assumindo (+) conforme "Inventário" físico valorado
+            - data.depreciacao + data.estoqueInv; 
         
         const resComInvestimento = resComFinal 
             - data.investimentos - data.maqVenda - data.furto 
@@ -1833,42 +1810,52 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
         const resOperacionalComDeprec = resComInvestimento 
             + data.manutMaqDeprec + data.manutCamDeprec - data.deprecPedreira;
 
-        // Cálculo Estoque Lógico
         const deltaFisico = data.producao - data.vendas;
-        // O custo médio deve ser calculado com base nas despesas operacionais daquele segmento
-        // Custo total / Produção
-        const custoTotalOp = data.despesas; // Simplificação. Idealmente seria Custo CPV.
+        const custoTotalOp = data.despesas;
         const custoMedio = data.producao > 0 ? (custoTotalOp / data.producao) : 0;
         const creditoDebitoEstoque = deltaFisico * custoMedio;
 
         const demonstrativoComEstoque = resComInvestimento + creditoDebitoEstoque;
 
-        // Financeiro Global
         const resFinanceiro = data.recFinanceira - data.despFinanceira;
-        const demPosFinanceiro = demonstrativoComEstoque + resFinanceiro; // Receita Fin soma, Desp Fin subtrai (se despFinanceira vier positiva do banco de dados, aqui subtrai)
-        
+        const demPosFinanceiro = demonstrativoComEstoque + resFinanceiro;
         const demPosEndividamento = demPosFinanceiro - data.pagtoTributos - data.endividamento - data.acertoEmpresas;
 
-        const Row = ({ label, val, bold = false, indent = 0, isResult = false, color = "text-slate-700", type = 'money' }) => (
-            <div className={`flex justify-between p-2 border-b dark:border-slate-700 ${bold ? 'font-bold bg-slate-50 dark:bg-slate-700/50' : ''} ${isResult ? 'bg-slate-100 dark:bg-slate-600' : ''}`}>
-                <span className={`${color} dark:text-slate-200`} style={{ paddingLeft: `${indent * 20}px` }}>{label}</span>
-                <span className={`${isResult ? (val >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-600 dark:text-slate-300'}`}>
-                    {type === 'money' ? val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 
-                     type === 'vol' ? val.toLocaleString('pt-BR') : val}
-                </span>
-            </div>
-        );
+        // --- ROW COM PORCENTAGEM (MODIFICADO) ---
+        const Row = ({ label, val, bold = false, indent = 0, isResult = false, color = "text-slate-700", type = 'money' }) => {
+            // Calcula % baseado no Faturamento Total (Exceto se for volume)
+            const percent = (type === 'money' && totalFaturamento !== 0) ? (val / totalFaturamento) * 100 : 0;
+            const showPercent = type === 'money';
+
+            return (
+                <div className={`flex items-center justify-between p-2 border-b dark:border-slate-700 ${bold ? 'font-bold bg-slate-50 dark:bg-slate-700/50' : ''} ${isResult ? 'bg-slate-100 dark:bg-slate-600' : ''}`}>
+                    <span className={`flex-1 ${color} dark:text-slate-200`} style={{ paddingLeft: `${indent * 20}px` }}>{label}</span>
+                    
+                    {/* Valor e % alinhados */}
+                    <div className="flex items-center gap-4">
+                        <span className={`${isResult ? (val >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-slate-600 dark:text-slate-300'} text-right w-32`}>
+                            {type === 'money' ? val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 
+                             type === 'vol' ? val.toLocaleString('pt-BR') : val}
+                        </span>
+                        
+                        <span className="text-right w-16 text-xs font-mono text-slate-500 dark:text-slate-400">
+                            {showPercent ? `${percent.toFixed(1)}%` : '-'}
+                        </span>
+                    </div>
+                </div>
+            );
+        };
 
         return (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
-                <div className="bg-white dark:bg-slate-800 w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden my-8">
-                    <div className="bg-indigo-600 p-4 flex justify-between items-center text-white sticky top-0">
+                <div className="bg-white dark:bg-slate-800 w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden my-8 animate-in zoom-in-95 duration-200">
+                    <div className="bg-indigo-600 p-4 flex justify-between items-center text-white sticky top-0 z-10">
                         <h2 className="font-bold text-lg">Fechamento: {data.name}</h2>
                         <button onClick={onClose}><X size={24}/></button>
                     </div>
                     <div className="p-6 overflow-y-auto max-h-[80vh] text-sm">
+                        <div className="flex justify-end mb-2 px-2"><span className="text-xs font-bold text-slate-400 w-16 text-right">% Rec.</span></div>
                         
-                        {/* BLOCO 1: OPERACIONAL */}
                         <Row label={`Vendas Total (${data.unidadeMedida})`} val={data.vendas} type="vol" bold />
                         <Row label="Receitas (Grupo)" val={data.recGrupo} indent={1} />
                         <Row label="Receitas (Clientes)" val={data.recClientes} indent={1} />
@@ -1883,7 +1870,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                         <Row label="= RESULTADO OPERACIONAL" val={resOperacional} isResult bold />
                         <div className="my-2"></div>
 
-                        {/* BLOCO 2: PÓS OPERACIONAL */}
                         <Row label="Despesas Administrativas" val={data.despAdm} indent={1} color="text-rose-500" />
                         <Row label="Despesas Diversas" val={data.despDiversas} indent={1} color="text-rose-500" />
                         <Row label="Crédito Material Terceiro" val={data.credMatTerceiro} indent={1} color="text-emerald-500" />
@@ -1899,7 +1885,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                         <Row label="= RESULTADO C/ FINAL" val={resComFinal} isResult bold />
                         <div className="my-2"></div>
 
-                        {/* BLOCO 3: INVESTIMENTOS */}
                         <Row label="Investimentos/Consórcios" val={data.investimentos} indent={1} color="text-rose-500" />
                         <Row label="Máquinas para Venda" val={data.maqVenda} indent={1} />
                         <Row label="Furto/Roubo" val={data.furto} indent={1} color="text-rose-500" />
@@ -1912,7 +1897,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                         <Row label="= RESULTADO C/ INVESTIMENTO" val={resComInvestimento} isResult bold />
                         <div className="my-2"></div>
 
-                        {/* BLOCO 4: DEPRECIAÇÃO ESPECÍFICA */}
                         <Row label="(+) Manut. Máquinas (Deprec)" val={data.manutMaqDeprec} indent={1} color="text-emerald-500" />
                         <Row label="(+) Manut. Caminhões (Deprec)" val={data.manutCamDeprec} indent={1} color="text-emerald-500" />
                         <Row label="(-) Depreciação Pedreiras" val={data.deprecPedreira} indent={1} color="text-rose-500" />
@@ -1921,18 +1905,16 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                         <Row label="= RESULTADO OP. C/ DEPRECIAÇÃO" val={resOperacionalComDeprec} isResult bold />
                         <div className="my-2"></div>
 
-                        {/* BLOCO 5: ESTOQUE LÓGICO */}
                         <div className="bg-slate-100 dark:bg-slate-700/30 p-2 rounded mb-2">
                             <Row label={`Produção (${data.unidadeMedida})`} val={data.producao} type="vol" />
                             <Row label={`Crédito/Débito Físico (${data.unidadeMedida})`} val={deltaFisico} type="vol" color={deltaFisico >= 0 ? "text-emerald-500" : "text-rose-500"} />
-                            <p className="text-[10px] text-right text-slate-400 italic">Custo Médio Calculado: {custoMedio.toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</p>
+                            <p className="text-[10px] text-right text-slate-400 italic mr-20">Custo Médio: {custoMedio.toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</p>
                         </div>
                         <Row label="Crédito/Débito Estoque (R$)" val={creditoDebitoEstoque} bold color={creditoDebitoEstoque >= 0 ? "text-emerald-600" : "text-rose-600"} />
 
                         <div className="border-t-4 border-slate-400 my-3"></div>
                         <Row label="= DEMONSTRATIVO C/ ESTOQUE" val={demonstrativoComEstoque} isResult bold />
 
-                        {/* BLOCO 6: EXCLUSIVO GLOBAL */}
                         {data.isGlobal && (
                             <div className="mt-6 animate-in fade-in">
                                 <h4 className="font-bold text-center bg-slate-200 dark:bg-slate-700 p-2 mb-2 rounded uppercase text-xs">Exclusivo Global</h4>
@@ -1958,6 +1940,61 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
         );
     };
 
+    // Helper para exibir linha de resumo no Card
+    const SummaryRow = ({ label, val, totalRevenue, isBold = false, isResult = false, type = 'money' }) => {
+        // Se for Receita, a % é 100%. Se for despesa/resultado, calcula.
+        // Se type for 'vol', não mostra %.
+        let percentStr = '-';
+        if (type === 'money' && totalRevenue > 0) {
+            const pct = (val / totalRevenue) * 100;
+            percentStr = `${pct.toFixed(1)}%`;
+        } else if (type === 'money' && label === 'Receitas' && val > 0) {
+            percentStr = '100%';
+        }
+
+        const colorClass = isResult 
+            ? (val >= 0 ? 'text-emerald-400' : 'text-rose-400') 
+            : (label === 'Despesas' ? 'text-rose-400' : 'text-slate-100');
+
+        return (
+            <div className={`flex justify-between items-center ${isBold ? 'font-bold' : ''}`}>
+                <span className="opacity-90">{label}</span>
+                <div className="flex items-center gap-3">
+                    <span className={colorClass}>
+                        {type === 'money' ? val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : `${val.toLocaleString()} un`}
+                    </span>
+                    <span className="text-xs opacity-60 w-10 text-right font-mono">{percentStr}</span>
+                </div>
+            </div>
+        );
+    };
+
+    const SummaryRowLight = ({ label, val, totalRevenue, isBold = false, isResult = false, type = 'money' }) => {
+        let percentStr = '-';
+        if (type === 'money' && totalRevenue > 0) {
+            const pct = (val / totalRevenue) * 100;
+            percentStr = `${pct.toFixed(1)}%`;
+        } else if (type === 'money' && label === 'Receitas' && val > 0) {
+             percentStr = '100%';
+        }
+
+        const valColor = isResult 
+            ? (val >= 0 ? 'text-emerald-600' : 'text-rose-600') 
+            : (label === 'Receitas' ? 'text-emerald-600' : (label === 'Despesas' ? 'text-rose-600' : 'text-slate-800 dark:text-slate-200'));
+
+        return (
+            <div className={`flex justify-between items-center ${isBold ? 'font-bold' : 'text-slate-600 dark:text-slate-300'}`}>
+                <span>{label}</span>
+                <div className="flex items-center gap-3">
+                    <span className={valColor}>
+                        {type === 'money' ? val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : val.toLocaleString()}
+                    </span>
+                    <span className="text-xs text-slate-400 dark:text-slate-500 w-10 text-right font-mono">{percentStr}</span>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in">
              <div className="flex justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 shadow-sm">
@@ -1968,7 +2005,7 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                {/* 1. Renderiza o Card de Total Global primeiro */}
+                {/* 1. Card Total Global */}
                 {consolidatedData['Total Global'] && (
                     <div 
                         onClick={() => setSelectedSegment(consolidatedData['Total Global'])}
@@ -1978,22 +2015,19 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                             <h3 className="font-bold text-xl">TOTAL GLOBAL</h3>
                             <Globe size={24} className="opacity-80"/>
                         </div>
-                        <div className="space-y-2 text-sm">
-                            <div className="flex justify-between opacity-90"><span>Vendas</span> <span>{consolidatedData['Total Global'].vendas.toLocaleString()} un</span></div>
-                            <div className="flex justify-between font-bold"><span>Receitas</span> <span>{consolidatedData['Total Global'].receitas.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
-                            <div className="flex justify-between"><span>Despesas</span> <span>{consolidatedData['Total Global'].despesas.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
-                            <div className="border-t border-indigo-400 pt-2 flex justify-between text-lg font-bold">
-                                <span>Resultado</span>
-                                <span>{consolidatedData['Total Global'].resultado.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
-                            </div>
-                            <div className="text-right text-xs bg-indigo-700 inline-block px-2 py-1 rounded w-full">
-                                Margem: {consolidatedData['Total Global'].margem.toFixed(1)}%
+                        <div className="space-y-3 text-sm">
+                            <SummaryRow label="Vendas" val={consolidatedData['Total Global'].vendas} type="vol" totalRevenue={consolidatedData['Total Global'].receitas} />
+                            <SummaryRow label="Receitas" val={consolidatedData['Total Global'].receitas} totalRevenue={consolidatedData['Total Global'].receitas} isBold />
+                            <SummaryRow label="Despesas" val={consolidatedData['Total Global'].despesas} totalRevenue={consolidatedData['Total Global'].receitas} />
+                            
+                            <div className="border-t border-indigo-400 pt-3">
+                                <SummaryRow label="Resultado" val={consolidatedData['Total Global'].resultado} totalRevenue={consolidatedData['Total Global'].receitas} isBold isResult />
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* 2. Renderiza os Cards dos Segmentos */}
+                {/* 2. Cards Segmentos */}
                 {Object.values(consolidatedData).filter(d => !d.isGlobal).map(d => (
                     <div 
                         key={d.name} 
@@ -2004,16 +2038,13 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                             <h3 className="font-bold text-lg dark:text-white group-hover:text-indigo-600">{d.name}</h3>
                             <span className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-slate-500">{d.unidadeMedida}</span>
                         </div>
-                        <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                            <div className="flex justify-between"><span>Vendas</span> <span className="font-mono">{d.vendas.toLocaleString()}</span></div>
-                            <div className="flex justify-between"><span>Receitas</span> <span className="text-emerald-600 font-bold">{d.receitas.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
-                            <div className="flex justify-between"><span>Despesas</span> <span className="text-rose-600">{d.despesas.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
-                            <div className="border-t dark:border-slate-700 pt-2 flex justify-between font-bold dark:text-white">
-                                <span>Resultado</span>
-                                <span className={d.resultado >= 0 ? 'text-emerald-600' : 'text-rose-600'}>{d.resultado.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
-                            </div>
-                            <div className="text-right text-xs text-slate-400">
-                                Margem: {d.margem.toFixed(1)}%
+                        <div className="space-y-3 text-sm">
+                            <SummaryRowLight label="Vendas" val={d.vendas} type="vol" totalRevenue={d.receitas} />
+                            <SummaryRowLight label="Receitas" val={d.receitas} totalRevenue={d.receitas} isBold />
+                            <SummaryRowLight label="Despesas" val={d.despesas} totalRevenue={d.receitas} />
+
+                            <div className="border-t dark:border-slate-700 pt-3">
+                                <SummaryRowLight label="Resultado" val={d.resultado} totalRevenue={d.receitas} isBold isResult />
                             </div>
                         </div>
                     </div>
