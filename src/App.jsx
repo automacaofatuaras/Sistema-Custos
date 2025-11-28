@@ -1692,7 +1692,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         doc.setFontSize(10);
         doc.setTextColor(...colorTextDark);
         doc.text(`Período: ${filter.month + 1}/${filter.year}`, 14, 28);
-        }
+        doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 14, 33);
         
         const tableBody = [];
 
