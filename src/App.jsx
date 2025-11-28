@@ -1786,7 +1786,7 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
         return data;
     }, [transactions, filter]);
 
-    // --- HELPER PARA AS LINHAS DOS CARDS (USANDO GRID PARA ALINHAMENTO) ---
+    // --- HELPER PARA AS LINHAS DOS CARDS ---
     const SummaryRow = ({ label, val, totalRevenue, isBold = false, isResult = false, type = 'money' }) => {
         let percentStr = '-';
         if (type === 'money' && totalRevenue > 0) {
@@ -1801,17 +1801,22 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
             : (label === 'Despesas' ? 'text-rose-400' : 'text-slate-100');
 
         return (
-            // ALTERAÇÃO: Usando GRID (1fr auto 50px) para alinhar colunas perfeitamente
-            <div className={`grid grid-cols-[1fr_auto_50px] gap-2 items-center ${isBold ? 'font-bold' : ''}`}>
-                <span className="opacity-90 truncate">{label}</span>
+            // Grid 3 colunas: Label (flexível) | Valor (auto) | % (fixo 45px)
+            // Se for 'vol' (vendas), a 3ª coluna fica vazia
+            <div className={`grid grid-cols-[1fr_auto_45px] gap-1 items-center ${isBold ? 'font-bold' : ''}`}>
+                <span className="opacity-90">{label}</span>
                 
                 <span className={`${colorClass} text-right whitespace-nowrap`}>
                     {type === 'money' ? val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : `${val.toLocaleString()} un`}
                 </span>
                 
-                <span className="text-xs opacity-60 text-right font-mono">
-                    {percentStr}
-                </span>
+                {type === 'money' ? (
+                    <span className="text-xs opacity-60 text-right font-mono">
+                        {percentStr}
+                    </span>
+                ) : (
+                    <span></span> 
+                )}
             </div>
         );
     };
@@ -1830,17 +1835,21 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
             : (label === 'Receitas' ? 'text-emerald-600' : (label === 'Despesas' ? 'text-rose-600' : 'text-slate-800 dark:text-slate-200'));
 
         return (
-            // ALTERAÇÃO: Usando GRID (1fr auto 50px) para alinhar colunas perfeitamente
-            <div className={`grid grid-cols-[1fr_auto_50px] gap-2 items-center ${isBold ? 'font-bold' : 'text-slate-600 dark:text-slate-300'}`}>
-                <span className="truncate">{label}</span>
+            <div className={`grid grid-cols-[1fr_auto_45px] gap-1 items-center ${isBold ? 'font-bold' : 'text-slate-600 dark:text-slate-300'}`}>
+                {/* Removido truncate para evitar corte do nome */}
+                <span>{label}</span>
                 
                 <span className={`${valColor} text-right whitespace-nowrap`}>
                     {type === 'money' ? val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : val.toLocaleString()}
                 </span>
                 
-                <span className="text-xs text-slate-400 dark:text-slate-500 text-right font-mono">
-                    {percentStr}
-                </span>
+                {type === 'money' ? (
+                    <span className="text-xs text-slate-400 dark:text-slate-500 text-right font-mono">
+                        {percentStr}
+                    </span>
+                ) : (
+                    <span></span>
+                )}
             </div>
         );
     };
