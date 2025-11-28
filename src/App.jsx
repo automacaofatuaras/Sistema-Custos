@@ -2795,7 +2795,7 @@ const stockDataRaw = useMemo(() => {
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
         {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
-        {activeTab === 'investimentos_report' && <InvestimentosReportComponent transactions={filteredData} filter={filter} selectedUnit={globalUnitFilter} />}
+        {activeTab === 'investimentos_report' && (<InvestimentosReportComponent transactions={filteredData} filter={filter} selectedUnit={globalUnitFilter} />)}
         
       </main>
 
