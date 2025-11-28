@@ -1648,10 +1648,8 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
             : (label === 'Despesas' ? 'text-rose-400' : 'text-slate-100');
 
         return (
-            // Grid 3 colunas: Label (flexível) | Valor (auto) | % (fixo 45px)
-            // Se for 'vol' (vendas), a 3ª coluna fica vazia
-            <div className={`grid grid-cols-[1fr_auto_45px] gap-1 items-center ${isBold ? 'font-bold' : ''}`}>
-                <span className="opacity-90">{label}</span>
+            <div className={`grid grid-cols-[1fr_auto_55px] gap-1 items-center ${isBold ? 'font-bold' : ''}`}>
+                <span className="opacity-90 leading-tight min-w-0">{label}</span>
                 
                 <span className={`${colorClass} text-right whitespace-nowrap`}>
                     {type === 'money' ? val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : `${val.toLocaleString()} un`}
@@ -1682,9 +1680,9 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
             : (label === 'Receitas' ? 'text-emerald-600' : (label === 'Despesas' ? 'text-rose-600' : 'text-slate-800 dark:text-slate-200'));
 
         return (
-            <div className={`grid grid-cols-[1fr_auto_45px] gap-1 items-center ${isBold ? 'font-bold' : 'text-slate-600 dark:text-slate-300'}`}>
-                {/* Removido truncate para evitar corte do nome */}
-                <span>{label}</span>
+            <div className={`grid grid-cols-[1fr_auto_55px] gap-1 items-center ${isBold ? 'font-bold' : 'text-slate-600 dark:text-slate-300'}`}>
+                {/* min-w-0 ajuda o grid a entender que o texto pode encolher/quebrar */}
+                <span className="leading-tight min-w-0">{label}</span>
                 
                 <span className={`${valColor} text-right whitespace-nowrap`}>
                     {type === 'money' ? val.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : val.toLocaleString()}
@@ -1753,12 +1751,13 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
 
         return (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
-                <div className="bg-white dark:bg-slate-800 w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden my-8 animate-in zoom-in-95 duration-200">
+                {/* AJUSTE: w-[95%] para mobile e w-full max-w-2xl para desktop */}
+                <div className="bg-white dark:bg-slate-800 w-[95%] md:w-full md:max-w-2xl rounded-xl shadow-2xl overflow-hidden my-4 md:my-8 animate-in zoom-in-95 duration-200">
                     <div className="bg-indigo-600 p-4 flex justify-between items-center text-white sticky top-0 z-10">
                         <h2 className="font-bold text-lg">Fechamento: {data.name}</h2>
                         <button onClick={onClose}><X size={24}/></button>
                     </div>
-                    <div className="p-6 overflow-y-auto max-h-[80vh] text-sm">
+                    <div className="p-4 md:p-6 overflow-y-auto max-h-[80vh] text-sm">
                         <div className="flex justify-end mb-2 px-2"><span className="text-xs font-bold text-slate-400 w-16 text-right">% Rec.</span></div>
                         
                         <Row label={`Vendas Total (${data.unidadeMedida})`} val={data.vendas} type="vol" bold />
@@ -1854,15 +1853,16 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                 <PeriodSelector filter={filter} setFilter={setFilter} years={years} />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {/* AJUSTE: Grid Mobile(1) -> Tablet(2) -> Laptop(3) -> Monitor(4) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
                 {/* 1. Card Total Global */}
                 {consolidatedData['Total Global'] && (
                     <div 
                         onClick={() => setSelectedSegment(consolidatedData['Total Global'])}
-                        className="bg-indigo-600 text-white p-6 rounded-2xl shadow-lg cursor-pointer hover:scale-105 transition-transform"
+                        className="bg-indigo-600 text-white p-4 md:p-6 rounded-2xl shadow-lg cursor-pointer hover:scale-105 transition-transform"
                     >
                         <div className="flex justify-between items-start mb-4">
-                            <h3 className="font-bold text-xl">TOTAL GLOBAL</h3>
+                            <h3 className="font-bold text-lg md:text-xl">TOTAL GLOBAL</h3>
                             <Globe size={24} className="opacity-80"/>
                         </div>
                         <div className="space-y-3 text-sm">
@@ -1882,10 +1882,11 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                     <div 
                         key={d.name} 
                         onClick={() => setSelectedSegment(d)}
-                        className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700 cursor-pointer hover:border-indigo-500 transition-colors group"
+                        className="bg-white dark:bg-slate-800 p-4 md:p-6 rounded-2xl shadow-sm border dark:border-slate-700 cursor-pointer hover:border-indigo-500 transition-colors group"
                     >
                         <div className="flex justify-between items-start mb-4">
-                            <h3 className="font-bold text-lg dark:text-white group-hover:text-indigo-600 line-clamp-1" title={d.name}>{d.name}</h3>
+                            {/* AJUSTE: leading-tight para permitir quebra de linha sem espaçamento excessivo */}
+                            <h3 className="font-bold text-base md:text-lg dark:text-white group-hover:text-indigo-600 leading-tight" title={d.name}>{d.name}</h3>
                             <span className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-slate-500 shrink-0">{d.unidadeMedida}</span>
                         </div>
                         <div className="space-y-3 text-sm">
