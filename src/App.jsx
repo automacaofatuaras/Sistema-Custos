@@ -4,7 +4,7 @@ import {
   DollarSign, Trash2, Building2, PlusCircle, Settings, Edit2, 
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, Globe, 
-  AlertTriangle, CheckCircle, Zap, Calculator, Percent, Share2, ChevronRight, ChevronDown, Printer,
+  AlertTriangle, CheckCircle, Zap, Calculator, Percent, Share2, ChevronRight, ChevronDown, ChevronLeft, Printer,
   BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
 } from 'lucide-react';
 import { 
@@ -2765,6 +2765,7 @@ export default function App() {
   const [loadingAuth, setLoadingAuth] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const [toast, showToast] = useToast();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [transactions, setTransactions] = useState([]);
@@ -2991,43 +2992,105 @@ const stockDataRaw = useMemo(() => {
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
       {toast && <div className={`fixed top-4 right-4 z-50 p-4 rounded shadow-xl flex gap-2 ${toast.type==='success'?'bg-emerald-500 text-white':'bg-rose-500 text-white'}`}>{toast.type==='success'?<CheckCircle/>:<AlertTriangle/>}{toast.message}</div>}
       
-      <aside className="w-20 lg:w-64 bg-slate-900 dark:bg-slate-950 text-white flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800">
-        <div className="p-6 border-b border-slate-800 flex items-center gap-3"><div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center"><Building2 size={18} /></div><span className="text-xl font-bold hidden lg:block">Fechamento Custos</span></div>
-        <nav className="flex-1 p-4 space-y-2">
-          <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all $ ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><LayoutDashboard size={20} /><span className="hidden lg:block">Visão Geral</span></button>
-          <button onClick={() => setActiveTab('lancamentos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'lancamentos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><List size={20} /><span className="hidden lg:block">Lançamentos</span></button>
-          <button onClick={() => setActiveTab('custos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'custos' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><DollarSign size={20} /><span className="hidden lg:block">Custos e Despesas</span></button>
-          <button onClick={() => setActiveTab('rateios')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'rateios' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Share2 size={20} /><span className="hidden lg:block">Rateios</span></button>
-          <button onClick={() => setActiveTab('estoque')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'estoque' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Package size={20} /><span className="hidden lg:block">Estoque</span></button>
-          <button onClick={() => setActiveTab('producao')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'producao' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><BarChartIcon size={20} /><span className="hidden lg:block">Produção vs Vendas</span></button>
-          <button onClick={() => setActiveTab('fechamento')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'fechamento' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><FileUp size={20} /><span className="hidden lg:block">Fechamento</span></button>
-          <button onClick={() => setActiveTab('investimentos_report')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'investimentos_report' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><TrendingUp size={20} /><span className="hidden lg:block">Investimentos</span></button>
-          <button onClick={() => setActiveTab('global')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'global' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><Globe size={20} /><span className="hidden lg:block">Global</span></button>
-          <button onClick={() => setActiveTab('ingestion')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ingestion' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}><UploadCloud size={20} /><span className="hidden lg:block">Importar TXT</span></button>
-          
-        </nav>
-        <div className="p-4 border-t border-slate-800"><div className="flex items-center gap-2 text-sm text-slate-400"><div className="p-1 bg-slate-800 rounded"><UserCircle size={16} /></div><div className="flex-1 min-w-0"><p className="truncate font-bold text-white">{user.email}</p><p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p></div></div></div>
-      </aside>
+      {/* SUBSTITUA O ASIDE INTEIRO POR ESTE BLOCO */}
+<aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 dark:bg-slate-950 text-white flex flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800 transition-all duration-300`}>
+    
+    {/* LOGO E TOGGLE */}
+    <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+        <div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}>
+            <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shrink-0">
+                <Building2 size={18} />
+            </div>
+            {sidebarOpen && <span className="text-xl font-bold whitespace-nowrap overflow-hidden">Custos</span>}
+        </div>
+        {/* Botão de Minimizar (Só aparece se aberto, ou ajuste conforme preferência) */}
+        {sidebarOpen && (
+            <button onClick={() => setSidebarOpen(false)} className="text-slate-400 hover:text-white">
+                <ChevronLeft size={20} />
+            </button>
+        )}
+    </div>
+
+    {/* Se estiver fechado, botão para abrir fica no topo da lista ou centralizado */}
+    {!sidebarOpen && (
+        <div className="flex justify-center py-2">
+            <button onClick={() => setSidebarOpen(true)} className="text-slate-400 hover:text-white">
+                <ChevronRight size={20} />
+            </button>
+        </div>
+    )}
+
+    {/* NAVEGAÇÃO */}
+    <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
+        {[
+            { id: 'dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
+            { id: 'lancamentos', icon: List, label: 'Lançamentos' },
+            { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
+            { id: 'rateios', icon: Share2, label: 'Rateios' },
+            { id: 'estoque', icon: Package, label: 'Estoque' },
+            { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
+            { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
+            { id: 'investimentos_report', icon: TrendingUp, label: 'Investimentos' },
+            { id: 'global', icon: Globe, label: 'Global' },
+            { id: 'ingestion', icon: UploadCloud, label: 'Importar TXT' },
+        ].map((item) => (
+            <button 
+                key={item.id}
+                onClick={() => setActiveTab(item.id)} 
+                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${!sidebarOpen ? 'justify-center' : ''} ${activeTab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                title={!sidebarOpen ? item.label : ''}
+            >
+                <item.icon size={20} className="shrink-0" />
+                {sidebarOpen && <span className="whitespace-nowrap overflow-hidden">{item.label}</span>}
+            </button>
+        ))}
+    </nav>
+
+    {/* --- NOVOS BOTÕES MOVIDOS (IA, TEMA, LOGOUT) --- */}
+    <div className={`p-4 border-t border-slate-800 flex ${sidebarOpen ? 'flex-row justify-around' : 'flex-col gap-4 items-center'}`}>
+        <button onClick={() => setShowAIModal(true)} className="p-2 text-purple-400 hover:bg-slate-800 rounded-lg transition-colors" title="IA Analysis">
+            <Sparkles size={20} />
+        </button>
+        <button onClick={toggleTheme} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg transition-colors" title="Mudar Tema">
+            {theme === 'dark' ? <Sun size={20}/> : <Moon size={20}/>}
+        </button>
+        <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-800 rounded-lg transition-colors" title="Sair">
+            <LogOut size={20} />
+        </button>
+    </div>
+
+    {/* PERFIL DO USUÁRIO */}
+    <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+        <div className={`flex items-center gap-3 ${!sidebarOpen ? 'justify-center' : ''}`}>
+            <div className="p-1 bg-slate-800 rounded shrink-0">
+                <UserCircle size={20} className="text-slate-400"/>
+            </div>
+            {sidebarOpen && (
+                <div className="flex-1 min-w-0">
+                    <p className="truncate font-bold text-sm text-white">{user.email.split('@')[0]}</p>
+                    <p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p>
+                </div>
+            )}
+        </div>
+    </div>
+</aside>
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-          
-          {/* LÓGICA CORRETA: Esconde os filtros se a aba for 'global' OU 'rateios' */}
-          {!['global', 'rateios'].includes(activeTab) ? (
-            <div className="flex gap-2 w-full md:w-auto items-center">
-               <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
-               <HierarchicalSelect value={globalUnitFilter} onChange={setGlobalUnitFilter} options={segments} isFilter={true} placeholder="Selecione Unidade ou Segmento" />
-            </div>
-          ) : (
-            <div>{/* Div vazio para manter o alinhamento à direita */}</div>
-          )}
+    
+    {/* LÓGICA DE FILTROS (MANTENHA COMO ESTÁ) */}
+    {!['global', 'rateios'].includes(activeTab) ? (
+    <div className="flex gap-2 w-full md:w-auto items-center">
+        <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
+        <HierarchicalSelect value={globalUnitFilter} onChange={setGlobalUnitFilter} options={segments} isFilter={true} placeholder="Selecione Unidade ou Segmento" />
+    </div>
+    ) : (
+    <div></div>
+    )}
 
-          <div className="flex gap-2">
-             <button onClick={() => setShowAIModal(true)} className="p-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg shadow-lg"><Sparkles size={20} /></button>
-             <button onClick={toggleTheme} className="p-2 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg">{theme === 'dark' ? <Sun size={20}/> : <Moon size={20}/>}</button>
-             <button onClick={handleLogout} className="bg-white dark:bg-slate-800 border dark:border-slate-700 text-slate-600 dark:text-slate-300 px-3 py-2 rounded-lg"><LogOut size={20} /></button>
-          </div>
-        </header>
+    {/* --- O BLOCO DOS BOTÕES FOI REMOVIDO DAQUI --- */}
+
+</header>
         
 {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
 {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
