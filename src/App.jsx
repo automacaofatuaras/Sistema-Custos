@@ -542,7 +542,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         )}
     </div>
 );       
-
+};
 const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -1905,7 +1905,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
         </div>
     );
 };
-
 export default function App() {
   const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
   const [userRole, setUserRole] = useState('admin');
