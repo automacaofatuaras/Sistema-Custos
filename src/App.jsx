@@ -1706,8 +1706,8 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
 
         // TOTAL GERAL
         tableBody.push([
-            { content: 'TOTAL GERAL INVESTIMENTOS', colSpan: 3, styles: { fillColor: colorIndigo, textColor: 255, fontStyle: 'bold', halign: 'center' } },
-            { content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fillColor: colorIndigo, textColor: 255, fontStyle: 'bold', halign: 'right' } }
+            { content: 'TOTAL GERAL INVESTIMENTOS', colSpan: 3, styles: { fillColor: colorSlateDark, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'middle' } },
+            { content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fillColor: colorSlateDark, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'middle' } }
         ]);
 
         autoTable(doc, { 
@@ -1727,12 +1727,12 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                 const pageSize = doc.internal.pageSize;
                 doc.setFontSize(8);
                 doc.setTextColor(150);
-                doc.text("Gerado pelo sistema de fechamento de custos", 14, pageSize.height - 10);
+                doc.text("Gerado pelo Sistema de Fechamento de Custos", 14, pageSize.height - 10);
                 doc.text(`Página ${data.pageNumber}`, pageSize.width - 25, pageSize.height - 10);
             }
         });
 
-        doc.save(`Investimentos_PorUnidade_${filter.year}_${filter.month + 1}.pdf`);
+        doc.save(`Investimentos_Por_Unidade_${filter.year}_${filter.month + 1}.pdf`);
     };
 
     return (
