@@ -1576,14 +1576,57 @@ const AIReportModal = ({ onClose, transactions, period }) => {
 };
 const InvestimentosReportComponent = ({ transactions, filter }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedUnits, setSelectedUnits] = useState([]);
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const filterRef = useRef(null);
 
-    // 1. Filtrar e Agrupar Dados (Nova Lógica Hierárquica)
+    // Fecha o dropdown se clicar fora
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (filterRef.current && !filterRef.current.contains(event.target)) {
+                setIsFilterOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    // 1. Identificar todas as Unidades que têm Investimentos (Grupo 06) neste período
+    const availableUnits = useMemo(() => {
+        const invTxs = transactions.filter(t => t.accountPlan && t.accountPlan.startsWith('06'));
+        const units = [...new Set(invTxs.map(t => t.segment))];
+        return units.sort();
+    }, [transactions]);
+
+    // 2. Sincronizar seleção quando os dados mudam (ex: mudar de mês)
+    useEffect(() => {
+        // Por padrão, seleciona todas as unidades disponíveis ao carregar
+        setSelectedUnits(availableUnits);
+    }, [availableUnits]);
+
+    const toggleUnit = (unit) => {
+        if (selectedUnits.includes(unit)) {
+            setSelectedUnits(prev => prev.filter(u => u !== unit));
+        } else {
+            setSelectedUnits(prev => [...prev, unit]);
+        }
+    };
+
+    const toggleAll = () => {
+        if (selectedUnits.length === availableUnits.length) {
+            setSelectedUnits([]); // Desmarca tudo
+        } else {
+            setSelectedUnits(availableUnits); // Marca tudo
+        }
+    };
+
+    // 3. Filtrar e Agrupar Dados (Com filtro de Unidade)
     const groupedData = useMemo(() => {
-        // Filtra transações de Investimento
         const investments = transactions.filter(t => 
             t.accountPlan && 
             t.accountPlan.startsWith('06') &&
             t.type === 'expense' &&
+            selectedUnits.includes(t.segment) && // <--- FILTRO DE UNIDADE AQUI
             (t.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
              t.planDescription.toLowerCase().includes(searchTerm.toLowerCase()) ||
              t.segment.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -1593,9 +1636,8 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         let totalGeral = 0;
 
         investments.forEach(t => {
-            // Nível 1: Unidade + Centro de Custo
             const unitName = t.segment.split(':')[1]?.trim() || t.segment;
-            const ccKey = `${unitName} | ${t.costCenter}`; // Chave única
+            const ccKey = `${unitName} | ${t.costCenter}`; 
             
             if (!groups[ccKey]) {
                 groups[ccKey] = {
@@ -1603,11 +1645,10 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                     unitName: unitName,
                     ccName: t.costCenter,
                     total: 0,
-                    subGroups: {} // Onde guardaremos as contas
+                    subGroups: {}
                 };
             }
 
-            // Nível 2: Conta do Plano (Classe)
             const accKey = t.accountPlan;
             if (!groups[ccKey].subGroups[accKey]) {
                 groups[ccKey].subGroups[accKey] = {
@@ -1618,38 +1659,32 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                 };
             }
 
-            // Adiciona Item
             groups[ccKey].subGroups[accKey].items.push(t);
             groups[ccKey].subGroups[accKey].total += t.value;
             
-            // Soma Totais
             groups[ccKey].total += t.value;
             totalGeral += t.value;
         });
 
-        // Transforma Objetos em Arrays ordenados para renderizar
         const sortedGroups = Object.values(groups)
             .sort((a, b) => a.unitName.localeCompare(b.unitName))
             .map(group => ({
                 ...group,
-                // Ordena os subgrupos (contas) pelo código
                 accounts: Object.values(group.subGroups).sort((a, b) => a.code.localeCompare(b.code))
             }));
 
         return { groups: sortedGroups, totalGeral };
-    }, [transactions, searchTerm]);
+    }, [transactions, searchTerm, selectedUnits]); // Dependência adicionada: selectedUnits
 
-    // 2. Função de Exportar PDF (Correção de Alinhamento)
+    // 4. Função de Exportar PDF
     const generatePDF = () => {
         const doc = new jsPDF();
         
-        // Cores
         const colorIndigo = [79, 70, 229];   
         const colorSlateDark = [30, 41, 59]; 
         const colorSlateLight = [241, 245, 249]; 
         const colorTextDark = [15, 23, 42];  
 
-        // Título e Cabeçalho do Documento
         doc.setFontSize(18);
         doc.setTextColor(...colorIndigo);
         doc.text("Relatório de Investimentos por Unidade", 14, 20);
@@ -1657,12 +1692,17 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         doc.setFontSize(10);
         doc.setTextColor(...colorTextDark);
         doc.text(`Período: ${filter.month + 1}/${filter.year}`, 14, 28);
-        doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 14, 33);
-
+        // Mostra no PDF se houve filtro de unidades
+        if (selectedUnits.length !== availableUnits.length) {
+            doc.setFontSize(8);
+            doc.setTextColor(150);
+            doc.text(`(Filtro personalizado: ${selectedUnits.length} de ${availableUnits.length} unidades)`, 14, 37);
+        }
+        
         const tableBody = [];
 
         groupedData.groups.forEach(group => {
-            // NÍVEL 1: UNIDADE (Usa colSpan: 2 para nome, sobra a 3ª coluna para o valor)
+            // NÍVEL 1: UNIDADE
             tableBody.push([
                 { 
                     content: `${group.unitName.toUpperCase()}\n${group.ccName}`, 
@@ -1676,7 +1716,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
             ]);
 
             group.accounts.forEach(account => {
-                // NÍVEL 2: CONTA (Usa colSpan: 2 para nome)
+                // NÍVEL 2: CONTA
                 tableBody.push([
                     { 
                         content: `${account.code} - ${account.name}`, 
@@ -1689,7 +1729,7 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                     }
                 ]);
 
-                // NÍVEL 3: ITENS (3 colunas simples)
+                // NÍVEL 3: ITENS
                 account.items.forEach(item => {
                     tableBody.push([
                         formatDate(item.date),
@@ -1698,63 +1738,43 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                     ]);
                 });
             });
-            
-            // Espaçamento
             tableBody.push([{ content: '', colSpan: 3, styles: { minCellHeight: 5, fillColor: [255, 255, 255] } }]);
         });
 
         // TOTAL GERAL
         tableBody.push([
-            { 
-                content: 'TOTAL GERAL INVESTIMENTOS', 
-                colSpan: 2, 
-                // Alterado de colorIndigo para colorSlateDark
-                styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'middle' } 
-            },
-            { 
-                content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 
-                // Alterado de colorIndigo para colorSlateDark
-                styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'right' } 
-            }
+            { content: 'TOTAL GERAL INVESTIMENTOS', colSpan: 2, styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'center' } },
+            { content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'right' } }
         ]);
 
         autoTable(doc, { 
-            startY: 40,
-            head: [['Data', 'Fornecedor / Matéria', 'Valor']], // Definimos exatamente 3 colunas
+            startY: selectedUnits.length !== availableUnits.length ? 45 : 40,
+            head: [['Data', 'Fornecedor / Matéria', 'Valor']], 
             body: tableBody,
             theme: 'grid',
             styles: { fontSize: 8, cellPadding: 2, lineColor: [226, 232, 240] },
-            
-            headStyles: { 
-                fillColor: [255, 255, 255], 
-                textColor: colorTextDark, 
-                fontStyle: 'bold', 
-                lineColor: [200, 200, 200], 
-                lineWidth: 0.1 
-            },
-            
+            headStyles: { fillColor: [255, 255, 255], textColor: colorTextDark, fontStyle: 'bold', lineColor: [200, 200, 200], lineWidth: 0.1 },
             columnStyles: {
-                0: { cellWidth: 25 }, // Data
-                1: { cellWidth: 'auto' }, // Descrição (Expande)
-                2: { cellWidth: 35, halign: 'middle' } // Valor (Alinhado à DIREITA para TUDO nessa coluna)
+                0: { cellWidth: 25 }, 
+                1: { cellWidth: 'auto' }, 
+                2: { cellWidth: 35, halign: 'right' } 
             },
-
             didDrawPage: (data) => {
                 const pageSize = doc.internal.pageSize;
                 doc.setFontSize(8);
                 doc.setTextColor(150);
-                doc.text("Gerado pelo sistema de fechamento de custos", 14, pageSize.height - 10);
+                doc.text("Gerado pelo Sistema de Fechamento de Custos", 14, pageSize.height - 10);
                 doc.text(`Página ${data.pageNumber}`, pageSize.width - 25, pageSize.height - 10);
             }
         });
 
-        doc.save(`Investimentos_Por_Unidade_${filter.year}_${filter.month + 1}.pdf`);
+        doc.save(`Investimentos_PorUnidade_${filter.year}_${filter.month + 1}.pdf`);
     };
 
     return (
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border dark:border-slate-700 h-full flex flex-col">
             {/* Cabeçalho */}
-            <div className="p-6 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="p-6 border-b dark:border-slate-700 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                 <div>
                     <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
                         <TrendingUp className="text-purple-600" /> Relatório de Investimentos
@@ -1762,7 +1782,51 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                     <p className="text-sm text-slate-500 mt-1">Agrupado por Unidade e Centro de Custo</p>
                 </div>
                 
-                <div className="flex gap-2 w-full md:w-auto">
+                <div className="flex flex-col md:flex-row gap-2 w-full xl:w-auto">
+                    
+                    {/* DROPDOWN DE FILTRO DE UNIDADES */}
+                    <div className="relative" ref={filterRef}>
+                        <button 
+                            onClick={() => setIsFilterOpen(!isFilterOpen)}
+                            className="w-full md:w-auto px-4 py-2 border dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 dark:text-white flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
+                        >
+                            <span className="flex items-center gap-2">
+                                <Factory size={16} className="text-slate-400"/> 
+                                {selectedUnits.length === availableUnits.length ? 'Todas as Unidades' : `${selectedUnits.length} Selecionadas`}
+                            </span>
+                            <ChevronDown size={14} className={`transition-transform ${isFilterOpen ? 'rotate-180' : ''}`}/>
+                        </button>
+
+                        {isFilterOpen && (
+                            <div className="absolute top-full right-0 mt-2 w-72 bg-white dark:bg-slate-800 border dark:border-slate-600 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100">
+                                <div className="p-3 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
+                                    <span className="text-xs font-bold uppercase text-slate-500">Filtrar Unidades</span>
+                                    <button onClick={toggleAll} className="text-xs text-indigo-600 hover:underline">
+                                        {selectedUnits.length === availableUnits.length ? 'Desmarcar Tudo' : 'Marcar Tudo'}
+                                    </button>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto p-2 space-y-1">
+                                    {availableUnits.map(unit => {
+                                        const cleanName = unit.split(':')[1]?.trim() || unit;
+                                        const isSelected = selectedUnits.includes(unit);
+                                        return (
+                                            <div key={unit} onClick={() => toggleUnit(unit)} className="flex items-center gap-3 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg cursor-pointer text-sm">
+                                                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 dark:border-slate-500'}`}>
+                                                    {isSelected && <CheckCircle size={12} className="text-white"/>}
+                                                </div>
+                                                <span className={`flex-1 truncate ${isSelected ? 'text-slate-800 dark:text-white font-medium' : 'text-slate-500'}`}>
+                                                    {cleanName}
+                                                </span>
+                                            </div>
+                                        )
+                                    })}
+                                    {availableUnits.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Nenhuma unidade com investimento no período.</div>}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* CAMPO DE BUSCA */}
                     <div className="relative flex-1 md:w-64">
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={16}/>
                         <input 
@@ -1772,31 +1836,33 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                             onChange={e => setSearchTerm(e.target.value)} 
                         />
                     </div>
+
+                    {/* BOTÃO EXPORTAR */}
                     <button 
                         type="button"
                         onClick={generatePDF} 
                         className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors shadow-lg"
                     >
-                        <Printer size={18}/> Exportar PDF
+                        <Printer size={18}/> Exportar
                     </button>
                 </div>
             </div>
 
             {/* Totalizador */}
             <div className="bg-purple-50 dark:bg-slate-900/50 p-4 border-b dark:border-slate-700 flex justify-end items-center px-8">
-                <span className="text-slate-500 font-bold uppercase text-xs mr-4">Total Investido:</span>
+                <span className="text-slate-500 font-bold uppercase text-xs mr-4">Total ({selectedUnits.length} un.):</span>
                 <span className="text-2xl font-bold text-purple-700 dark:text-purple-400">
                     {groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </span>
             </div>
 
-            {/* LISTAGEM HIERÁRQUICA */}
+            {/* LISTAGEM */}
             <div className="flex-1 overflow-y-auto p-4 bg-slate-50 dark:bg-slate-900">
                 <div className="space-y-6">
                     {groupedData.groups.map((group) => (
                         <div key={group.id} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
                             
-                            {/* CABEÇALHO DO GRUPO (UNIDADE / CC) */}
+                            {/* CABEÇALHO UNIDADE */}
                             <div className="bg-slate-800 p-4 flex justify-between items-center text-white">
                                 <div>
                                     <div className="text-xs opacity-70 uppercase tracking-wider font-bold">Unidade / Local</div>
@@ -1811,12 +1877,10 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                                 </div>
                             </div>
 
-                            {/* SUBGRUPOS (CONTAS) */}
+                            {/* CONTAS */}
                             <div className="p-2">
                                 {group.accounts.map((account) => (
                                     <div key={account.code} className="mb-2 last:mb-0 border border-slate-100 dark:border-slate-700 rounded-lg overflow-hidden">
-                                        
-                                        {/* Cabeçalho da Conta */}
                                         <div className="bg-slate-100 dark:bg-slate-700/50 p-2 px-4 flex justify-between items-center">
                                             <div className="flex items-center gap-2">
                                                 <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300 px-2 py-0.5 rounded text-xs font-mono font-bold">
@@ -1831,7 +1895,6 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                                             </span>
                                         </div>
 
-                                        {/* Itens */}
                                         <div className="divide-y dark:divide-slate-700 bg-white dark:bg-slate-800">
                                             {account.items.map((item) => (
                                                 <div key={item.id} className="p-3 pl-8 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors flex justify-between items-start text-sm">
@@ -1858,7 +1921,9 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
 
                     {groupedData.groups.length === 0 && (
                         <div className="text-center py-10 text-slate-400">
-                            Nenhum investimento encontrado para este filtro.
+                            {availableUnits.length === 0 
+                                ? "Nenhum investimento lançado neste período." 
+                                : "Nenhuma unidade selecionada ou encontrada com os filtros atuais."}
                         </div>
                     )}
                 </div>
