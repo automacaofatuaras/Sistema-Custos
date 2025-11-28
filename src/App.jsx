@@ -594,7 +594,6 @@ const groupedData = useMemo(() => {
         </div>
     );
 };
-}
 const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione...", isFilter = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
