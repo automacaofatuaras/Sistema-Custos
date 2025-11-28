@@ -411,7 +411,7 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
     const [expandedGroups, setExpandedGroups] = useState({
         'DESPESAS DA UNIDADE': true,
         'CUSTO OPERACIONAL INDÚSTRIA': true,
-        'CUSTO OPERACIONAL ADMINISTRATIVO': true
+        'CUSTO OPERACIONAL ADMINISTRATIVO': true,
         'INVESTIMENTOS': true
     });
 }
