@@ -3263,8 +3263,7 @@ const stockDataRaw = useMemo(() => {
                                  </td>
                                  <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
                                  <td className="p-4 text-xs dark:text-slate-300">
-                                    <td className="p-4">
-    {(() => {
+                                <td className="p-4">{(() => {
         // Estilo base (igual ao VENDAS/PRODUÇÃO)
         const baseStyle = "px-2 py-1 rounded border font-bold text-[10px] uppercase inline-block max-w-[200px] truncate";
 
@@ -3292,7 +3291,6 @@ const stockDataRaw = useMemo(() => {
             </span>
         );
     })()}
-</td>
                                  <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>{t.value.toLocaleString()}</td>
                                  <td className="p-4 flex gap-2">
                                       {['admin', 'editor'].includes(userRole) && <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500"><Edit2 size={16}/></button>}
