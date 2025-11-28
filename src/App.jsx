@@ -1639,17 +1639,17 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         return { groups: sortedGroups, totalGeral };
     }, [transactions, searchTerm]);
 
-    // 2. Função de Exportar PDF (Layout Atualizado)
+    // 2. Função de Exportar PDF (Correção de Alinhamento)
     const generatePDF = () => {
         const doc = new jsPDF();
         
-        // Cores do Sistema
+        // Cores
         const colorIndigo = [79, 70, 229];   
         const colorSlateDark = [30, 41, 59]; 
         const colorSlateLight = [241, 245, 249]; 
         const colorTextDark = [15, 23, 42];  
 
-        // Título
+        // Título e Cabeçalho do Documento
         doc.setFontSize(18);
         doc.setTextColor(...colorIndigo);
         doc.text("Relatório de Investimentos por Unidade", 14, 20);
@@ -1662,11 +1662,11 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
         const tableBody = [];
 
         groupedData.groups.forEach(group => {
-            // NÍVEL 1: CABEÇALHO DA UNIDADE / CENTRO DE CUSTO (Azul Escuro)
+            // NÍVEL 1: UNIDADE (Usa colSpan: 2 para nome, sobra a 3ª coluna para o valor)
             tableBody.push([
                 { 
                     content: `${group.unitName.toUpperCase()}\n${group.ccName}`, 
-                    colSpan: 3, 
+                    colSpan: 2, 
                     styles: { fillColor: colorSlateDark, textColor: [255, 255, 255], fontStyle: 'bold', valign: 'middle' } 
                 },
                 { 
@@ -1675,13 +1675,12 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                 }
             ]);
 
-            // Itera pelas Contas dentro da Unidade
             group.accounts.forEach(account => {
-                // NÍVEL 2: SUB-CABEÇALHO DA CONTA (Cinza Claro)
+                // NÍVEL 2: CONTA (Usa colSpan: 2 para nome)
                 tableBody.push([
                     { 
                         content: `${account.code} - ${account.name}`, 
-                        colSpan: 3, 
+                        colSpan: 2, 
                         styles: { fillColor: colorSlateLight, textColor: colorIndigo, fontStyle: 'bold' } 
                     },
                     { 
@@ -1690,49 +1689,66 @@ const InvestimentosReportComponent = ({ transactions, filter }) => {
                     }
                 ]);
 
-                // NÍVEL 3: ITENS
+                // NÍVEL 3: ITENS (3 colunas simples)
                 account.items.forEach(item => {
                     tableBody.push([
                         formatDate(item.date),
-                        { content: `${item.description}\n${item.materialDescription || ''}` }, // Fornecedor + Matéria
-                        { content: item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), colSpan: 2, styles: { halign: 'right' } }
+                        { content: `${item.description}\n${item.materialDescription || ''}` }, 
+                        { content: item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { halign: 'right' } }
                     ]);
                 });
             });
             
-            // Espaçamento entre grupos
-            tableBody.push([{ content: '', colSpan: 4, styles: { minCellHeight: 5, fillColor: [255, 255, 255] } }]);
+            // Espaçamento
+            tableBody.push([{ content: '', colSpan: 3, styles: { minCellHeight: 5, fillColor: [255, 255, 255] } }]);
         });
 
         // TOTAL GERAL
         tableBody.push([
-            { content: 'TOTAL GERAL INVESTIMENTOS', colSpan: 3, styles: { fillColor: colorSlateDark, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'middle' } },
-            { content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), styles: { fillColor: colorSlateDark, textColor: [255, 255, 255], fontStyle: 'bold', halign: 'middle' } }
+            { 
+                content: 'TOTAL GERAL INVESTIMENTOS', 
+                colSpan: 2, 
+                // Alterado de colorIndigo para colorSlateDark
+                styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'center' } 
+            },
+            { 
+                content: groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), 
+                // Alterado de colorIndigo para colorSlateDark
+                styles: { fillColor: colorSlateDark, textColor: 255, fontStyle: 'bold', halign: 'right' } 
+            }
         ]);
 
         autoTable(doc, { 
             startY: 40,
-            head: [['Data', 'Fornecedor / Matéria', 'Valor', '']], // Coluna 'Valor' ocupa as ultimas
+            head: [['Data', 'Fornecedor / Matéria', 'Valor']], // Definimos exatamente 3 colunas
             body: tableBody,
             theme: 'grid',
             styles: { fontSize: 8, cellPadding: 2, lineColor: [226, 232, 240] },
-            headStyles: { fillColor: [255, 255, 255], textColor: colorTextDark, fontStyle: 'bold', lineColor: [200, 200, 200], lineWidth: 0.1 },
+            
+            headStyles: { 
+                fillColor: [255, 255, 255], 
+                textColor: colorTextDark, 
+                fontStyle: 'bold', 
+                lineColor: [200, 200, 200], 
+                lineWidth: 0.1 
+            },
+            
             columnStyles: {
                 0: { cellWidth: 25 }, // Data
-                1: { cellWidth: 'auto' }, // Descrição
-                2: { cellWidth: 35 }, // Valor
-                3: { cellWidth: 0 } // Coluna auxiliar para alinhamento
+                1: { cellWidth: 'auto' }, // Descrição (Expande)
+                2: { cellWidth: 35, halign: 'right' } // Valor (Alinhado à DIREITA para TUDO nessa coluna)
             },
+
             didDrawPage: (data) => {
                 const pageSize = doc.internal.pageSize;
                 doc.setFontSize(8);
                 doc.setTextColor(150);
-                doc.text("Gerado pelo Sistema de Fechamento de Custos", 14, pageSize.height - 10);
+                doc.text("Gerado pelo sistema de fechamento de custos", 14, pageSize.height - 10);
                 doc.text(`Página ${data.pageNumber}`, pageSize.width - 25, pageSize.height - 10);
             }
         });
 
-        doc.save(`Investimentos_Por_Unidade_${filter.year}_${filter.month + 1}.pdf`);
+        doc.save(`Investimentos_PorUnidade_${filter.year}_${filter.month + 1}.pdf`);
     };
 
     return (
