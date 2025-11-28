@@ -876,6 +876,7 @@ const UsersScreen = ({ user, myRole, showToast }) => {
 };
 
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
+    // Estado inicial do formulário
     const [form, setForm] = useState({ 
         date: new Date().toISOString().slice(0, 7), 
         type: 'expense', 
@@ -884,7 +885,9 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         segment: '', 
         accountPlan: '', 
         metricType: 'producao',
-        materialDescription: '' 
+        materialDescription: '',
+        costCenter: 'GERAL', // Valor padrão
+        source: 'manual'     // Valor padrão
     });
 
     const [activeTab, setActiveTab] = useState('expense'); 
@@ -898,11 +901,13 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
         "Investimentos Consórcios a Contemplar"
     ];
 
+    // Carregar dados se for EDIÇÃO
     useEffect(() => { 
         if (initialData) { 
             setForm({ 
                 ...initialData, 
-                date: initialData.date.slice(0, 7),
+                // Garante que a data esteja no formato YYYY-MM para o input type="month"
+                date: initialData.date && initialData.date.length >= 7 ? initialData.date.slice(0, 7) : new Date().toISOString().slice(0, 7),
                 materialDescription: initialData.materialDescription || '' 
             }); 
             setActiveTab(initialData.type === 'metric' ? 'metric' : initialData.type); 
@@ -912,25 +917,37 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
     const handleSubmit = async () => {
         const val = parseFloat(form.value);
         
+        // Validações Básicas
         if (!form.description && activeTab !== 'metric') return showToast("Preencha a descrição.", 'error');
         if (isNaN(val) || !form.segment) return showToast("Preencha unidade e valor.", 'error');
-        if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do DRE.", 'error');
+        if (activeTab !== 'metric' && !form.accountPlan) return showToast("Selecione a conta do Plano.", 'error');
         if (activeTab === 'metric' && form.metricType === 'estoque' && !form.materialDescription) return showToast("Selecione o Material.", 'error');
 
+        // Tratamento da Data (Sempre define o último dia do mês para competência)
         const [year, month] = form.date.split('-');
         const lastDay = new Date(year, month, 0).getDate();
         const fullDate = `${form.date}-${lastDay}`;
         
+        // Preparação do Objeto para Salvar
+        // Nota: Usamos ...form para manter campos originais (como costCenter e source) em caso de edição
         let tx = { 
             ...form, 
             date: fullDate, 
             value: val, 
-            costCenter: 'GERAL', 
-            source: 'manual', 
-            createdAt: new Date().toISOString(), 
             type: activeTab 
         };
 
+        // Lógica Específica: NOVO vs EDIÇÃO
+        if (!initialData?.id) {
+            // Se for NOVO, definimos os padrões
+            tx.createdAt = new Date().toISOString();
+            tx.source = 'manual';
+            if (!tx.costCenter) tx.costCenter = 'GERAL';
+        } 
+        // Se for EDIÇÃO (initialData existe), não tocamos em createdAt, source ou costCenter 
+        // (eles já vieram no ...form lá em cima)
+
+        // Ajustes para Métricas
         if (activeTab === 'metric') { 
             const matDesc = form.metricType === 'estoque' ? ` - ${form.materialDescription}` : '';
             tx.description = `Lançamento de ${form.metricType.toUpperCase()}${matDesc}`; 
@@ -940,13 +957,13 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
 
        try { 
             if(initialData?.id) {
-                // SE FOR EDIÇÃO: Salva e fecha a janela
+                // MODO EDIÇÃO
                 await dbService.update(user, 'transactions', initialData.id, tx);
                 showToast("Lançamento atualizado!", 'success');
                 onSave(); 
                 onClose(); 
             } else {
-                // SE FOR NOVO: Salva, avisa, limpa o valor e MANTÉM ABERTO
+                // MODO CRIAÇÃO
                 await dbService.add(user, 'transactions', tx); 
                 showToast("Salvo! Pode fazer o próximo.", 'success');
                 onSave(); 
@@ -956,14 +973,15 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                     ...prev, 
                     value: '', 
                     description: '',
-                    // Mantém: data, unidade, conta do DRE e tipo de material (se for estoque)
+                    // Mantém: data, unidade, conta e tipo para facilitar digitação em série
                 }));
-                // Observação: removemos o onClose() daqui
             }
         } catch(e) { 
-            showToast("Erro ao salvar.", 'error');
+            console.error("Erro ao salvar:", e);
+            showToast("Erro ao salvar: " + e.message, 'error');
         }
       };
+
     const unitMeasure = form.segment ? getMeasureUnit(form.segment) : 'un';
 
     return (
@@ -997,12 +1015,19 @@ const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showTo
                             </select>
                             <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" placeholder="Descrição Manual..." value={form.description} onChange={e=>setForm({...form, description: e.target.value})} />
                             
-                            <select className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={form.accountPlan} onChange={e=>setForm({...form, accountPlan: e.target.value})}>
+                            <label className="block text-xs font-bold text-slate-500 uppercase">Plano de Contas</label>
+                            <select 
+                                className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" 
+                                value={form.accountPlan} 
+                                onChange={e => setForm({...form, accountPlan: e.target.value})}
+                            >
                                 <option value="">Selecione a Classe Analítica...</option>
-                                <option value="00.00">00.00 - Lançamento Manual (Ajuste)</option>
-                                {PLANO_CONTAS.map(r => (<option key={r.code} value={r.code}>{r.code} - {r.name}
-                            </option>
-                            ))}
+                                {/* Mapeia o PLANO_CONTAS importado do arquivo externo */}
+                                {PLANO_CONTAS.map(r => (
+                                    <option key={r.code} value={r.code}>
+                                        {r.code} - {r.name}
+                                    </option>
+                                ))}
                             </select>
                         </>
                     )}
