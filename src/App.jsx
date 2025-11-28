@@ -414,7 +414,6 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
         'CUSTO OPERACIONAL ADMINISTRATIVO': true,
         'INVESTIMENTOS': true
     });
-}
     useEffect(() => {
         let data = transactions.filter(t => t.type === 'expense');
         if (searchTerm) {
