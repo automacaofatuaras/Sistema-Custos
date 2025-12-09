@@ -2417,15 +2417,14 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     const [selectedSegment, setSelectedSegment] = useState('Portos de Areia');
     const [activeRateioType, setActiveRateioType] = useState('ADMINISTRATIVO');
     
-    // ✅ CORREÇÃO 1: CONSTANTE DE CCS E ESTADO DE PORCENTAGEM (DEVE SER DEFINIDA ANTES DO useMemo)
+    // NOVO: Lista de CCs para Rateio Comercial Concreteiras
     const CONCRETEIRA_COMERCIAL_CCS = [8003, 9003, 22003, 25003, 27003, 29003, 33003, 34003, 38003];
     
-    // Estado para % Concreto por CC. 
-    const [ccRateioPercents, setCcRateioPercents] = useState(() => 
-        CONCRETEIRA_COMERCIAL_CCS.reduce((acc, cc) => ({ ...acc, [cc]: 0 }), {})
-    );
+    // NOVO: Estado para % Concreto (Padrão 90%, Tubos será o resto)
+    const [percConcreto, setPercConcreto] = useState(0);
 
     // Estado para porcentagens manuais (Rateio Vendedores existente)
+    // Estrutura: { 'Nome da Unidade': { '2105': 10, '3105': 5... } }
     const [manualPercents, setManualPercents] = useState({});
     // --- CONFIGURAÇÃO DOS RATEIOS ---
     const RATEIO_CONFIG = {
@@ -2470,6 +2469,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     // --- CÁLCULOS PRINCIPAIS ---
 // --- CÁLCULOS PRINCIPAIS ---
 // --- CÁLCULOS PRINCIPAIS ---
+// --- CÁLCULOS PRINCIPAIS ---
     const calculatedData = useMemo(() => {
         const periodTxs = filterByDate(transactions);
         
@@ -2504,50 +2504,31 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         // 4. Comercial (Genérico anterior)
         const totalComercial = sumCC([1104]);
 
-        // ✅ CORREÇÃO 2: NOVA LÓGICA DE RATEIO POR CC (Concreteiras)
+        // 5. NOVO: Comercial Concreteiras (Lógica Específica)
+        // Agrupa por Unidade -> Classe de Despesa
         const concreteiraData = [];
-        let totalGeralOriginal = 0; 
-        
         if (selectedSegment === 'Noromix Concreteiras') {
-            // Usa CONCRETEIRA_COMERCIAL_CCS e ccRateioPercents definidos no escopo principal
             const rawItems = listItems(CONCRETEIRA_COMERCIAL_CCS);
             
             // Agrupamento
             const grouped = {}; 
             rawItems.forEach(item => {
                 const unitName = item.segment.includes(':') ? item.segment.split(':')[1].trim() : item.segment;
-                const txCC = parseInt(item.costCenter.split(' ')[0]);
                 const classKey = item.accountPlan;
                 const className = item.planDescription;
-                
-                // Pega a porcentagem específica deste CC
-                const percConcreto = ccRateioPercents[txCC] || 0;
-                const percTubos = 100 - percConcreto;
-                
-                // Aplica o rateio à transação
-                const valueConcreto = item.value * (percConcreto / 100);
-                const valueTubos = item.value * (percTubos / 100);
-                
-                // Chave de agrupamento é UNIDADE + CLASSE DE DESPESA
-                const key = `${unitName}|${classKey}`; 
+                const key = `${unitName}|${classKey}`;
 
                 if (!grouped[key]) {
                     grouped[key] = {
                         unit: unitName,
                         code: classKey,
                         desc: className,
-                        totalOriginal: 0,
-                        totalConcreto: 0,
-                        totalTubos: 0,
+                        total: 0,
+                        items: []
                     };
                 }
-                
-                // Soma os valores rateados no agrupamento
-                grouped[key].totalOriginal += item.value;
-                grouped[key].totalConcreto += valueConcreto;
-                grouped[key].totalTubos += valueTubos;
-                
-                totalGeralOriginal += item.value;
+                grouped[key].total += item.value;
+                grouped[key].items.push(item);
             });
             
             // Transforma em array e ordena
@@ -2573,11 +2554,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             totalProd, itemsProd,
             totalVend2105, totalVend3105, totalVend5105,
             totalComercial, activeUnits,
-            concreteiraData, // Dados agora contêm os totais já rateados
-            totalGeralOriginal // Total para o resumo
+            concreteiraData // Retornando o novo dado
         };
-    }, [transactions, filter, selectedSegment, ccRateioPercents]);
-
+    }, [transactions, filter, selectedSegment]);
     // Handle change percentage
     const handlePercChange = (unit, cc, val) => {
         setManualPercents(prev => ({
@@ -2722,137 +2701,157 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         }
 
 // --- TELA COMERCIAL - NOROMIX CONCRETEIRAS ---
-        if (activeRateioType === 'COMERCIAL' && selectedSegment === 'Noromix Concreteiras') {
+       // --- TELA COMERCIAL ---
+        if (activeRateioType === 'COMERCIAL') {
             
-            // >>> NOVO E SIMPLIFICADO CÓDIGO DE RATEIO DE CONCRETEIRAS <<<
-            const totalConcretoRateado = calculatedData.concreteiraData.reduce((acc, curr) => acc + curr.totalConcreto, 0);
-            const totalTubosRateado = calculatedData.concreteiraData.reduce((acc, curr) => acc + curr.totalTubos, 0);
+            // >>> NOVA LÓGICA: CONCRETEIRAS <<<
+            if (selectedSegment === 'Noromix Concreteiras') {
+                const percTubos = 100 - percConcreto;
+                const totalGeral = calculatedData.concreteiraData.reduce((acc, curr) => acc + curr.total, 0);
 
+                return (
+                    <div className="space-y-6 animate-in fade-in">
+                        {/* 1. Controles de Porcentagem */}
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm flex flex-col md:flex-row gap-8 items-center justify-between">
+                            <div>
+                                <h4 className="font-bold text-lg dark:text-white">Definição de Rateio ({filter.month + 1}/{filter.year})</h4>
+                                <p className="text-sm text-slate-500">Distribuição entre Concreto e Fábrica de Tubos</p>
+                            </div>
+                            
+                            <div className="flex items-center gap-6 bg-slate-50 dark:bg-slate-900 p-4 rounded-xl">
+                                <div className="text-center">
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Noromix Concreto</label>
+                                    <div className="flex items-center gap-1">
+                                        <input 
+                                            type="number" 
+                                            min="0" max="100"
+                                            value={percConcreto}
+                                            onChange={(e) => {
+                                                let val = parseFloat(e.target.value);
+                                                if(val > 100) val = 100;
+                                                if(val < 0) val = 0;
+                                                setPercConcreto(val);
+                                            }}
+                                            className="w-20 text-center font-bold text-lg border-b-2 border-indigo-500 bg-transparent outline-none dark:text-white"
+                                        />
+                                        <span className="font-bold text-slate-400">%</span>
+                                    </div>
+                                </div>
+                                <div className="h-8 w-px bg-slate-300 dark:bg-slate-600"></div>
+                                <div className="text-center">
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Fábrica de Tubos</label>
+                                    <div className="text-xl font-bold text-slate-700 dark:text-slate-300">
+                                        {percTubos.toFixed(0)}%
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 2. Resumo de Valores */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-slate-400 shadow-sm">
+                                <p className="text-xs font-bold text-slate-500 uppercase">Total Selecionado</p>
+                                <h3 className="text-xl font-bold dark:text-white">{totalGeral.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                            </div>
+                            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-indigo-500 shadow-sm">
+                                <p className="text-xs font-bold text-indigo-500 uppercase">Destino: Concreteiras ({percConcreto}%)</p>
+                                <h3 className="text-xl font-bold dark:text-white">{(totalGeral * (percConcreto/100)).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                            </div>
+                            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-amber-500 shadow-sm">
+                                <p className="text-xs font-bold text-amber-500 uppercase">Destino: Fábrica Tubos ({percTubos}%)</p>
+                                <h3 className="text-xl font-bold dark:text-white">{(totalGeral * (percTubos/100)).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                            </div>
+                        </div>
+
+                        {/* 3. Tabela Detalhada */}
+                        <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden">
+                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 font-bold dark:text-white flex justify-between">
+                                <span>Simulação de Lançamentos (Classe a Classe)</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase">
+                                        <tr>
+                                            <th className="p-3">Unidade Origem</th>
+                                            <th className="p-3">Classe de Despesa</th>
+                                            <th className="p-3 text-right">Valor Original</th>
+                                            <th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Concreteira ({percConcreto}%)</th>
+                                            <th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Tubos ({percTubos}%)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y dark:divide-slate-700">
+                                        {calculatedData.concreteiraData.map((row, idx) => {
+                                            const valConcreto = row.total * (percConcreto / 100);
+                                            const valTubos = row.total * (percTubos / 100);
+                                            return (
+                                                <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
+                                                    <td className="p-3 font-bold">{row.unit}</td>
+                                                    <td className="p-3">
+                                                        <div className="font-mono text-xs opacity-70">{row.code}</div>
+                                                        <div>{row.desc}</div>
+                                                    </td>
+                                                    <td className="p-3 text-right font-medium">{row.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                    <td className="p-3 text-right font-bold text-indigo-600 bg-indigo-50/30">{valConcreto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                    <td className="p-3 text-right font-bold text-amber-600 bg-amber-50/30">{valTubos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                        {calculatedData.concreteiraData.length === 0 && (
+                                            <tr>
+                                                <td colSpan={5} className="p-8 text-center text-slate-400">Nenhum lançamento encontrado nos Centros de Custo elegíveis (8003, 9003, etc) para este período.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // >>> LÓGICA ANTIGA: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas) <<<
+            const activeCount = calculatedData.activeUnits.length;
+            const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
             return (
                 <div className="space-y-6 animate-in fade-in">
-                    
-                    {/* 1. Controles de Porcentagem (Tabela de CCs) */}
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm space-y-4">
-                        <div>
-                            <h4 className="font-bold text-lg dark:text-white">Definição de Rateio por Centro de Custo ({filter.month + 1}/{filter.year})</h4>
-                            <p className="text-sm text-slate-500">Defina a porcentagem de rateio (% Concreto) para cada CC elegível. O restante vai para Tubos.</p>
-                        </div>
-                        
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left border rounded-lg overflow-hidden">
-                                <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 text-xs uppercase">
-                                    <tr>
-                                        <th className="p-3">CC</th>
-                                        <th className="p-3">Unidade (Base)</th>
-                                        <th className="p-3 text-center">NOROMIX CONCRETO (%)</th>
-                                        <th className="p-3 text-center">FÁBRICA DE TUBOS (%)</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y dark:divide-slate-700">
-                                    {CONCRETEIRA_COMERCIAL_CCS.map(cc => {
-                                        const unitCode = Math.floor(cc / 1000) * 1000;
-                                        // Mapeamento simplificado, idealmente viria de uma constante global
-                                        const unitNames = {
-                                            8000: 'Votuporanga', 9000: 'Três Fronteiras', 22000: 'Ilha Solteira', 
-                                            25000: 'Jales', 27000: 'Fernandópolis', 29000: 'Pereira Barreto', 
-                                            33000: 'Ouroeste', 34000: 'Monções', 38000: 'Paranaíba'
-                                        };
-                                        const unitName = unitNames[unitCode] || `CC ${unitCode}`;
-                                        const percConcretoCC = ccRateioPercents[cc] || 0;
-                                        const percTubosCC = 100 - percConcretoCC;
-
-                                        const handlePercentChange = (e) => {
-                                            let val = parseFloat(e.target.value);
-                                            if(isNaN(val)) val = 0;
-                                            if(val > 100) val = 100;
-                                            if(val < 0) val = 0;
-                                            
-                                            setCcRateioPercents(prev => ({
-                                                ...prev,
-                                                [cc]: val
-                                            }));
-                                        };
-
-                                        return (
-                                            <tr key={cc} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                                <td className="p-3 font-bold">{cc}</td>
-                                                <td className="p-3">{unitName}</td>
-                                                <td className="p-3 text-center">
-                                                    <div className="flex items-center justify-center gap-1">
-                                                        <input 
-                                                            type="number" 
-                                                            min="0" max="100"
-                                                            step="0.1" 
-                                                            value={percConcretoCC}
-                                                            onChange={handlePercentChange}
-                                                            className="w-20 text-center font-bold text-sm border-b-2 border-indigo-500 bg-transparent outline-none dark:text-white"
-                                                        />
-                                                        <span className="font-bold text-slate-400">%</span>
-                                                    </div>
-                                                </td>
-                                                <td className="p-3 text-center font-bold text-slate-700 dark:text-slate-300">
-                                                    {percTubosCC.toFixed(1)}%
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* 2. Resumo de Valores (Valores já rateados) */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-slate-400 shadow-sm">
-                            <p className="text-xs font-bold text-slate-500 uppercase">Total Original</p>
-                            <h3 className="text-xl font-bold dark:text-white">{calculatedData.totalGeralOriginal.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                        <div className="bg-amber-500 text-white p-6 rounded-xl shadow-lg">
+                            <p className="text-amber-100 text-xs font-bold uppercase mb-1">Total Comercial (CC 1104)</p>
+                            <h3 className="text-2xl font-bold">{calculatedData.totalComercial.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
                         </div>
-                        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-indigo-500 shadow-sm">
-                            <p className="text-xs font-bold text-indigo-500 uppercase">Total Destino: Concreteiras</p>
-                            <h3 className="text-xl font-bold dark:text-white">{totalConcretoRateado.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
+                            <p className="text-slate-500 text-xs font-bold uppercase mb-1">Unidades Ativas</p>
+                            <h3 className="text-2xl font-bold text-slate-700 dark:text-white">{activeCount} <span className="text-sm font-normal text-slate-400">/ 14</span></h3>
+                            <p className="text-xs text-slate-400 mt-1">Com produção no período</p>
                         </div>
-                        <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-amber-500 shadow-sm">
-                            <p className="text-xs font-bold text-amber-500 uppercase">Total Destino: Fábrica Tubos</p>
-                            <h3 className="text-xl font-bold dark:text-white">{totalTubosRateado.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                        <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
+                            <p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade Ativa</p>
+                            <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
                         </div>
                     </div>
-                    
-                    {/* 3. Tabela Detalhada */}
+
                     <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden">
-                        <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 font-bold dark:text-white flex justify-between">
-                            <span>Simulação de Lançamentos (Rateio Efetivo, Classe a Classe)</span>
-                        </div>
-                        <div className="overflow-x-auto">
+                        <div className="p-4 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white border-b dark:border-slate-700">Distribuição por Unidade</div>
+                        <div className="max-h-96 overflow-y-auto">
                             <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase">
-                                    <tr>
-                                        <th className="p-3">Unidade Origem</th>
-                                        <th className="p-3">Classe de Despesa</th>
-                                        <th className="p-3 text-right">Valor Original</th>
-                                        <th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Destino: Concreteira</th>
-                                        <th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Destino: Tubos</th>
-                                    </tr>
-                                </thead>
+                                <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 sticky top-0"><tr><th className="p-3">Unidade</th><th className="p-3">Status</th><th className="p-3 text-right">Valor Rateado</th></tr></thead>
                                 <tbody className="divide-y dark:divide-slate-700">
-                                    {calculatedData.concreteiraData.map((row, idx) => {
+                                    {[...BUSINESS_HIERARCHY["Pedreiras"], ...BUSINESS_HIERARCHY["Portos de Areia"], ...BUSINESS_HIERARCHY["Usinas de Asfalto"]].sort().map(unit => {
+                                        const isActive = calculatedData.activeUnits.includes(unit);
                                         return (
-                                            <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
-                                                <td className="p-3 font-bold">{row.unit}</td>
+                                            <tr key={unit} className={`dark:text-slate-300 ${!isActive ? 'opacity-50 bg-slate-50 dark:bg-slate-900' : ''}`}>
+                                                <td className="p-3">{unit}</td>
                                                 <td className="p-3">
-                                                    <div className="font-mono text-xs opacity-70">{row.code}</div>
-                                                    <div>{row.desc}</div>
+                                                    {isActive 
+                                                        ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> 
+                                                        : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}
                                                 </td>
-                                                <td className="p-3 text-right font-medium">{row.totalOriginal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                                <td className="p-3 text-right font-bold text-indigo-600 bg-indigo-50/30">{row.totalConcreto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                                <td className="p-3 text-right font-bold text-amber-600 bg-amber-50/30">{row.totalTubos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-white">
+                                                    {isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
+                                                </td>
                                             </tr>
                                         );
                                     })}
-                                    {calculatedData.concreteiraData.length === 0 && (
-                                        <tr>
-                                            <td colSpan={5} className="p-8 text-center text-slate-400">Nenhum lançamento encontrado nos Centros de Custo elegíveis para este período.</td>
-                                        </tr>
-                                    )}
                                 </tbody>
                             </table>
                         </div>
@@ -2860,7 +2859,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 </div>
             );
         }
-
             // >>> LÓGICA ANTIGA: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas) <<<
             const activeCount = calculatedData.activeUnits.length;
             const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
