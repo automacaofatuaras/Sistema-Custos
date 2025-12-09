@@ -2753,8 +2753,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                         // Mapeamento simplificado, idealmente viria de uma constante global
                                         const unitNames = {
                                             8000: 'Votuporanga', 9000: 'Três Fronteiras', 22000: 'Ilha Solteira', 
-                                            25000: 'Jales', 27000: 'Paranaíba', 29000: 'Aparecida', 
-                                            33000: 'Goiânia', 34000: 'São José do Rio Preto', 38000: 'Pirapozinho'
+                                            25000: 'Jales', 27000: 'Fernandópolis', 29000: 'Pereira Barreto', 
+                                            33000: 'Ouroeste', 34000: 'Monções', 38000: 'Paranaíba'
                                         };
                                         const unitName = unitNames[unitCode] || `CC ${unitCode}`;
                                         const percConcretoCC = ccRateioPercents[cc] || 0;
