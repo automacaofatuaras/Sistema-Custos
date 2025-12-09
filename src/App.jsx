@@ -2469,7 +2469,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
 
     // --- CÁLCULOS PRINCIPAIS ---
 // --- CÁLCULOS PRINCIPAIS ---
-    const calculatedData = useMemo(() => {
+const calculatedData = useMemo(() => {
         const periodTxs = filterByDate(transactions);
         
         // Helper para somar CCs
@@ -2485,8 +2485,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         const listItems = (codes) => periodTxs
             .filter(t => t.type === 'expense')
             .filter(t => codes.includes(parseInt(t.costCenter.split(' ')[0])));
-
+        
         // 1. Rateio Administrativo
+        // ... (resto da lógica)
         const totalAdm = sumCC([1087, 1089]);
         const itemsAdm = listItems([1087, 1089]);
         
