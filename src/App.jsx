@@ -2910,7 +2910,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         }
 
         return <div className="p-10 text-center text-slate-400">Selecione um tipo de rateio acima.</div>;
-    };
 
     return (
         <div className="space-y-6">
