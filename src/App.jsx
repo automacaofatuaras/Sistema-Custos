@@ -2415,11 +2415,10 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     // Estado local
     const [selectedSegment, setSelectedSegment] = useState('Portos de Areia');
     const [activeRateioType, setActiveRateioType] = useState('ADMINISTRATIVO');
-  // NOVO: Lista de CCs para Rateio Comercial Concreteiras
-const CONCRETEIRA_COMERCIAL_CCS = [8003, 9003, 22003, 25003, 27003, 29003, 33003, 34003, 38003];
+// CORREÇÃO: DECLARAÇÃO DA LISTA DE CCS LOGO NO INÍCIO
+    const CONCRETEIRA_COMERCIAL_CCS = [8003, 9003, 22003, 25003, 27003, 29003, 33003, 34003, 38003];
     
     // NOVO: Estado para % Concreto por CC. Estrutura: { '8003': 93.5, '9003': 100, ... } 
-    // Inicializa com todos os CCs elegíveis em 0.
     const [ccRateioPercents, setCcRateioPercents] = useState(() => 
         CONCRETEIRA_COMERCIAL_CCS.reduce((acc, cc) => ({ ...acc, [cc]: 0 }), {})
     );
