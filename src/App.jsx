@@ -2953,7 +2953,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             {renderContent()}
         </div>
     );
-};
 export default function App() {
   const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
   const [userRole, setUserRole] = useState('admin');
