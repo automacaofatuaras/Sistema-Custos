@@ -2416,16 +2416,16 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     const [selectedSegment, setSelectedSegment] = useState('Portos de Areia');
     const [activeRateioType, setActiveRateioType] = useState('ADMINISTRATIVO');
     
-    // ⚠️ GARANTIR QUE ESTE BLOCO ESTEJA EXATAMENTE AQUI:
+    // ✅ CORREÇÃO 1: CONSTANTE DE CCS E ESTADO DE PORCENTAGEM (DEVE SER DEFINIDA ANTES DO useMemo)
     const CONCRETEIRA_COMERCIAL_CCS = [8003, 9003, 22003, 25003, 27003, 29003, 33003, 34003, 38003];
     
+    // Estado para % Concreto por CC. 
     const [ccRateioPercents, setCcRateioPercents] = useState(() => 
         CONCRETEIRA_COMERCIAL_CCS.reduce((acc, cc) => ({ ...acc, [cc]: 0 }), {})
     );
-    // Estado para porcentagens manuais (Rateio Vendedores existente)
-    // Estrutura: { 'Nome da Unidade': { '2105': 10, '3105': 5... } }
-    const [manualPercents, setManualPercents] = useState({});
 
+    // Estado para porcentagens manuais (Rateio Vendedores existente)
+    const [manualPercents, setManualPercents] = useState({});
     // --- CONFIGURAÇÃO DOS RATEIOS ---
     const RATEIO_CONFIG = {
         'Portos de Areia': [
@@ -2468,7 +2468,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
 
     // --- CÁLCULOS PRINCIPAIS ---
 // --- CÁLCULOS PRINCIPAIS ---
-const calculatedData = useMemo(() => {
+// --- CÁLCULOS PRINCIPAIS ---
+    const calculatedData = useMemo(() => {
         const periodTxs = filterByDate(transactions);
         
         // Helper para somar CCs
@@ -2484,9 +2485,8 @@ const calculatedData = useMemo(() => {
         const listItems = (codes) => periodTxs
             .filter(t => t.type === 'expense')
             .filter(t => codes.includes(parseInt(t.costCenter.split(' ')[0])));
-        
+
         // 1. Rateio Administrativo
-        // ... (resto da lógica)
         const totalAdm = sumCC([1087, 1089]);
         const itemsAdm = listItems([1087, 1089]);
         
@@ -2503,14 +2503,12 @@ const calculatedData = useMemo(() => {
         // 4. Comercial (Genérico anterior)
         const totalComercial = sumCC([1104]);
 
-        // 5. NOVO: Comercial Concreteiras (Lógica Específica)
-        // Agrupa por Unidade -> Classe de Despesa
-// 5. NOVO: Comercial Concreteiras (Lógica Específica)
-        // Agrupa por Unidade -> Classe de Despesa, JÁ COM O RATEIO APLICADO
+        // ✅ CORREÇÃO 2: NOVA LÓGICA DE RATEIO POR CC (Concreteiras)
         const concreteiraData = [];
-        let totalGeralOriginal = 0; // Para somar o total original de todos os CCs
+        let totalGeralOriginal = 0; 
         
         if (selectedSegment === 'Noromix Concreteiras') {
+            // Usa CONCRETEIRA_COMERCIAL_CCS e ccRateioPercents definidos no escopo principal
             const rawItems = listItems(CONCRETEIRA_COMERCIAL_CCS);
             
             // Agrupamento
@@ -2525,7 +2523,7 @@ const calculatedData = useMemo(() => {
                 const percConcreto = ccRateioPercents[txCC] || 0;
                 const percTubos = 100 - percConcreto;
                 
-                // Aplica o rateio à transação (conforme item 4 do requisito)
+                // Aplica o rateio à transação
                 const valueConcreto = item.value * (percConcreto / 100);
                 const valueTubos = item.value * (percTubos / 100);
                 
@@ -2537,9 +2535,9 @@ const calculatedData = useMemo(() => {
                         unit: unitName,
                         code: classKey,
                         desc: className,
-                        totalOriginal: 0,      // Valor total da despesa original
-                        totalConcreto: 0,      // Valor rateado para Concreteira
-                        totalTubos: 0,         // Valor rateado para Tubos
+                        totalOriginal: 0,
+                        totalConcreto: 0,
+                        totalTubos: 0,
                     };
                 }
                 
@@ -2548,10 +2546,10 @@ const calculatedData = useMemo(() => {
                 grouped[key].totalConcreto += valueConcreto;
                 grouped[key].totalTubos += valueTubos;
                 
-                totalGeralOriginal += item.value; // Acumula o total geral
+                totalGeralOriginal += item.value;
             });
             
-            // Transforma em array, ordena e adiciona ao resultado
+            // Transforma em array e ordena
             Object.values(grouped).forEach(g => concreteiraData.push(g));
             concreteiraData.sort((a,b) => a.unit.localeCompare(b.unit) || a.code.localeCompare(b.code));
         }
@@ -2562,7 +2560,12 @@ const calculatedData = useMemo(() => {
             ...BUSINESS_HIERARCHY["Portos de Areia"], 
             ...BUSINESS_HIERARCHY["Usinas de Asfalto"]
         ];
-        // ... (o restante da lógica activeUnits) ...
+        const activeUnits = targetUnits.filter(unit => {
+            const prod = periodTxs
+                .filter(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === unit)
+                .reduce((acc, t) => acc + t.value, 0);
+            return prod > 0;
+        });
 
         return { 
             totalAdm, itemsAdm, 
@@ -2572,7 +2575,7 @@ const calculatedData = useMemo(() => {
             concreteiraData, // Dados agora contêm os totais já rateados
             totalGeralOriginal // Total para o resumo
         };
-    }, [transactions, filter, selectedSegment, ccRateioPercents]); // NOVA DEPENDÊNCIA AQUI!
+    }, [transactions, filter, selectedSegment, ccRateioPercents]);
 
     // Handle change percentage
     const handlePercChange = (unit, cc, val) => {
