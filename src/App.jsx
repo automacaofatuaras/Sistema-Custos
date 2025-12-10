@@ -2416,15 +2416,45 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     const [selectedSegment, setSelectedSegment] = useState('Portos de Areia');
     const [activeRateioType, setActiveRateioType] = useState('ADMINISTRATIVO');
     
-    // --- ESTADOS PARA RATEIOS MANUAIS (Vendedores) ---
+    // Estados para Rateio Vendedores (Manual)
     const [manualPercents, setManualPercents] = useState({});
 
-    // --- ESTADOS PARA RATEIO ADM NOROMIX (Novo) ---
+    // --- ESTADOS PARA RATEIO ADM NOROMIX (Novo com Bloqueio) ---
     const [admParams, setAdmParams] = useState({
         totalValue: 0,      // Valor Total a Ratear
         minWage: 1412,      // Salário Mínimo
         employees: {}       // Mapa: { 'Unidade': qtd_funcionarios }
     });
+    
+    const [isLocked, setIsLocked] = useState(false); // Controla se está em modo visualização (Salvo) ou edição
+    const [isSaving, setIsSaving] = useState(false); // Loading do botão salvar
+
+    // --- COMPONENTE INTERNO: INPUT DE MOEDA ---
+    // Transforma digitação direta em formato R$
+    const CurrencyInput = ({ value, onChange, disabled, className }) => {
+        const handleChange = (e) => {
+            // Remove tudo que não é dígito
+            const rawValue = e.target.value.replace(/\D/g, ""); 
+            // Divide por 100 para considerar os centavos
+            const numberValue = rawValue ? parseInt(rawValue, 10) / 100 : 0;
+            onChange(numberValue);
+        };
+
+        const displayValue = value 
+            ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
+            : 'R$ 0,00';
+
+        return (
+            <input
+                type="text"
+                value={displayValue}
+                onChange={handleChange}
+                disabled={disabled}
+                className={className}
+                placeholder="R$ 0,00"
+            />
+        );
+    };
 
     // --- CONFIGURAÇÃO DOS RATEIOS ---
     const RATEIO_CONFIG = {
@@ -2443,9 +2473,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             { id: 'PERFURATRIZ', label: 'Rateio Perfuratriz' }
         ],
         'Noromix Concreteiras': [
-            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo' }, // Atualizado
-            { id: 'COMERCIAL', label: 'Rateio Comercial' },
-            { id: 'VENDEDORES', label: 'Rateio Vendedores' }
+            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo (Salários)' }, 
+            { id: 'COMERCIAL', label: 'Rateio Comercial (Produção)' },
+            { id: 'VENDEDORES', label: 'Rateio Vendedores (CC Específico)' }
         ]
     };
 
@@ -2462,10 +2492,52 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         { cc: 38003, unit: "Noromix Concreto S/A - Paranaíba" }
     ];
 
-    // Inicializa estados ao mudar segmento
+    // --- EFEITO: CARREGAR DADOS SALVOS DO RATEIO ADM ---
     useEffect(() => {
+        const loadSavedParams = async () => {
+            if (selectedSegment !== 'Noromix Concreteiras') return;
+
+            // ID do documento baseia-se no mês/ano (ex: '2025_10')
+            // Isso garante que cada mês tenha sua própria configuração
+            const docId = `rateio_adm_${filter.year}_${filter.month}`;
+            const docRef = doc(db, 'artifacts', appId, 'rateio_adm_config', docId);
+
+            try {
+                const docSnap = await getDoc(docRef);
+                
+                // Lista padrão de unidades para inicializar se não existir
+                const allUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
+                
+                if (docSnap.exists()) {
+                    // SE JÁ EXISTE SALVO: Carrega e BLOQUEIA a edição
+                    const data = docSnap.data();
+                    setAdmParams({
+                        totalValue: data.totalValue || 0,
+                        minWage: data.minWage || 1412,
+                        employees: data.employees || {}
+                    });
+                    setIsLocked(true); 
+                } else {
+                    // SE NÃO EXISTE: Inicia zerado e LIBERA edição
+                    const initialEmployees = {};
+                    allUnits.forEach(u => initialEmployees[u] = 0);
+                    
+                    setAdmParams({
+                        totalValue: 0,
+                        minWage: 1412,
+                        employees: initialEmployees
+                    });
+                    setIsLocked(false);
+                }
+            } catch (error) {
+                console.error("Erro ao carregar parâmetros de rateio:", error);
+            }
+        };
+
+        loadSavedParams();
+        
+        // Inicializa Vendedores também
         if (selectedSegment === 'Noromix Concreteiras') {
-            // Vendedores
             setManualPercents(prev => {
                 const newState = { ...prev };
                 VENDEDORES_MAP.forEach(item => {
@@ -2473,18 +2545,29 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 });
                 return newState;
             });
-
-            // Adm params (preencher unidades com 0 funcionários se vazio)
-            const allUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
-            setAdmParams(prev => {
-                const newEmps = { ...prev.employees };
-                allUnits.forEach(u => {
-                    if (newEmps[u] === undefined) newEmps[u] = 0;
-                });
-                return { ...prev, employees: newEmps };
-            });
         }
-    }, [selectedSegment]);
+    }, [selectedSegment, filter.month, filter.year]); // Recarrega se mudar o mês/ano
+
+    // --- FUNÇÃO DE SALVAR ---
+    const handleSaveAdmParams = async () => {
+        setIsSaving(true);
+        const docId = `rateio_adm_${filter.year}_${filter.month}`;
+        const docRef = doc(db, 'artifacts', appId, 'rateio_adm_config', docId);
+
+        try {
+            await setDoc(docRef, {
+                ...admParams,
+                updatedAt: new Date().toISOString(),
+                user: 'system' 
+            });
+            setIsLocked(true); // Bloqueia após salvar
+        } catch (error) {
+            console.error("Erro ao salvar:", error);
+            alert("Erro ao salvar rateio.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     // --- HELPER DE FILTRO DE DATA ---
     const filterByDate = (txs) => {
@@ -2516,7 +2599,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             .filter(t => t.type === 'expense')
             .filter(t => codes.includes(parseInt(t.costCenter.split(' ')[0])));
 
-        // 1. Rateio Administrativo (Simples - Portos/Pedreiras)
+        // 1. Rateio Administrativo (Genérico)
         const totalAdm = sumCC([1087, 1089]);
         const itemsAdm = listItems([1087, 1089]);
         
@@ -2531,9 +2614,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         const totalVend5105 = sumCC([5105]);
         const totalComercial = sumCC([1104]);
 
-        // ---------------------------------------------------------
-        // A. Rateio Comercial Noromix (Produção)
-        // ---------------------------------------------------------
+        // A. Rateio Comercial Noromix
         let noromixComercialData = { units: [], totalProduction: 0, totalExpenses: 0, expenseItems: [] };
         if (selectedSegment === 'Noromix Concreteiras') {
             const targetUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
@@ -2557,9 +2638,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             noromixComercialData = { units: unitsCalculated, totalProduction: grandTotalProd, totalExpenses: totalExp, expenseItems: expenses1104 };
         }
 
-        // ---------------------------------------------------------
-        // B. Rateio Vendedores Noromix (Manual)
-        // ---------------------------------------------------------
+        // B. Rateio Vendedores Noromix
         let noromixVendedoresData = [];
         if (selectedSegment === 'Noromix Concreteiras') {
             const targetCCs = VENDEDORES_MAP.map(m => m.cc);
@@ -2578,28 +2657,31 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             noromixVendedoresData = Object.values(grouped).sort((a,b) => a.cc - b.cc);
         }
 
-        // ---------------------------------------------------------
-        // C. Rateio ADMINISTRATIVO Noromix (Complexo)
-        // ---------------------------------------------------------
+        // C. Rateio ADMINISTRATIVO Noromix
         let noromixAdmData = { table: [], totalSalariosPot: 0, totalDespesasPot: 0, grandTotalVolume: 0 };
         if (selectedSegment === 'Noromix Concreteiras') {
             const concreteUnits = BUSINESS_HIERARCHY["Noromix Concreteiras"];
-            const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0]; // Assume 1 fábrica
+            const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
             const allUnits = [...concreteUnits, pipeUnit];
 
-            // 1. Calcular Volumes
+            // 1. Calcular Volumes (CORREÇÃO DA COLUNA DE VOLUME)
             let volConcretoTotal = 0;
             let volGlobalTotal = 0;
             const unitVolumes = {};
 
             allUnits.forEach(u => {
-                const vol = periodTxs.filter(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === u).reduce((acc, t) => acc + t.value, 0);
+                // Filtra explicitamente por métrica de produção para a unidade
+                // Garante que a transação esteja no período (periodTxs já está filtrado)
+                const vol = periodTxs
+                    .filter(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === u)
+                    .reduce((acc, t) => acc + t.value, 0);
+                
                 unitVolumes[u] = vol;
                 volGlobalTotal += vol;
                 if (u !== pipeUnit) volConcretoTotal += vol;
             });
 
-            // 2. Cálculo 1: Salários Mínimos (Pot)
+            // 2. Cálculo 1: Salários Mínimos
             let totalSalariosCalc = 0;
             allUnits.forEach(u => {
                 const count = admParams.employees[u] || 0;
@@ -2611,8 +2693,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 totalSalariosCalc += (factor * admParams.minWage);
             });
 
-            // 3. Cálculo 2: Despesas Última Linha (Pot)
-            // (Total Definido - Total Salarios - 20k Fixos Tubo)
+            // 3. Cálculo 2: Despesas Última Linha
             const despesasPot = Math.max(0, admParams.totalValue - totalSalariosCalc - 20000);
 
             // 4. Montar Tabela Final
@@ -2622,7 +2703,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 const shortName = u.includes('-') ? u.split('-')[1].trim() : u;
 
                 // Rateio Folha ADM (Calc 3)
-                // (Total Salarios / Volume Global) * Volume Unidade
                 const rateioFolha = volGlobalTotal > 0 ? (totalSalariosCalc / volGlobalTotal) * vol : 0;
 
                 // Rateio Despesas ADM (Calc 2)
@@ -2630,7 +2710,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 if (isPipe) {
                     rateioDespesas = 20000; // Valor Fixo
                 } else {
-                    // (Volume Unidade / Volume Só Concreto) * Pot Despesas
                     rateioDespesas = volConcretoTotal > 0 ? (vol / volConcretoTotal) * despesasPot : 0;
                 }
 
@@ -2639,19 +2718,18 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                     fullName: u,
                     employees: admParams.employees[u] || 0,
                     volume: vol,
-                    rateioFolha,     // Calculo 3
-                    rateioDespesas,  // Calculo 2
+                    rateioFolha,     
+                    rateioDespesas,  
                     total: rateioFolha + rateioDespesas
                 };
             });
             
-            // Ordenar por Volume
             table.sort((a,b) => b.volume - a.volume);
 
             noromixAdmData = {
                 table,
                 totalSalariosPot: totalSalariosCalc,
-                totalDespesasPot: despesasPot + 20000, // +20k do fixo para visualização correta do total distribuído
+                totalDespesasPot: despesasPot + 20000,
                 grandTotalVolume: volGlobalTotal
             };
         }
@@ -2677,7 +2755,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         if (unit) {
             setAdmParams(prev => ({ ...prev, employees: { ...prev.employees, [unit]: parseInt(val) || 0 } }));
         } else {
-            setAdmParams(prev => ({ ...prev, [field]: parseFloat(val) || 0 }));
+            setAdmParams(prev => ({ ...prev, [field]: val }));
         }
     };
 
@@ -2696,39 +2774,64 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 return (
                     <div className="space-y-6 animate-in fade-in">
                         {/* 1. INPUTS DE PARÂMETROS */}
-                        <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 p-6 shadow-sm">
-                            <h4 className="font-bold text-lg mb-4 flex items-center gap-2 dark:text-white"><Settings size={20} className="text-slate-400"/> Parâmetros do Rateio (Mês Vigente)</h4>
+                        <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 p-6 shadow-sm relative">
+                            {/* Header do Card com Botões Salvar/Editar */}
+                            <div className="flex justify-between items-start mb-6">
+                                <h4 className="font-bold text-lg flex items-center gap-2 dark:text-white">
+                                    <Settings size={20} className="text-slate-400"/> 
+                                    Parâmetros do Rateio (Mês Vigente)
+                                </h4>
+                                <div className="flex gap-2">
+                                    {isLocked ? (
+                                        <button 
+                                            onClick={() => setIsLocked(false)}
+                                            className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm"
+                                        >
+                                            <Edit2 size={16}/> Editar Parâmetros
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={handleSaveAdmParams}
+                                            disabled={isSaving}
+                                            className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50"
+                                        >
+                                            {isSaving ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} 
+                                            Salvar Definições
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 {/* Coluna 1: Valores Globais */}
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Valor Total Rateio (R$)</label>
-                                        <input 
-                                            type="number" 
-                                            className="w-full border p-3 rounded-lg text-lg font-bold text-indigo-600 dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                                        <CurrencyInput 
                                             value={admParams.totalValue}
-                                            onChange={(e) => handleAdmParamChange('totalValue', e.target.value)}
+                                            onChange={(val) => handleAdmParamChange('totalValue', val)}
+                                            disabled={isLocked}
+                                            className={`w-full border p-3 rounded-lg text-lg font-bold text-indigo-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`}
                                         />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Salário Mínimo Base (R$)</label>
-                                        <input 
-                                            type="number" 
-                                            className="w-full border p-3 rounded-lg text-lg font-bold text-slate-600 dark:bg-slate-700 dark:text-white dark:border-slate-600"
+                                        <CurrencyInput 
                                             value={admParams.minWage}
-                                            onChange={(e) => handleAdmParamChange('minWage', e.target.value)}
+                                            onChange={(val) => handleAdmParamChange('minWage', val)}
+                                            disabled={isLocked}
+                                            className={`w-full border p-3 rounded-lg text-lg font-bold text-slate-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`}
                                         />
                                     </div>
                                     
                                     {/* Card de Resumo dos Potes */}
                                     <div className="mt-4 bg-slate-100 dark:bg-slate-900 p-4 rounded-lg space-y-2">
                                         <div className="flex justify-between text-sm">
-                                            <span>Rateio Folha Adm (Cálculo 1)</span>
+                                            <span>Pot Salários (Cálculo 1)</span>
                                             <span className="font-bold">{totalSalariosPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                         <div className="flex justify-between text-sm">
-                                            <span>Rateio Despesas Adm (Cálculo 2 + Fixo)</span>
+                                            <span>Pot Despesas (Cálculo 2 + Fixo)</span>
                                             <span className="font-bold">{totalDespesasPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                         <div className="border-t border-slate-300 pt-2 flex justify-between font-bold text-indigo-600">
@@ -2739,8 +2842,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                 </div>
 
                                 {/* Coluna 2: Funcionários por Unidade */}
-                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 max-h-80 overflow-y-auto border dark:border-slate-700">
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-3 sticky top-0 bg-slate-50 dark:bg-slate-900/50 py-2">Qtd. Funcionários (Cálculo 1)</label>
+                                <div className={`bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 max-h-80 overflow-y-auto border dark:border-slate-700 ${isLocked ? 'opacity-80' : ''}`}>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-3 sticky top-0 bg-slate-50 dark:bg-slate-900/50 py-2 z-10">Qtd. Funcionários (Cálculo 1)</label>
                                     <div className="space-y-2">
                                         {unitsList.map(u => {
                                             const shortName = u.includes('-') ? u.split('-')[1].trim() : u;
@@ -2749,7 +2852,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                                     <span className="dark:text-slate-300 truncate w-48" title={u}>{shortName}</span>
                                                     <input 
                                                         type="number" min="0" 
-                                                        className="w-20 p-1 text-center border rounded dark:bg-slate-700 dark:text-white"
+                                                        disabled={isLocked}
+                                                        className={`w-20 p-1 text-center border rounded dark:bg-slate-700 dark:text-white ${isLocked ? 'bg-slate-100' : ''}`}
                                                         value={admParams.employees[u] || 0}
                                                         onChange={(e) => handleAdmParamChange('employees', e.target.value, u)}
                                                     />
@@ -2802,7 +2906,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                                 </td>
                                             </tr>
                                         ))}
-                                        {table.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">Sem dados de volume.</td></tr>}
+                                        {table.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">Sem dados de volume. Certifique-se de lançar a Produção (metric/producao) para o período.</td></tr>}
                                         {/* Totalizador */}
                                         <tr className="bg-slate-900 text-white font-bold">
                                             <td colSpan={3} className="p-3 pl-6 text-right uppercase text-xs tracking-wider">Totais Calculados</td>
@@ -2924,7 +3028,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 );
             }
             
-            // Genérico (Mantido)
+            // Genérico
             const allUnits = [...BUSINESS_HIERARCHY['Portos de Areia'], ...BUSINESS_HIERARCHY['Pedreiras']];
             return (
                 <div className="space-y-6 animate-in fade-in">
