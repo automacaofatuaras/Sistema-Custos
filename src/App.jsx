@@ -1462,7 +1462,7 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
     );
 };
 
-cconst FechamentoComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit }) => {
+const FechamentoComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit }) => {
     // Estados para controle de expansão (Layout Padrão)
     const [expanded, setExpanded] = useState({
         'receitas': true,
