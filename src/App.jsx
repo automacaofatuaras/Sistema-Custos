@@ -2703,7 +2703,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 if (count > 0 && count <= 6) factor = 2;
                 else if (count > 6 && count <= 14) factor = 4;
                 else if (count >= 15) factor = 6;
-                
                 totalSalariosCalc += (factor * admParams.minWage);
             });
 
@@ -3014,9 +3013,10 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                                 <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
                                                     <td className="p-3"><div className="font-bold text-slate-700 dark:text-slate-200">{row.unitName}</div><div className="text-xs font-mono text-slate-400">CC {row.cc}</div></td>
                                                     <td className="p-3"><div className="font-mono text-xs opacity-70">{row.accountCode}</div><div className="font-medium">{row.accountDesc}</div></td>
-                                                    <td className="p-3 text-right font-medium">{row.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                                    <td className="p-3 text-right font-bold text-indigo-600 bg-indigo-50/30">{valConcreto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                                    <td className="p-3 text-right font-bold text-amber-600 bg-amber-50/30">{(row.originalValue - valConcreto).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                    {/* FORMATAÇÃO MOEDA APLICADA AQUI */}
+                                                    <td className="p-3 text-right font-medium">{row.originalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                                    <td className="p-3 text-right font-bold text-indigo-600 bg-indigo-50/30">{valConcreto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                                    <td className="p-3 text-right font-bold text-amber-600 bg-amber-50/30">{(row.originalValue - valConcreto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                                                 </tr>
                                             );
                                         })}
