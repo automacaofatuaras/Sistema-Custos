@@ -2442,7 +2442,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     
     // Estados para Rateio Vendedores (Manual)
     const [manualPercents, setManualPercents] = useState({});
-    // NOVOS ESTADOS PARA BLOQUEIO DE VENDEDORES
     const [isLockedVend, setIsLockedVend] = useState(false);
     const [isSavingVend, setIsSavingVend] = useState(false);
 
@@ -2475,7 +2474,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         'Noromix Concreteiras': [
             { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo (Salários)' }, 
             { id: 'COMERCIAL', label: 'Rateio Comercial (Produção)' },
-            { id: 'VENDEDORES', label: 'Rateio Vendedores (CC Específico)' }
+            { id: 'TECNICO', label: 'Rateio Dep. Técnico (CC 1075)' }, // NOVO
+            { id: 'VENDEDORES', label: 'Rateio Vendedores (CC Específico)' },
+            { id: 'NOROMIX_1046', label: 'Rateio Noromix (CC 1046)' } // NOVO
         ]
     };
 
@@ -2619,34 +2620,93 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         const totalVend5105 = sumCC([5105]);
         const totalComercial = sumCC([1104]);
 
-        // A. Rateio Comercial Noromix
+        // =========================================================
+        // A. Rateio Comercial Noromix (CC 1104)
+        // =========================================================
         let noromixComercialData = { units: [], totalProduction: 0, totalExpenses: 0, expenseItems: [] };
+        // =========================================================
+        // D. Rateio Departamento Técnico (CC 1075) - NOVO
+        // =========================================================
+        let noromixTecnicoData = { units: [], totalProduction: 0, totalExpenses: 0, expenseItems: [] };
+        
         if (selectedSegment === 'Noromix Concreteiras') {
             const targetUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
-            const expenses1104 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1104'));
-            const totalExp = expenses1104.reduce((acc, t) => acc + t.value, 0);
             
+            // --- CÁLCULO COMERCIAL (1104) ---
+            const expenses1104 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1104'));
+            const totalExp1104 = expenses1104.reduce((acc, t) => acc + t.value, 0);
+            
+            // --- CÁLCULO TÉCNICO (1075) ---
+            const expenses1075 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1075'));
+            const totalExp1075 = expenses1075.reduce((acc, t) => acc + t.value, 0);
+
+            // Calcular Produção para ambos (Mesma base)
             let grandTotalProd = 0;
-            const unitsCalculated = targetUnits.map(unitName => {
+            const productionMap = {}; // Cache de produção por unidade
+
+            targetUnits.forEach(u => {
+                const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
                 const prod = periodTxs.filter(t => {
                     if(t.type !== 'metric' || t.metricType !== 'producao') return false;
                     const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                    const targetUnit = unitName.includes(':') ? unitName.split(':')[1].trim() : unitName;
-                    return txUnit === targetUnit;
+                    return txUnit === targetName;
                 }).reduce((acc, t) => acc + t.value, 0);
-
+                
+                productionMap[u] = prod;
                 grandTotalProd += prod;
-                return { name: unitName, production: prod, percent: 0, valueToPay: 0 };
             });
 
-            unitsCalculated.forEach(u => {
-                if (grandTotalProd > 0) {
-                    u.percent = (u.production / grandTotalProd);
-                    u.valueToPay = totalExp * u.percent;
-                }
-            });
-            unitsCalculated.sort((a,b) => b.production - a.production);
-            noromixComercialData = { units: unitsCalculated, totalProduction: grandTotalProd, totalExpenses: totalExp, expenseItems: expenses1104 };
+            // Gerar objetos finais
+            const buildRateioProducao = (totalExpense) => {
+                const result = targetUnits.map(unitName => {
+                    const prod = productionMap[unitName] || 0;
+                    let percent = 0;
+                    let valueToPay = 0;
+                    if (grandTotalProd > 0) {
+                        percent = prod / grandTotalProd;
+                        valueToPay = totalExpense * percent;
+                    }
+                    return { name: unitName, production: prod, percent, valueToPay };
+                });
+                return result.sort((a,b) => b.production - a.production);
+            };
+
+            noromixComercialData = { 
+                units: buildRateioProducao(totalExp1104), 
+                totalProduction: grandTotalProd, 
+                totalExpenses: totalExp1104, 
+                expenseItems: expenses1104 
+            };
+
+            noromixTecnicoData = { 
+                units: buildRateioProducao(totalExp1075), 
+                totalProduction: grandTotalProd, 
+                totalExpenses: totalExp1075, 
+                expenseItems: expenses1075 
+            };
+        }
+
+        // =========================================================
+        // E. Rateio Noromix (CC 1046) - NOVO (Divisão por 10)
+        // =========================================================
+        let noromix1046Data = { units: [], totalExpenses: 0, expenseItems: [] };
+        if (selectedSegment === 'Noromix Concreteiras') {
+            const targetUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
+            const expenses1046 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1046'));
+            const totalExp1046 = expenses1046.reduce((acc, t) => acc + t.value, 0);
+            
+            const shareValue = targetUnits.length > 0 ? totalExp1046 / targetUnits.length : 0;
+
+            const unitsCalculated = targetUnits.map(unitName => ({
+                name: unitName,
+                valueToPay: shareValue
+            })).sort((a,b) => a.name.localeCompare(b.name));
+
+            noromix1046Data = {
+                units: unitsCalculated,
+                totalExpenses: totalExp1046,
+                expenseItems: expenses1046
+            };
         }
 
         // B. Rateio Vendedores Noromix
@@ -2675,7 +2735,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
             const allUnits = [...concreteUnits, pipeUnit];
 
-            // 1. Calcular Volumes
             let volConcretoTotal = 0;
             let volGlobalTotal = 0;
             const unitVolumes = {};
@@ -2695,7 +2754,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 if (u !== pipeUnit) volConcretoTotal += vol;
             });
 
-            // 2. Cálculo 1: Salários Mínimos
             let totalSalariosCalc = 0;
             allUnits.forEach(u => {
                 const count = admParams.employees[u] || 0;
@@ -2706,10 +2764,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 totalSalariosCalc += (factor * admParams.minWage);
             });
 
-            // 3. Cálculo 2: Despesas Última Linha
             const despesasPot = Math.max(0, admParams.totalValue - totalSalariosCalc - 20000);
 
-            // 4. Montar Tabela Final
             const table = allUnits.map(u => {
                 const vol = unitVolumes[u] || 0;
                 const isPipe = u === pipeUnit;
@@ -2743,7 +2799,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
 
         return { 
             totalAdm, itemsAdm, totalProd, itemsProd, totalVend2105, totalVend3105, totalVend5105, totalComercial, activeUnits,
-            noromixComercialData, noromixVendedoresData, noromixAdmData
+            noromixComercialData, noromixTecnicoData, noromixVendedoresData, noromixAdmData, noromix1046Data
         };
     }, [transactions, filter, selectedSegment, admParams]);
 
@@ -2768,358 +2824,154 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
 
         // --- TELA ADMINISTRATIVO ---
         if (activeRateioType === 'ADMINISTRATIVO') {
-            
-            // LÓGICA ESPECIAL NOROMIX (COMPLEXA)
             if (selectedSegment === 'Noromix Concreteiras') {
                 const { table, totalSalariosPot, totalDespesasPot, grandTotalVolume } = calculatedData.noromixAdmData;
                 const unitsList = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
 
                 return (
                     <div className="space-y-6 animate-in fade-in">
-                        {/* 1. INPUTS DE PARÂMETROS */}
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 p-6 shadow-sm relative">
-                            {/* Header do Card com Botões Salvar/Editar */}
                             <div className="flex justify-between items-start mb-6">
-                                <h4 className="font-bold text-lg flex items-center gap-2 dark:text-white">
-                                    <Settings size={20} className="text-slate-400"/> 
-                                    Parâmetros do Rateio (Mês Vigente)
-                                </h4>
+                                <h4 className="font-bold text-lg flex items-center gap-2 dark:text-white"><Settings size={20} className="text-slate-400"/> Parâmetros do Rateio (Mês Vigente)</h4>
                                 <div className="flex gap-2">
-                                    {isLocked ? (
-                                        <button onClick={() => setIsLocked(false)} className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm">
-                                            <Edit2 size={16}/> Editar Parâmetros
-                                        </button>
-                                    ) : (
-                                        <button onClick={handleSaveAdmParams} disabled={isSaving} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50">
-                                            {isSaving ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} Salvar Definições
-                                        </button>
-                                    )}
+                                    {isLocked ? ( <button onClick={() => setIsLocked(false)} className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm"><Edit2 size={16}/> Editar Parâmetros</button> ) : ( <button onClick={handleSaveAdmParams} disabled={isSaving} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50">{isSaving ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} Salvar Definições</button> )}
                                 </div>
                             </div>
-                            
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Valor Total Rateio (R$)</label>
-                                        <CurrencyInput value={admParams.totalValue} onChange={(val) => handleAdmParamChange('totalValue', val)} disabled={isLocked} className={`w-full border p-3 rounded-lg text-lg font-bold text-indigo-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Salário Mínimo Base (R$)</label>
-                                        <CurrencyInput value={admParams.minWage} onChange={(val) => handleAdmParamChange('minWage', val)} disabled={isLocked} className={`w-full border p-3 rounded-lg text-lg font-bold text-slate-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`} />
-                                    </div>
-                                    <div className="mt-4 bg-slate-100 dark:bg-slate-900 p-4 rounded-lg space-y-2">
-                                        <div className="flex justify-between text-sm"><span>Rateio Folha Adm (Cálculo 1)</span><span className="font-bold">{totalSalariosPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
-                                        <div className="flex justify-between text-sm"><span>Rateio Despesas Adm (Cálculo 2 + Fixo)</span><span className="font-bold">{totalDespesasPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
-                                        <div className="border-t border-slate-300 pt-2 flex justify-between font-bold text-indigo-600"><span>Total Validado</span><span>{(totalSalariosPot + totalDespesasPot).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
-                                    </div>
+                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Valor Total Rateio (R$)</label><CurrencyInput value={admParams.totalValue} onChange={(val) => handleAdmParamChange('totalValue', val)} disabled={isLocked} className={`w-full border p-3 rounded-lg text-lg font-bold text-indigo-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`} /></div>
+                                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Salário Mínimo Base (R$)</label><CurrencyInput value={admParams.minWage} onChange={(val) => handleAdmParamChange('minWage', val)} disabled={isLocked} className={`w-full border p-3 rounded-lg text-lg font-bold text-slate-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`} /></div>
+                                    <div className="mt-4 bg-slate-100 dark:bg-slate-900 p-4 rounded-lg space-y-2"><div className="flex justify-between text-sm"><span>Rateio Folha Adm (Cálculo 1)</span><span className="font-bold">{totalSalariosPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div><div className="flex justify-between text-sm"><span>Rateio Despesas Adm (Cálculo 2 + Fixo)</span><span className="font-bold">{totalDespesasPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div><div className="border-t border-slate-300 pt-2 flex justify-between font-bold text-indigo-600"><span>Total Validado</span><span>{(totalSalariosPot + totalDespesasPot).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div></div>
                                 </div>
                                 <div className={`bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 max-h-80 overflow-y-auto border dark:border-slate-700 ${isLocked ? 'opacity-80' : ''}`}>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-3 sticky top-0 bg-slate-50 dark:bg-slate-900/50 py-2 z-10">Qtd. Funcionários (Cálculo 1)</label>
-                                    <div className="space-y-2">
-                                        {unitsList.map(u => (
-                                            <div key={u} className="flex justify-between items-center text-sm">
-                                                <span className="dark:text-slate-300 truncate w-48" title={u}>{u.includes('-') ? u.split('-')[1].trim() : u}</span>
-                                                <input type="number" min="0" disabled={isLocked} className={`w-20 p-1 text-center border rounded dark:bg-slate-700 dark:text-white ${isLocked ? 'bg-slate-100' : ''}`} value={admParams.employees[u] || 0} onChange={(e) => handleAdmParamChange('employees', e.target.value, u)} />
-                                            </div>
-                                        ))}
-                                    </div>
+                                    <div className="space-y-2">{unitsList.map(u => ( <div key={u} className="flex justify-between items-center text-sm"><span className="dark:text-slate-300 truncate w-48" title={u}>{u.includes('-') ? u.split('-')[1].trim() : u}</span><input type="number" min="0" disabled={isLocked} className={`w-20 p-1 text-center border rounded dark:bg-slate-700 dark:text-white ${isLocked ? 'bg-slate-100' : ''}`} value={admParams.employees[u] || 0} onChange={(e) => handleAdmParamChange('employees', e.target.value, u)} /></div> ))}</div>
                                 </div>
                             </div>
                         </div>
-
-                        {/* 2. TABELA FINAL DE RATEIO */}
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
-                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                                <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Calculator size={18} className="text-emerald-500"/>Resultado do Rateio Administrativo</h4>
-                                <span className="text-xs bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded text-slate-600 dark:text-slate-300">Vol. Total: {grandTotalVolume.toLocaleString()} m³</span>
-                            </div>
+                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center"><h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Calculator size={18} className="text-emerald-500"/>Resultado do Rateio Administrativo</h4><span className="text-xs bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded text-slate-600 dark:text-slate-300">Vol. Total: {grandTotalVolume.toLocaleString()} m³</span></div>
                             <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase">
-                                        <tr><th className="p-3 pl-6">Unidade</th><th className="p-3 text-center">Func.</th><th className="p-3 text-right">Volume</th><th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Rateio Folha (C3)</th><th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Rateio Despesas (C2)</th><th className="p-3 text-right font-bold bg-slate-100 dark:bg-slate-800">TOTAL FINAL</th></tr>
-                                    </thead>
-                                    <tbody className="divide-y dark:divide-slate-700">
-                                        {table.map((row, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
-                                                <td className="p-3 pl-6 font-medium">{row.name} {row.fullName.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}</td>
-                                                <td className="p-3 text-center text-xs">{row.employees}</td>
-                                                <td className="p-3 text-right font-mono text-xs opacity-70">{row.volume.toLocaleString()}</td>
-                                                <td className="p-3 text-right font-medium text-indigo-700 dark:text-indigo-400 bg-indigo-50/30">{row.rateioFolha.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                                <td className="p-3 text-right font-medium text-amber-700 dark:text-amber-400 bg-amber-50/30">{row.rateioDespesas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                                <td className="p-3 text-right font-bold bg-slate-100 dark:bg-slate-800">{row.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                            </tr>
-                                        ))}
+                                <table className="w-full text-sm text-left"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase"><tr><th className="p-3 pl-6">Unidade</th><th className="p-3 text-center">Func.</th><th className="p-3 text-right">Volume</th><th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Rateio Folha (C3)</th><th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Rateio Despesas (C2)</th><th className="p-3 text-right font-bold bg-slate-100 dark:bg-slate-800">TOTAL FINAL</th></tr></thead><tbody className="divide-y dark:divide-slate-700">
+                                        {table.map((row, idx) => ( <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300"><td className="p-3 pl-6 font-medium">{row.name} {row.fullName.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}</td><td className="p-3 text-center text-xs">{row.employees}</td><td className="p-3 text-right font-mono text-xs opacity-70">{row.volume.toLocaleString()}</td><td className="p-3 text-right font-medium text-indigo-700 dark:text-indigo-400 bg-indigo-50/30">{row.rateioFolha.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td className="p-3 text-right font-medium text-amber-700 dark:text-amber-400 bg-amber-50/30">{row.rateioDespesas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td><td className="p-3 text-right font-bold bg-slate-100 dark:bg-slate-800">{row.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr> ))}
                                         <tr className="bg-slate-900 text-white font-bold"><td colSpan={3} className="p-3 pl-6 text-right uppercase text-xs tracking-wider">Totais Calculados</td><td className="p-3 text-right">{table.reduce((a,b)=>a+b.rateioFolha,0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td><td className="p-3 text-right">{table.reduce((a,b)=>a+b.rateioDespesas,0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td><td className="p-3 text-right text-emerald-400">{table.reduce((a,b)=>a+b.total,0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td></tr>
-                                    </tbody>
-                                </table>
+                                    </tbody></table>
                             </div>
                         </div>
                     </div>
                 );
             }
-
             // Lógica Padrão (Portos/Pedreiras)
             const shareValue = calculatedData.totalAdm / 8;
             const unitShare = selectedSegment === 'Portos de Areia' ? shareValue / 2 : shareValue; 
             const unitsCount = selectedSegment === 'Portos de Areia' ? 2 : 6;
-            return (
-                <div className="space-y-6 animate-in fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="bg-indigo-600 text-white p-6 rounded-xl shadow-lg">
-                            <p className="text-indigo-200 text-xs font-bold uppercase mb-1">Total Despesas (CC 1087/1089)</p>
-                            <h3 className="text-2xl font-bold">{calculatedData.totalAdm.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                        </div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
-                            <p className="text-slate-500 text-xs font-bold uppercase mb-1">Valor da Cota (1/8)</p>
-                            <h3 className="text-2xl font-bold dark:text-white">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                        </div>
-                        <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
-                            <p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade ({unitsCount}x)</p>
-                            <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{unitShare.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                        </div>
-                    </div>
-                </div>
-            );
+            return ( <div className="space-y-6 animate-in fade-in"><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div className="bg-indigo-600 text-white p-6 rounded-xl shadow-lg"><p className="text-indigo-200 text-xs font-bold uppercase mb-1">Total Despesas (CC 1087/1089)</p><h3 className="text-2xl font-bold">{calculatedData.totalAdm.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm"><p className="text-slate-500 text-xs font-bold uppercase mb-1">Valor da Cota (1/8)</p><h3 className="text-2xl font-bold dark:text-white">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div><div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm"><p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade ({unitsCount}x)</p><h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{unitShare.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div></div></div> );
         }
 
-        // --- TELA ENCARREGADO PRODUÇÃO (Mantida) ---
+        // --- TELA ENCARREGADO PRODUÇÃO ---
         if (activeRateioType === 'PRODUCAO') {
             const ccOrigem = selectedSegment === 'Portos de Areia' ? '1042' : '1043';
             const divisor = selectedSegment === 'Portos de Areia' ? 2 : 6; 
             const unitShare = calculatedData.totalProd / divisor;
-            return (
-                <div className="space-y-6 animate-in fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-blue-600 text-white p-6 rounded-xl shadow-lg">
-                            <p className="text-blue-200 text-xs font-bold uppercase mb-1">Total Despesas (CC {ccOrigem})</p>
-                            <h3 className="text-2xl font-bold">{calculatedData.totalProd.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                        </div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
-                            <p className="text-slate-500 text-xs font-bold uppercase mb-1">Alocado por Unidade ({divisor}x)</p>
-                            <h3 className="text-2xl font-bold dark:text-white">{unitShare.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                        </div>
-                    </div>
-                </div>
-            );
+            return ( <div className="space-y-6 animate-in fade-in"><div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="bg-blue-600 text-white p-6 rounded-xl shadow-lg"><p className="text-blue-200 text-xs font-bold uppercase mb-1">Total Despesas (CC {ccOrigem})</p><h3 className="text-2xl font-bold">{calculatedData.totalProd.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm"><p className="text-slate-500 text-xs font-bold uppercase mb-1">Alocado por Unidade ({divisor}x)</p><h3 className="text-2xl font-bold dark:text-white">{unitShare.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div></div></div> );
         }
 
-        // --- TELA VENDEDORES (ATUALIZADA COM COLUNA DE TOTAL E BOTÕES) ---
+        // --- TELA VENDEDORES ---
         if (activeRateioType === 'VENDEDORES') {
             if (selectedSegment === 'Noromix Concreteiras') {
-                
-                // CÁLCULO DINÂMICO DOS TOTAIS DO DEMONSTRATIVO PARA A NOVA LINHA DE TOPO
-                const totalDemonstrativo = calculatedData.noromixVendedoresData.reduce((acc, row) => {
-                    const percConc = manualPercents[row.cc] !== undefined ? manualPercents[row.cc] : 100;
-                    const valConc = row.originalValue * (percConc / 100);
-                    return {
-                        orig: acc.orig + row.originalValue,
-                        conc: acc.conc + valConc,
-                        tubo: acc.tubo + (row.originalValue - valConc)
-                    };
-                }, { orig: 0, conc: 0, tubo: 0 });
-
+                const totalDemonstrativo = calculatedData.noromixVendedoresData.reduce((acc, row) => { const percConc = manualPercents[row.cc] !== undefined ? manualPercents[row.cc] : 100; const valConc = row.originalValue * (percConc / 100); return { orig: acc.orig + row.originalValue, conc: acc.conc + valConc, tubo: acc.tubo + (row.originalValue - valConc) }; }, { orig: 0, conc: 0, tubo: 0 });
                 return (
                     <div className="space-y-6 animate-in fade-in">
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
-                            {/* HEADER COM BOTÕES */}
-                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                                <div>
-                                    <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Settings size={18} className="text-slate-500"/>Configuração de Rateio por Centro de Custo</h4>
-                                    <p className="text-xs text-slate-500 mt-1">Defina a % que fica na Concreteira. O restante irá automaticamente para a Fábrica de Tubos.</p>
-                                </div>
-                                <div className="flex gap-2">
-                                    {isLockedVend ? (
-                                        <button onClick={() => setIsLockedVend(false)} className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm">
-                                            <Edit2 size={16}/> Editar
-                                        </button>
-                                    ) : (
-                                        <button onClick={handleSaveVendedores} disabled={isSavingVend} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50">
-                                            {isSavingVend ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} Salvar
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase">
-                                        <tr>
-                                            <th className="p-3">CC</th>
-                                            <th className="p-3">Unidade Padrão (Concreto)</th>
-                                            {/* NOVA COLUNA: VALOR TOTAL */}
-                                            <th className="p-3 text-right bg-slate-100 dark:bg-slate-800 text-slate-700">Valor Total (R$)</th>
-                                            <th className="p-3 w-40 text-center bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700">% Concreto</th>
-                                            <th className="p-3 w-40 text-center bg-amber-50 dark:bg-amber-900/20 text-amber-700">% Tubos</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y dark:divide-slate-700">
-                                        {VENDEDORES_MAP.map(mapItem => {
-                                            const percConc = manualPercents[mapItem.cc] !== undefined ? manualPercents[mapItem.cc] : 100;
-                                            
-                                            // Calcula o total do CC específico para exibir na coluna nova
-                                            const totalCC = calculatedData.noromixVendedoresData
-                                                .filter(row => row.cc === mapItem.cc)
-                                                .reduce((acc, row) => acc + row.originalValue, 0);
-
-                                            return (
-                                                <tr key={mapItem.cc} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                                    <td className="p-3 font-mono font-bold dark:text-slate-300">{mapItem.cc}</td>
-                                                    <td className="p-3 dark:text-slate-300">{mapItem.unit.includes('-') ? mapItem.unit.split('-')[1].trim() : mapItem.unit}</td>
-                                                    
-                                                    {/* NOVA CÉLULA: VALOR TOTAL */}
-                                                    <td className="p-3 text-right font-bold text-slate-700 dark:text-slate-200 bg-slate-50/50">
-                                                        {totalCC.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                                                    </td>
-
-                                                    <td className="p-3 text-center bg-indigo-50/30">
-                                                        <div className="flex items-center justify-center gap-1">
-                                                            <input 
-                                                                type="number" min="0" max="100" 
-                                                                disabled={isLockedVend}
-                                                                value={percConc} 
-                                                                onChange={(e) => handlePercChange(mapItem.cc, null, e.target.value)} 
-                                                                className={`w-16 text-center border rounded p-1 dark:bg-slate-700 dark:text-white dark:border-slate-600 font-bold text-indigo-700 ${isLockedVend ? 'bg-slate-100' : ''}`}
-                                                            />
-                                                            <span className="text-indigo-400">%</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-3 text-center bg-amber-50/30"><span className="font-bold text-amber-700 dark:text-amber-500">{(100 - percConc).toFixed(0)}%</span></td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center"><div><h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Settings size={18} className="text-slate-500"/>Configuração de Rateio por Centro de Custo</h4><p className="text-xs text-slate-500 mt-1">Defina a % que fica na Concreteira. O restante irá automaticamente para a Fábrica de Tubos.</p></div><div className="flex gap-2">{isLockedVend ? ( <button onClick={() => setIsLockedVend(false)} className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm"><Edit2 size={16}/> Editar</button> ) : ( <button onClick={handleSaveVendedores} disabled={isSavingVend} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50">{isSavingVend ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} Salvar</button> )}</div></div>
+                            <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase"><tr><th className="p-3">CC</th><th className="p-3">Unidade Padrão (Concreto)</th><th className="p-3 text-right bg-slate-100 dark:bg-slate-800 text-slate-700">Valor Total (R$)</th><th className="p-3 w-40 text-center bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700">% Concreto</th><th className="p-3 w-40 text-center bg-amber-50 dark:bg-amber-900/20 text-amber-700">% Tubos</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{VENDEDORES_MAP.map(mapItem => { const percConc = manualPercents[mapItem.cc] !== undefined ? manualPercents[mapItem.cc] : 100; const totalCC = calculatedData.noromixVendedoresData.filter(row => row.cc === mapItem.cc).reduce((acc, row) => acc + row.originalValue, 0); return ( <tr key={mapItem.cc} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-3 font-mono font-bold dark:text-slate-300">{mapItem.cc}</td><td className="p-3 dark:text-slate-300">{mapItem.unit.includes('-') ? mapItem.unit.split('-')[1].trim() : mapItem.unit}</td><td className="p-3 text-right font-bold text-slate-700 dark:text-slate-200 bg-slate-50/50">{totalCC.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td><td className="p-3 text-center bg-indigo-50/30"><div className="flex items-center justify-center gap-1"><input type="number" min="0" max="100" disabled={isLockedVend} value={percConc} onChange={(e) => handlePercChange(mapItem.cc, null, e.target.value)} className={`w-16 text-center border rounded p-1 dark:bg-slate-700 dark:text-white dark:border-slate-600 font-bold text-indigo-700 ${isLockedVend ? 'bg-slate-100' : ''}`} /><span className="text-indigo-400">%</span></div></td><td className="p-3 text-center bg-amber-50/30"><span className="font-bold text-amber-700 dark:text-amber-500">{(100 - percConc).toFixed(0)}%</span></td></tr> ); })}</tbody></table></div>
                         </div>
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
                             <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700"><h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><FileText size={18} className="text-slate-500"/>Demonstrativo de Lançamentos (Aberto por Classe)</h4></div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase">
-                                        <tr><th className="p-3">CC Origem / Unidade</th><th className="p-3">Classe de Despesa</th><th className="p-3 text-right">Valor Original</th><th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Concreto</th><th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Tubos</th></tr>
-                                    </thead>
-                                    <tbody className="divide-y dark:divide-slate-700">
-                                        {/* NOVA LINHA DE TOTAL NO TOPO */}
-                                        <tr className="bg-slate-200 dark:bg-slate-800 font-bold border-b-2 border-slate-300 dark:border-slate-600">
-                                            <td colSpan={2} className="p-3 pl-4 text-slate-800 dark:text-white">TOTAL GERAL</td>
-                                            <td className="p-3 text-right text-slate-900 dark:text-white">{totalDemonstrativo.orig.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
-                                            <td className="p-3 text-right text-indigo-700 dark:text-indigo-400 bg-indigo-100/50">{totalDemonstrativo.conc.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
-                                            <td className="p-3 text-right text-amber-700 dark:text-amber-400 bg-amber-100/50">{totalDemonstrativo.tubo.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
-                                        </tr>
-
-                                        {calculatedData.noromixVendedoresData.map((row, idx) => {
-                                            const percConc = manualPercents[row.cc] !== undefined ? manualPercents[row.cc] : 100;
-                                            const valConcreto = row.originalValue * (percConc / 100);
-                                            return (
-                                                <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
-                                                    <td className="p-3"><div className="font-bold text-slate-700 dark:text-slate-200">{row.unitName}</div><div className="text-xs font-mono text-slate-400">CC {row.cc}</div></td>
-                                                    <td className="p-3"><div className="font-mono text-xs opacity-70">{row.accountCode}</div><div className="font-medium">{row.accountDesc}</div></td>
-                                                    {/* FORMATAÇÃO MOEDA APLICADA AQUI */}
-                                                    <td className="p-3 text-right font-medium">{row.originalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                                    <td className="p-3 text-right font-bold text-indigo-600 bg-indigo-50/30">{valConcreto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                                    <td className="p-3 text-right font-bold text-amber-600 bg-amber-50/30">{(row.originalValue - valConcreto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                                </tr>
-                                            );
-                                        })}
-                                        {calculatedData.noromixVendedoresData.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">Nenhum lançamento encontrado nos CCs de vendas selecionados.</td></tr>}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase"><tr><th className="p-3">CC Origem / Unidade</th><th className="p-3">Classe de Despesa</th><th className="p-3 text-right">Valor Original</th><th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Concreto</th><th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Tubos</th></tr></thead><tbody className="divide-y dark:divide-slate-700">
+                                    <tr className="bg-slate-200 dark:bg-slate-800 font-bold border-b-2 border-slate-300 dark:border-slate-600"><td colSpan={2} className="p-3 pl-4 text-slate-800 dark:text-white">TOTAL GERAL</td><td className="p-3 text-right text-slate-900 dark:text-white">{totalDemonstrativo.orig.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td><td className="p-3 text-right text-indigo-700 dark:text-indigo-400 bg-indigo-100/50">{totalDemonstrativo.conc.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td><td className="p-3 text-right text-amber-700 dark:text-amber-400 bg-amber-100/50">{totalDemonstrativo.tubo.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>
+                                    {calculatedData.noromixVendedoresData.map((row, idx) => { const percConc = manualPercents[row.cc] !== undefined ? manualPercents[row.cc] : 100; const valConcreto = row.originalValue * (percConc / 100); return ( <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300"><td className="p-3"><div className="font-bold text-slate-700 dark:text-slate-200">{row.unitName}</div><div className="text-xs font-mono text-slate-400">CC {row.cc}</div></td><td className="p-3"><div className="font-mono text-xs opacity-70">{row.accountCode}</div><div className="font-medium">{row.accountDesc}</div></td><td className="p-3 text-right font-medium">{row.originalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td className="p-3 text-right font-bold text-indigo-600 bg-indigo-50/30">{valConcreto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td className="p-3 text-right font-bold text-amber-600 bg-amber-50/30">{(row.originalValue - valConcreto).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr> ); })}
+                                </tbody></table></div>
                         </div>
                     </div>
                 );
             }
-            
             // Genérico
             const allUnits = [...BUSINESS_HIERARCHY['Portos de Areia'], ...BUSINESS_HIERARCHY['Pedreiras']];
-            return (
-                <div className="space-y-6 animate-in fade-in">
-                    <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 mb-4 flex gap-4 text-sm">
-                        <div className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded">Total CC 2105: <strong>{calculatedData.totalVend2105.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</strong></div>
-                        <div className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded">Total CC 3105: <strong>{calculatedData.totalVend3105.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</strong></div>
-                        <div className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded">Total CC 5105: <strong>{calculatedData.totalVend5105.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</strong></div>
-                    </div>
-                    <div className="overflow-x-auto bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300">
-                                <tr><th className="p-3">Unidade</th><th className="p-3 w-32">% CC 2105</th><th className="p-3 w-32">% CC 3105</th><th className="p-3 w-32">% CC 5105</th><th className="p-3 text-right bg-slate-200 dark:bg-slate-800">Total Alocado (R$)</th></tr>
-                            </thead>
-                            <tbody className="divide-y dark:divide-slate-700">
-                                {allUnits.sort().map(unit => {
-                                    const p2105 = manualPercents[unit]?.['2105'] || 0;
-                                    const p3105 = manualPercents[unit]?.['3105'] || 0;
-                                    const p5105 = manualPercents[unit]?.['5105'] || 0;
-                                    const totalAlocado = (calculatedData.totalVend2105 * (p2105/100)) + (calculatedData.totalVend3105 * (p3105/100)) + (calculatedData.totalVend5105 * (p5105/100));
-                                    return (
-                                        <tr key={unit} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
-                                            <td className="p-3 font-medium">{unit}</td>
-                                            <td className="p-3"><div className="flex items-center"><input type="number" className="w-16 p-1 border rounded dark:bg-slate-700" value={p2105} onChange={e => handlePercChange(unit, '2105', e.target.value)} /> %</div></td>
-                                            <td className="p-3"><div className="flex items-center"><input type="number" className="w-16 p-1 border rounded dark:bg-slate-700" value={p3105} onChange={e => handlePercChange(unit, '3105', e.target.value)} /> %</div></td>
-                                            <td className="p-3"><div className="flex items-center"><input type="number" className="w-16 p-1 border rounded dark:bg-slate-700" value={p5105} onChange={e => handlePercChange(unit, '5105', e.target.value)} /> %</div></td>
-                                            <td className="p-3 text-right font-bold text-indigo-600 bg-slate-50 dark:bg-slate-800/50">{totalAlocado.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            );
+            return ( <div className="space-y-6 animate-in fade-in"><div className="bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 mb-4 flex gap-4 text-sm"><div className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded">Total CC 2105: <strong>{calculatedData.totalVend2105.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</strong></div><div className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded">Total CC 3105: <strong>{calculatedData.totalVend3105.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</strong></div><div className="px-3 py-2 bg-slate-100 dark:bg-slate-700 rounded">Total CC 5105: <strong>{calculatedData.totalVend5105.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</strong></div></div><div className="overflow-x-auto bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700"><table className="w-full text-sm text-left"><thead className="bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300"><tr><th className="p-3">Unidade</th><th className="p-3 w-32">% CC 2105</th><th className="p-3 w-32">% CC 3105</th><th className="p-3 w-32">% CC 5105</th><th className="p-3 text-right bg-slate-200 dark:bg-slate-800">Total Alocado (R$)</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{allUnits.sort().map(unit => { const p2105 = manualPercents[unit]?.['2105'] || 0; const p3105 = manualPercents[unit]?.['3105'] || 0; const p5105 = manualPercents[unit]?.['5105'] || 0; const totalAlocado = (calculatedData.totalVend2105 * (p2105/100)) + (calculatedData.totalVend3105 * (p3105/100)) + (calculatedData.totalVend5105 * (p5105/100)); return ( <tr key={unit} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300"><td className="p-3 font-medium">{unit}</td><td className="p-3"><div className="flex items-center"><input type="number" className="w-16 p-1 border rounded dark:bg-slate-700" value={p2105} onChange={e => handlePercChange(unit, '2105', e.target.value)} /> %</div></td><td className="p-3"><div className="flex items-center"><input type="number" className="w-16 p-1 border rounded dark:bg-slate-700" value={p3105} onChange={e => handlePercChange(unit, '3105', e.target.value)} /> %</div></td><td className="p-3"><div className="flex items-center"><input type="number" className="w-16 p-1 border rounded dark:bg-slate-700" value={p5105} onChange={e => handlePercChange(unit, '5105', e.target.value)} /> %</div></td><td className="p-3 text-right font-bold text-indigo-600 bg-slate-50 dark:bg-slate-800/50">{totalAlocado.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr> ); })}</tbody></table></div></div> );
         }
 
-        // --- TELA COMERCIAL (Mantida) ---
-        if (activeRateioType === 'COMERCIAL') {
+        // --- TELA COMERCIAL & TÉCNICO (Reutilizam Lógica) ---
+        if (activeRateioType === 'COMERCIAL' || activeRateioType === 'TECNICO') {
             if (selectedSegment === 'Noromix Concreteiras') {
-                const { units, totalProduction, totalExpenses, expenseItems } = calculatedData.noromixComercialData;
+                const data = activeRateioType === 'COMERCIAL' ? calculatedData.noromixComercialData : calculatedData.noromixTecnicoData;
+                const { units, totalProduction, totalExpenses, expenseItems } = data;
+                const ccLabel = activeRateioType === 'COMERCIAL' ? '1104' : '1075';
+                const colorTheme = activeRateioType === 'COMERCIAL' ? 'rose' : 'cyan';
+
                 return (
                     <div className="space-y-6 animate-in fade-in">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-rose-500 shadow-sm"><p className="text-xs font-bold text-slate-500 uppercase">Despesas Totais (CC 1104)</p><h3 className="text-2xl font-bold text-rose-600 dark:text-rose-400">{totalExpenses.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div>
+                             <div className={`bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-${colorTheme}-500 shadow-sm`}><p className="text-xs font-bold text-slate-500 uppercase">Despesas Totais (CC {ccLabel})</p><h3 className={`text-2xl font-bold text-${colorTheme}-600 dark:text-${colorTheme}-400`}>{totalExpenses.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div>
                              <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-indigo-500 shadow-sm"><p className="text-xs font-bold text-slate-500 uppercase">Produção Total (10 Unidades)</p><h3 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{totalProduction.toLocaleString()} <span className="text-sm font-normal text-slate-400">m³ / ton</span></h3></div>
                              <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-emerald-500 shadow-sm"><p className="text-xs font-bold text-slate-500 uppercase">Custo Médio do Rateio</p><h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{totalProduction > 0 ? (totalExpenses / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : 'R$ 0,00'}<span className="text-sm font-normal text-slate-400"> / unidade</span></h3></div>
                         </div>
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
                             <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center"><h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Factory size={18} className="text-indigo-500"/>Distribuição por Produção</h4></div>
                             <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase">
-                                        <tr><th className="p-3 pl-6">Unidade</th><th className="p-3 text-right">Produção</th><th className="p-3 text-right">% Participação</th><th className="p-3 text-right">Valor a Pagar (Rateio)</th></tr>
-                                    </thead>
-                                    <tbody className="divide-y dark:divide-slate-700">
-                                        {units.map((u, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
-                                                <td className="p-3 pl-6 font-medium">{u.name} {u.name.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}</td>
-                                                <td className="p-3 text-right font-mono text-slate-600 dark:text-slate-400">{u.production.toLocaleString()}</td>
-                                                <td className="p-3 text-right"><span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-xs font-bold">{(u.percent * 100).toFixed(2)}%</span></td>
-                                                <td className="p-3 text-right font-bold text-rose-600 dark:text-rose-400">{u.valueToPay.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
-                                            </tr>
-                                        ))}
+                                <table className="w-full text-sm text-left"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase"><tr><th className="p-3 pl-6">Unidade</th><th className="p-3 text-right">Produção</th><th className="p-3 text-right">% Participação</th><th className="p-3 text-right">Valor a Pagar (Rateio)</th></tr></thead><tbody className="divide-y dark:divide-slate-700">
+                                        {units.map((u, idx) => ( <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300"><td className="p-3 pl-6 font-medium">{u.name} {u.name.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}</td><td className="p-3 text-right font-mono text-slate-600 dark:text-slate-400">{u.production.toLocaleString()}</td><td className="p-3 text-right"><span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-xs font-bold">{(u.percent * 100).toFixed(2)}%</span></td><td className={`p-3 text-right font-bold text-${colorTheme}-600 dark:text-${colorTheme}-400`}>{u.valueToPay.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr> ))}
                                         {units.length === 0 && <tr><td colSpan={4} className="p-8 text-center text-slate-400">Nenhuma produção encontrada para calcular o rateio.</td></tr>}
-                                    </tbody>
-                                </table>
+                                    </tbody></table>
                             </div>
                         </div>
                         <div className="bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4">
-                            <h5 className="text-xs font-bold text-slate-500 uppercase mb-3">Detalhamento das Despesas Rateadas (CC 1104)</h5>
+                            <h5 className="text-xs font-bold text-slate-500 uppercase mb-3">Detalhamento das Despesas Rateadas (CC {ccLabel})</h5>
                             <div className="max-h-60 overflow-y-auto pr-2">
-                                <table className="w-full text-xs text-left">
-                                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                                        {expenseItems.map((item, idx) => (<tr key={idx} className="dark:text-slate-400"><td className="py-2">{formatDate(item.date)}</td><td className="py-2 font-medium">{item.description}</td><td className="py-2 text-right">{item.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td></tr>))}
-                                    </tbody>
-                                </table>
+                                <table className="w-full text-xs text-left"><tbody className="divide-y divide-slate-200 dark:divide-slate-700">{expenseItems.map((item, idx) => (<tr key={idx} className="dark:text-slate-400"><td className="py-2">{formatDate(item.date)}</td><td className="py-2 font-medium">{item.description}</td><td className="py-2 text-right">{item.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td></tr>))}</tbody></table>
                             </div>
                         </div>
                     </div>
                 );
             }
-            // Genérico Comercial (Mantido)
+            // Genérico
             const activeCount = calculatedData.activeUnits.length;
             const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
+            return ( <div className="space-y-6 animate-in fade-in"><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div className="bg-amber-500 text-white p-6 rounded-xl shadow-lg"><p className="text-amber-100 text-xs font-bold uppercase mb-1">Total Comercial (CC 1104)</p><h3 className="text-2xl font-bold">{calculatedData.totalComercial.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div><div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm"><p className="text-slate-500 text-xs font-bold uppercase mb-1">Unidades Ativas</p><h3 className="text-2xl font-bold text-slate-700 dark:text-white">{activeCount} <span className="text-sm font-normal text-slate-400">/ 14</span></h3></div><div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm"><p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade Ativa</p><h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div></div></div> );
+        }
+
+        // --- TELA NOROMIX 1046 (NOVO) ---
+        if (activeRateioType === 'NOROMIX_1046') {
+            const { units, totalExpenses, expenseItems } = calculatedData.noromix1046Data;
             return (
                 <div className="space-y-6 animate-in fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="bg-amber-500 text-white p-6 rounded-xl shadow-lg"><p className="text-amber-100 text-xs font-bold uppercase mb-1">Total Comercial (CC 1104)</p><h3 className="text-2xl font-bold">{calculatedData.totalComercial.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm"><p className="text-slate-500 text-xs font-bold uppercase mb-1">Unidades Ativas</p><h3 className="text-2xl font-bold text-slate-700 dark:text-white">{activeCount} <span className="text-sm font-normal text-slate-400">/ 14</span></h3></div>
-                        <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm"><p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade Ativa</p><h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3></div>
+                        <div className="bg-purple-600 text-white p-6 rounded-xl shadow-lg">
+                            <p className="text-purple-200 text-xs font-bold uppercase mb-1">Total Despesas (CC 1046)</p>
+                            <h3 className="text-2xl font-bold">{totalExpenses.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                        </div>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
+                            <p className="text-slate-500 text-xs font-bold uppercase mb-1">Qtd. Unidades Rateadas</p>
+                            <h3 className="text-2xl font-bold dark:text-white">10 <span className="text-sm font-normal text-slate-400">unidades</span></h3>
+                        </div>
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-purple-500 shadow-sm">
+                            <p className="text-xs font-bold text-slate-500 uppercase">Valor Fixo por Unidade</p>
+                            <h3 className="text-2xl font-bold text-purple-600 dark:text-purple-400">{(totalExpenses / 10).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                        </div>
+                    </div>
+
+                    <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
+                        <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center"><h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-purple-500"/>Distribuição Igualitária (1/10)</h4></div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase"><tr><th className="p-3 pl-6">Unidade</th><th className="p-3 text-right">Valor a Pagar</th></tr></thead><tbody className="divide-y dark:divide-slate-700">
+                                {units.map((u, idx) => ( <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300"><td className="p-3 pl-6 font-medium">{u.name} {u.name.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}</td><td className="p-3 text-right font-bold text-purple-600 dark:text-purple-400">{u.valueToPay.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr> ))}
+                            </tbody></table>
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4">
+                        <h5 className="text-xs font-bold text-slate-500 uppercase mb-3">Detalhamento das Despesas (CC 1046)</h5>
+                        <div className="max-h-60 overflow-y-auto pr-2"><table className="w-full text-xs text-left"><tbody className="divide-y divide-slate-200 dark:divide-slate-700">{expenseItems.map((item, idx) => (<tr key={idx} className="dark:text-slate-400"><td className="py-2">{formatDate(item.date)}</td><td className="py-2 font-medium">{item.description}</td><td className="py-2 text-right">{item.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td></tr>))}</tbody></table></div>
                     </div>
                 </div>
             );
