@@ -2703,6 +2703,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 if (count > 0 && count <= 6) factor = 2;
                 else if (count > 6 && count <= 14) factor = 4;
                 else if (count >= 15) factor = 6;
+                
                 totalSalariosCalc += (factor * admParams.minWage);
             });
 
@@ -2906,6 +2907,18 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         // --- TELA VENDEDORES (ATUALIZADA COM COLUNA DE TOTAL E BOTÕES) ---
         if (activeRateioType === 'VENDEDORES') {
             if (selectedSegment === 'Noromix Concreteiras') {
+                
+                // CÁLCULO DINÂMICO DOS TOTAIS DO DEMONSTRATIVO PARA A NOVA LINHA DE TOPO
+                const totalDemonstrativo = calculatedData.noromixVendedoresData.reduce((acc, row) => {
+                    const percConc = manualPercents[row.cc] !== undefined ? manualPercents[row.cc] : 100;
+                    const valConc = row.originalValue * (percConc / 100);
+                    return {
+                        orig: acc.orig + row.originalValue,
+                        conc: acc.conc + valConc,
+                        tubo: acc.tubo + (row.originalValue - valConc)
+                    };
+                }, { orig: 0, conc: 0, tubo: 0 });
+
                 return (
                     <div className="space-y-6 animate-in fade-in">
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
@@ -2986,6 +2999,14 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                         <tr><th className="p-3">CC Origem / Unidade</th><th className="p-3">Classe de Despesa</th><th className="p-3 text-right">Valor Original</th><th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Concreto</th><th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Tubos</th></tr>
                                     </thead>
                                     <tbody className="divide-y dark:divide-slate-700">
+                                        {/* NOVA LINHA DE TOTAL NO TOPO */}
+                                        <tr className="bg-slate-200 dark:bg-slate-800 font-bold border-b-2 border-slate-300 dark:border-slate-600">
+                                            <td colSpan={2} className="p-3 pl-4 text-slate-800 dark:text-white">TOTAL GERAL</td>
+                                            <td className="p-3 text-right text-slate-900 dark:text-white">{totalDemonstrativo.orig.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                                            <td className="p-3 text-right text-indigo-700 dark:text-indigo-400 bg-indigo-100/50">{totalDemonstrativo.conc.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                                            <td className="p-3 text-right text-amber-700 dark:text-amber-400 bg-amber-100/50">{totalDemonstrativo.tubo.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                                        </tr>
+
                                         {calculatedData.noromixVendedoresData.map((row, idx) => {
                                             const percConc = manualPercents[row.cc] !== undefined ? manualPercents[row.cc] : 100;
                                             const valConcreto = row.originalValue * (percConc / 100);
