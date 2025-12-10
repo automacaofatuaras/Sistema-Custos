@@ -2416,15 +2416,15 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     const [selectedSegment, setSelectedSegment] = useState('Portos de Areia');
     const [activeRateioType, setActiveRateioType] = useState('ADMINISTRATIVO');
     
-    // NOVO: Lista de CCs para Rateio Comercial Concreteiras
+    // Lista de CCs para Rateio Comercial Concreteiras
     const CONCRETEIRA_COMERCIAL_CCS = [8003, 9003, 22003, 25003, 27003, 29003, 33003, 34003, 38003];
     
-    // NOVO: Estado para % Concreto (Padrão 90%, Tubos será o resto)
+    // Estado para % Concreto (Padrão 0%, ajustável)
     const [percConcreto, setPercConcreto] = useState(0);
 
-    // Estado para porcentagens manuais (Rateio Vendedores existente)
-    // Estrutura: { 'Nome da Unidade': { '2105': 10, '3105': 5... } }
+    // Estado para porcentagens manuais
     const [manualPercents, setManualPercents] = useState({});
+
     // --- CONFIGURAÇÃO DOS RATEIOS ---
     const RATEIO_CONFIG = {
         'Portos de Areia': [
@@ -2466,9 +2466,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     };
 
     // --- CÁLCULOS PRINCIPAIS ---
-// --- CÁLCULOS PRINCIPAIS ---
-// --- CÁLCULOS PRINCIPAIS ---
-// --- CÁLCULOS PRINCIPAIS ---
     const calculatedData = useMemo(() => {
         const periodTxs = filterByDate(transactions);
         
@@ -2503,8 +2500,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         // 4. Comercial (Genérico anterior)
         const totalComercial = sumCC([1104]);
 
-        // 5. NOVO: Comercial Concreteiras (Lógica Específica)
-        // Agrupa por Unidade -> Classe de Despesa
+        // 5. Comercial Concreteiras (Lógica Específica)
         const concreteiraData = [];
         if (selectedSegment === 'Noromix Concreteiras') {
             const rawItems = listItems(CONCRETEIRA_COMERCIAL_CCS);
@@ -2535,7 +2531,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             concreteiraData.sort((a,b) => a.unit.localeCompare(b.unit) || a.code.localeCompare(b.code));
         }
 
-        // Lógica de Produção Ativa (Mantida para outros segmentos)
+        // Lógica de Produção Ativa
         const targetUnits = [
             ...BUSINESS_HIERARCHY["Pedreiras"], 
             ...BUSINESS_HIERARCHY["Portos de Areia"], 
@@ -2553,9 +2549,10 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             totalProd, itemsProd,
             totalVend2105, totalVend3105, totalVend5105,
             totalComercial, activeUnits,
-            concreteiraData // Retornando o novo dado
+            concreteiraData
         };
     }, [transactions, filter, selectedSegment]);
+
     // Handle change percentage
     const handlePercChange = (unit, cc, val) => {
         setManualPercents(prev => ({
@@ -2567,7 +2564,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         }));
     };
 
+    // --- FUNÇÃO DE RENDERIZAÇÃO DO CONTEÚDO ---
     const renderContent = () => {
+        
         // --- TELA LIMPEZA / PERFURATRIZ (EM BRANCO) ---
         if (['LIMPEZA', 'PERFURATRIZ'].includes(activeRateioType)) {
             return (
@@ -2581,7 +2580,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         // --- TELA ADMINISTRATIVO ---
         if (activeRateioType === 'ADMINISTRATIVO') {
             const shareValue = calculatedData.totalAdm / 8;
-            const unitShare = selectedSegment === 'Portos de Areia' ? shareValue / 2 : shareValue; // Pedreira recebe cheia (1/8), Porto recebe (1/8)/2
+            const unitShare = selectedSegment === 'Portos de Areia' ? shareValue / 2 : shareValue; 
             const unitsCount = selectedSegment === 'Portos de Areia' ? 2 : 6;
 
             return (
@@ -2628,7 +2627,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         // --- TELA ENCARREGADO PRODUÇÃO ---
         if (activeRateioType === 'PRODUCAO') {
             const ccOrigem = selectedSegment === 'Portos de Areia' ? '1042' : '1043';
-            const divisor = selectedSegment === 'Portos de Areia' ? 2 : 6; // Assumindo divisão igualitária entre as unidades do segmento
+            const divisor = selectedSegment === 'Portos de Areia' ? 2 : 6; 
             const unitShare = calculatedData.totalProd / divisor;
 
             return (
@@ -2643,12 +2642,11 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                             <h3 className="text-2xl font-bold text-slate-700 dark:text-white">{unitShare.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
                         </div>
                     </div>
-                    {/* Tabela de detalhes similar a adm se quiser... */}
                 </div>
             );
         }
 
-        // --- TELA VENDEDORES (MATRIZ) ---
+        // --- TELA VENDEDORES ---
         if (activeRateioType === 'VENDEDORES') {
             const allUnits = [...BUSINESS_HIERARCHY['Portos de Areia'], ...BUSINESS_HIERARCHY['Pedreiras']];
             
@@ -2699,10 +2697,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             );
         }
 
-// --- TELA COMERCIAL - NOROMIX CONCRETEIRAS ---
-       // --- TELA COMERCIAL ---
-// --- TELA COMERCIAL ---
-     // --- TELA COMERCIAL ---
+        // --- TELA COMERCIAL ---
         if (activeRateioType === 'COMERCIAL') {
             
             // 1. CASO ESPECÍFICO: NOROMIX CONCRETEIRAS
@@ -2836,8 +2831,14 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                         return (
                                             <tr key={unit} className={`dark:text-slate-300 ${!isActive ? 'opacity-50 bg-slate-50 dark:bg-slate-900' : ''}`}>
                                                 <td className="p-3">{unit}</td>
-                                                <td className="p-3">{isActive ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}</td>
-                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-white">{isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
+                                                <td className="p-3">
+                                                    {isActive 
+                                                        ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> 
+                                                        : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}
+                                                </td>
+                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-white">
+                                                    {isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
+                                                </td>
                                             </tr>
                                         );
                                     })}
@@ -2847,12 +2848,12 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                     </div>
                 </div>
             );
-        } // <--- FECHA O IF (COMERCIAL)
+        }
 
         // RETORNO PADRÃO (Se nenhum IF for satisfeito)
         return <div className="p-10 text-center text-slate-400">Selecione um tipo de rateio acima.</div>;
 
-    }; // <--- FECHA A FUNÇÃO renderContent
+    }; // FIM DA FUNÇÃO renderContent
 
     // *** INÍCIO DO RETURN PRINCIPAL DO COMPONENTE ***
     return (
@@ -2896,97 +2897,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             {renderContent()}
         </div>
     );
-}; // <--- FIM DO COMPONENTE RateiosComponent
-            // >>> LÓGICA ANTIGA: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas) <<<
-            const activeCount = calculatedData.activeUnits.length;
-            const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
-return (
-        <div className="space-y-6 animate-in fade-in">
-            
-            {/* --- 1. HEADER E FILTROS --- */}
-            <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 shadow-sm gap-4">
-                <div className="flex items-center gap-2">
-                    <Share2 className="text-indigo-500" size={24}/>
-                    <h3 className="font-bold text-lg dark:text-white">Painel de Rateios</h3>
-                </div>
-                <div className="flex gap-2">
-                    <PeriodSelector filter={filter} setFilter={setFilter} years={years} />
-                    <select 
-                        className="bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:text-white outline-none focus:ring-2 ring-indigo-500"
-                        value={selectedSegment}
-                        onChange={(e) => { setSelectedSegment(e.target.value); setActiveRateioType('ADMINISTRATIVO'); }}
-                    >
-                        {Object.keys(RATEIO_CONFIG).map(seg => <option key={seg} value={seg}>{seg}</option>)}
-                    </select>
-                </div>
-            </div>
-
-            {/* --- 2. SUB-MENU --- */}
-            <div className="flex gap-2 overflow-x-auto pb-2">
-                {RATEIO_CONFIG[selectedSegment]?.map(type => (
-                    <button
-                        key={type.id}
-                        onClick={() => setActiveRateioType(type.id)}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
-                            activeRateioType === type.id 
-                            ? 'bg-indigo-600 text-white shadow-lg' 
-                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border dark:border-slate-700 hover:bg-slate-50'
-                        }`}
-                    >
-                        {type.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* --- 3. CARTÕES DE DADOS (KPIs) --- */}
-            {/* Nota: Removi o {renderContent()} pois o conteúdo está explícito abaixo */}
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-amber-500 text-white p-6 rounded-xl shadow-lg">
-                    <p className="text-amber-100 text-xs font-bold uppercase mb-1">Total Comercial (CC 1104)</p>
-                    <h3 className="text-2xl font-bold">{calculatedData.totalComercial.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                </div>
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
-                    <p className="text-slate-500 text-xs font-bold uppercase mb-1">Unidades Ativas</p>
-                    <h3 className="text-2xl font-bold text-slate-700 dark:text-white">{activeCount} <span className="text-sm font-normal text-slate-400">/ 14</span></h3>
-                    <p className="text-xs text-slate-400 mt-1">Com produção no período</p>
-                </div>
-                <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
-                    <p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade Ativa</p>
-                    <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                </div>
-            </div>
-
-            {/* --- 4. TABELA DE DISTRIBUIÇÃO --- */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden">
-                <div className="p-4 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white border-b dark:border-slate-700">Distribuição por Unidade</div>
-                <div className="max-h-96 overflow-y-auto">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 sticky top-0"><tr><th className="p-3">Unidade</th><th className="p-3">Status</th><th className="p-3 text-right">Valor Rateado</th></tr></thead>
-                        <tbody className="divide-y dark:divide-slate-700">
-                            {[...BUSINESS_HIERARCHY["Pedreiras"], ...BUSINESS_HIERARCHY["Portos de Areia"], ...BUSINESS_HIERARCHY["Usinas de Asfalto"]].sort().map(unit => {
-                                const isActive = calculatedData.activeUnits.includes(unit);
-                                return (
-                                    <tr key={unit} className={`dark:text-slate-300 ${!isActive ? 'opacity-50 bg-slate-50 dark:bg-slate-900' : ''}`}>
-                                        <td className="p-3">{unit}</td>
-                                        <td className="p-3">
-                                            {isActive 
-                                                ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> 
-                                                : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}
-                                        </td>
-                                        <td className="p-3 text-right font-bold text-slate-700 dark:text-white">
-                                            {isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-        </div> 
-    );
+}; // FIM DO COMPONENTE
 export default function App() {
   const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
   const [userRole, setUserRole] = useState('admin');
