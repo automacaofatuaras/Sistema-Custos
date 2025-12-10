@@ -689,6 +689,7 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
         const isNoromixContext = selectedUnit === 'Noromix Concreteiras' || 
                                  (BUSINESS_HIERARCHY['Noromix Concreteiras'] && BUSINESS_HIERARCHY['Noromix Concreteiras'].some(u => selectedUnit.includes(u.split('-')[1]?.trim()))) || 
                                  selectedUnit.includes('Fábrica') ||
+                                 selectedUnit === 'Fábrica de Tubos' || // Adicionado explicitamente
                                  !selectedUnit; 
         
         if (isNoromixContext && allTransactions && allTransactions.length > 0) {
@@ -704,21 +705,15 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
 
             const targetUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
             
-            // --- CÁLCULO RIGOROSO DO VOLUME (CORREÇÃO APLICADA AQUI) ---
+            // --- CÁLCULO RIGOROSO DO VOLUME ---
             let grandTotalProd = 0;
             const unitVolumes = {};
             targetUnits.forEach(u => {
-                // Nome limpo da unidade alvo (ex: "Votuporanga")
                 const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
-                
                 const vol = periodTxs
                     .filter(t => {
                         if(t.type !== 'metric' || t.metricType !== 'producao') return false;
-                        
-                        // Nome limpo da unidade da transação
                         const txUnitName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                        
-                        // COMPARAÇÃO EXATA (Corrige o erro de somar Fábrica na Concreteira)
                         return txUnitName === targetName;
                     })
                     .reduce((acc, t) => acc + t.value, 0);
@@ -792,7 +787,7 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
                 });
             });
 
-            // --- 4. RATEIO VENDEDORES (8003...38003) ---
+            // --- 4. RATEIO VENDEDORES ---
             const vendedorCCs = VENDEDORES_MAP.map(v => v.cc);
             const rawVendorTxs = periodTxs.filter(t => t.type === 'expense' && vendedorCCs.includes(parseInt(t.costCenter.split(' ')[0])));
 
@@ -849,21 +844,27 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
                 });
             });
 
-            // C. FILTRAR APENAS O QUE É DA UNIDADE SELECIONADA
+            // C. MESCLAR E FILTRAR PELA UNIDADE SELECIONADA
             const allReadyData = [...data, ...virtualTransactions];
             
             const finalData = allReadyData.filter(t => {
                 if (!selectedUnit) return true; 
                 
+                // Preparar nome limpo da transação (ex: "Votuporanga")
+                const txUnitClean = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+
+                // 1. Se o filtro for um Segmento (ex: "Fábrica de Tubos")
                 if (BUSINESS_HIERARCHY[selectedUnit]) {
                     const unitsInSegment = BUSINESS_HIERARCHY[selectedUnit];
-                    const txUnitClean = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                    return unitsInSegment.some(u => u.includes(txUnitClean) || txUnitClean.includes(u));
+                    
+                    // CORREÇÃO: Comparação EXATA na lista do segmento
+                    // Isso impede que "Votuporanga" seja aceito no segmento da Fábrica
+                    return unitsInSegment.includes(txUnitClean);
                 }
 
+                // 2. Se o filtro for uma Unidade Específica
                 const targetName = selectedUnit.includes(':') ? selectedUnit.split(':')[1].trim() : selectedUnit;
-                const txName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                return txName === targetName;
+                return txUnitClean === targetName;
             });
 
             data = finalData;
