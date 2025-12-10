@@ -2442,6 +2442,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     
     // Estados para Rateio Vendedores (Manual)
     const [manualPercents, setManualPercents] = useState({});
+    // NOVOS ESTADOS PARA BLOQUEIO DE VENDEDORES
+    const [isLockedVend, setIsLockedVend] = useState(false);
+    const [isSavingVend, setIsSavingVend] = useState(false);
 
     // --- ESTADOS PARA RATEIO ADM NOROMIX ---
     const [admParams, setAdmParams] = useState({
@@ -2470,36 +2473,36 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             { id: 'PERFURATRIZ', label: 'Rateio Perfuratriz' }
         ],
         'Noromix Concreteiras': [
-            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo' }, 
-            { id: 'COMERCIAL', label: 'Rateio Comercial' },
-            { id: 'VENDEDORES', label: 'Rateio Vendedores' }
+            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo (Salários)' }, 
+            { id: 'COMERCIAL', label: 'Rateio Comercial (Produção)' },
+            { id: 'VENDEDORES', label: 'Rateio Vendedores (CC Específico)' }
         ]
     };
 
     // --- MAPEAMENTO DE VENDEDORES ---
     const VENDEDORES_MAP = [
-        { cc: 27003, unit: "Noromix Concreto S/A - Fernandópolis" },
+        { cc: 8003, unit: "Noromix Concreto S/A - Votuporanga" },
+        { cc: 9003, unit: "Noromix Concreto S/A - Três Fronteiras" },
         { cc: 22003, unit: "Noromix Concreto S/A - Ilha Solteira" },
         { cc: 25003, unit: "Noromix Concreto S/A - Jales" },
-        { cc: 34003, unit: "Noromix Concreto S/A - Monções" },
-        { cc: 38003, unit: "Noromix Concreto S/A - Paranaíba" },
-        { cc: 33003, unit: "Noromix Concreto S/A - Ouroeste" },
+        { cc: 27003, unit: "Noromix Concreto S/A - Fernandópolis" },
         { cc: 29003, unit: "Noromix Concreto S/A - Pereira Barreto" },
-        { cc: 9003, unit: "Noromix Concreto S/A - Três Fronteiras" },
-        { cc: 8003, unit: "Noromix Concreto S/A - Votuporanga" }
+        { cc: 33003, unit: "Noromix Concreto S/A - Ouroeste" },
+        { cc: 34003, unit: "Noromix Concreto S/A - Monções" },
+        { cc: 38003, unit: "Noromix Concreto S/A - Paranaíba" }
     ];
 
-
-    // --- EFEITO: CARREGAR DADOS SALVOS DO RATEIO ADM ---
+    // --- EFEITO: CARREGAR DADOS SALVOS (ADM E VENDEDORES) ---
     useEffect(() => {
-        const loadSavedParams = async () => {
+        const loadSavedData = async () => {
             if (selectedSegment !== 'Noromix Concreteiras') return;
 
-            const docId = `rateio_adm_${filter.year}_${filter.month}`;
-            const docRef = doc(db, 'artifacts', appId, 'rateio_adm_config', docId);
+            // 1. CARREGAR ADM
+            const docIdAdm = `rateio_adm_${filter.year}_${filter.month}`;
+            const docRefAdm = doc(db, 'artifacts', appId, 'rateio_adm_config', docIdAdm);
 
             try {
-                const docSnap = await getDoc(docRef);
+                const docSnap = await getDoc(docRefAdm);
                 const allUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
                 
                 if (docSnap.exists()) {
@@ -2517,42 +2520,60 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                     setIsLocked(false);
                 }
             } catch (error) {
-                console.error("Erro ao carregar parâmetros de rateio:", error);
+                console.error("Erro ao carregar ADM:", error);
+            }
+
+            // 2. CARREGAR VENDEDORES
+            const docIdVend = `rateio_vendedores_${filter.year}_${filter.month}`;
+            const docRefVend = doc(db, 'artifacts', appId, 'rateio_vendedores_config', docIdVend);
+
+            try {
+                const docSnapVend = await getDoc(docRefVend);
+                
+                if (docSnapVend.exists()) {
+                    // Se existe salvo, carrega e bloqueia
+                    setManualPercents(docSnapVend.data().percents || {});
+                    setIsLockedVend(true);
+                } else {
+                    // Se não existe, reseta para o padrão (100% Concreto)
+                    const initialPercents = {};
+                    VENDEDORES_MAP.forEach(item => {
+                        initialPercents[item.cc] = 100;
+                    });
+                    setManualPercents(initialPercents);
+                    setIsLockedVend(false);
+                }
+            } catch (error) {
+                console.error("Erro ao carregar Vendedores:", error);
             }
         };
 
-        loadSavedParams();
+        loadSavedData();
         
-        if (selectedSegment === 'Noromix Concreteiras') {
-            setManualPercents(prev => {
-                const newState = { ...prev };
-                VENDEDORES_MAP.forEach(item => {
-                    if (newState[item.cc] === undefined) newState[item.cc] = 100;
-                });
-                return newState;
-            });
-        }
     }, [selectedSegment, filter.month, filter.year]);
 
-    // --- FUNÇÃO DE SALVAR ---
+    // --- FUNÇÃO SALVAR ADM ---
     const handleSaveAdmParams = async () => {
         setIsSaving(true);
         const docId = `rateio_adm_${filter.year}_${filter.month}`;
         const docRef = doc(db, 'artifacts', appId, 'rateio_adm_config', docId);
-
         try {
-            await setDoc(docRef, {
-                ...admParams,
-                updatedAt: new Date().toISOString(),
-                user: 'system' 
-            });
+            await setDoc(docRef, { ...admParams, updatedAt: new Date().toISOString(), user: 'system' });
             setIsLocked(true); 
-        } catch (error) {
-            console.error("Erro ao salvar:", error);
-            alert("Erro ao salvar rateio.");
-        } finally {
-            setIsSaving(false);
-        }
+        } catch (error) { alert("Erro ao salvar rateio ADM."); } 
+        finally { setIsSaving(false); }
+    };
+
+    // --- FUNÇÃO SALVAR VENDEDORES ---
+    const handleSaveVendedores = async () => {
+        setIsSavingVend(true);
+        const docId = `rateio_vendedores_${filter.year}_${filter.month}`;
+        const docRef = doc(db, 'artifacts', appId, 'rateio_vendedores_config', docId);
+        try {
+            await setDoc(docRef, { percents: manualPercents, updatedAt: new Date().toISOString(), user: 'system' });
+            setIsLockedVend(true);
+        } catch (error) { alert("Erro ao salvar rateio Vendedores."); }
+        finally { setIsSavingVend(false); }
     };
 
     // --- HELPER DE FILTRO DE DATA ---
@@ -2612,12 +2633,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 // CORREÇÃO: Comparação EXATA para separar Fábrica de Concreteira
                 const prod = periodTxs.filter(t => {
                     if(t.type !== 'metric' || t.metricType !== 'producao') return false;
-                    
-                    // Limpa os nomes para garantir a comparação
                     const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
                     const targetUnit = unitName.includes(':') ? unitName.split(':')[1].trim() : unitName;
-                    
-                    // COMPARAÇÃO EXATA (Remove o problema do .includes)
                     return txUnit === targetUnit;
                 }).reduce((acc, t) => acc + t.value, 0);
 
@@ -2661,23 +2678,17 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
             const allUnits = [...concreteUnits, pipeUnit];
 
-            // 1. Calcular Volumes (CORREÇÃO DE VOLUME AQUI TAMBÉM)
+            // 1. Calcular Volumes (CORREÇÃO DE VOLUME)
             let volConcretoTotal = 0;
             let volGlobalTotal = 0;
             const unitVolumes = {};
 
             allUnits.forEach(u => {
-                // Prepara nome limpo da unidade alvo (hierarquia)
                 const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
-
                 const vol = periodTxs
                     .filter(t => {
                         if (t.type !== 'metric' || t.metricType !== 'producao') return false;
-                        
-                        // Prepara nome limpo da unidade da transação
                         const txUnitName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                        
-                        // COMPARAÇÃO EXATA para evitar que "Votuporanga" pegue "Votuporanga (Fábrica)"
                         return txUnitName === targetName;
                     })
                     .reduce((acc, t) => acc + t.value, 0);
@@ -2695,7 +2706,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 if (count > 0 && count <= 6) factor = 2;
                 else if (count > 6 && count <= 14) factor = 4;
                 else if (count >= 15) factor = 6;
-                
                 totalSalariosCalc += (factor * admParams.minWage);
             });
 
@@ -2708,13 +2718,10 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 const isPipe = u === pipeUnit;
                 const shortName = u.includes('-') ? u.split('-')[1].trim() : u;
 
-                // Rateio Folha ADM (Calc 3)
                 const rateioFolha = volGlobalTotal > 0 ? (totalSalariosCalc / volGlobalTotal) * vol : 0;
-
-                // Rateio Despesas ADM (Calc 2)
                 let rateioDespesas = 0;
                 if (isPipe) {
-                    rateioDespesas = 20000; // Valor Fixo
+                    rateioDespesas = 20000; 
                 } else {
                     rateioDespesas = volConcretoTotal > 0 ? (vol / volConcretoTotal) * despesasPot : 0;
                 }
@@ -2729,15 +2736,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                     total: rateioFolha + rateioDespesas
                 };
             });
-            
             table.sort((a,b) => b.volume - a.volume);
-
-            noromixAdmData = {
-                table,
-                totalSalariosPot: totalSalariosCalc,
-                totalDespesasPot: despesasPot + 20000,
-                grandTotalVolume: volGlobalTotal
-            };
+            noromixAdmData = { table, totalSalariosPot: totalSalariosCalc, totalDespesasPot: despesasPot + 20000, grandTotalVolume: volGlobalTotal };
         }
 
         // Ativas Genérico
@@ -2781,91 +2781,49 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                     <div className="space-y-6 animate-in fade-in">
                         {/* 1. INPUTS DE PARÂMETROS */}
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 p-6 shadow-sm relative">
-                            {/* Header do Card com Botões Salvar/Editar */}
+                            {/* Header com Botões Salvar/Editar */}
                             <div className="flex justify-between items-start mb-6">
                                 <h4 className="font-bold text-lg flex items-center gap-2 dark:text-white">
-                                    <Settings size={20} className="text-slate-400"/> 
-                                    Parâmetros do Rateio (Mês Vigente)
+                                    <Settings size={20} className="text-slate-400"/> Parâmetros do Rateio (Mês Vigente)
                                 </h4>
                                 <div className="flex gap-2">
                                     {isLocked ? (
-                                        <button 
-                                            onClick={() => setIsLocked(false)}
-                                            className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm"
-                                        >
+                                        <button onClick={() => setIsLocked(false)} className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm">
                                             <Edit2 size={16}/> Editar Parâmetros
                                         </button>
                                     ) : (
-                                        <button 
-                                            onClick={handleSaveAdmParams}
-                                            disabled={isSaving}
-                                            className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50"
-                                        >
-                                            {isSaving ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} 
-                                            Salvar Definições
+                                        <button onClick={handleSaveAdmParams} disabled={isSaving} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50">
+                                            {isSaving ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} Salvar Definições
                                         </button>
                                     )}
                                 </div>
                             </div>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                {/* Coluna 1: Valores Globais */}
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Valor Total Rateio (R$)</label>
-                                        <CurrencyInput 
-                                            value={admParams.totalValue}
-                                            onChange={(val) => handleAdmParamChange('totalValue', val)}
-                                            disabled={isLocked}
-                                            className={`w-full border p-3 rounded-lg text-lg font-bold text-indigo-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`}
-                                        />
+                                        <CurrencyInput value={admParams.totalValue} onChange={(val) => handleAdmParamChange('totalValue', val)} disabled={isLocked} className={`w-full border p-3 rounded-lg text-lg font-bold text-indigo-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`} />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Salário Mínimo Base (R$)</label>
-                                        <CurrencyInput 
-                                            value={admParams.minWage}
-                                            onChange={(val) => handleAdmParamChange('minWage', val)}
-                                            disabled={isLocked}
-                                            className={`w-full border p-3 rounded-lg text-lg font-bold text-slate-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`}
-                                        />
+                                        <CurrencyInput value={admParams.minWage} onChange={(val) => handleAdmParamChange('minWage', val)} disabled={isLocked} className={`w-full border p-3 rounded-lg text-lg font-bold text-slate-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`} />
                                     </div>
-                                    
-                                    {/* Card de Resumo dos Potes */}
                                     <div className="mt-4 bg-slate-100 dark:bg-slate-900 p-4 rounded-lg space-y-2">
-                                        <div className="flex justify-between text-sm">
-                                            <span>Rateio Folha Adm</span>
-                                            <span className="font-bold">{totalSalariosPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
-                                        </div>
-                                        <div className="flex justify-between text-sm">
-                                            <span>Rateio Despesas Adm</span>
-                                            <span className="font-bold">{totalDespesasPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
-                                        </div>
-                                        <div className="border-t border-slate-300 pt-2 flex justify-between font-bold text-indigo-600">
-                                            <span>Total Validado</span>
-                                            <span>{(totalSalariosPot + totalDespesasPot).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
-                                        </div>
+                                        <div className="flex justify-between text-sm"><span>Pot Salários (Cálculo 1)</span><span className="font-bold">{totalSalariosPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
+                                        <div className="flex justify-between text-sm"><span>Pot Despesas (Cálculo 2 + Fixo)</span><span className="font-bold">{totalDespesasPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
+                                        <div className="border-t border-slate-300 pt-2 flex justify-between font-bold text-indigo-600"><span>Total Validado</span><span>{(totalSalariosPot + totalDespesasPot).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
                                     </div>
                                 </div>
-
-                                {/* Coluna 2: Funcionários por Unidade */}
                                 <div className={`bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 max-h-80 overflow-y-auto border dark:border-slate-700 ${isLocked ? 'opacity-80' : ''}`}>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-3 sticky top-0 bg-slate-50 dark:bg-slate-900/50 py-2 z-10">Qtd. Funcionários (Cálculo 1)</label>
                                     <div className="space-y-2">
-                                        {unitsList.map(u => {
-                                            const shortName = u.includes('-') ? u.split('-')[1].trim() : u;
-                                            return (
-                                                <div key={u} className="flex justify-between items-center text-sm">
-                                                    <span className="dark:text-slate-300 truncate w-48" title={u}>{shortName}</span>
-                                                    <input 
-                                                        type="number" min="0" 
-                                                        disabled={isLocked}
-                                                        className={`w-20 p-1 text-center border rounded dark:bg-slate-700 dark:text-white ${isLocked ? 'bg-slate-100' : ''}`}
-                                                        value={admParams.employees[u] || 0}
-                                                        onChange={(e) => handleAdmParamChange('employees', e.target.value, u)}
-                                                    />
-                                                </div>
-                                            );
-                                        })}
+                                        {unitsList.map(u => (
+                                            <div key={u} className="flex justify-between items-center text-sm">
+                                                <span className="dark:text-slate-300 truncate w-48" title={u}>{u.includes('-') ? u.split('-')[1].trim() : u}</span>
+                                                <input type="number" min="0" disabled={isLocked} className={`w-20 p-1 text-center border rounded dark:bg-slate-700 dark:text-white ${isLocked ? 'bg-slate-100' : ''}`} value={admParams.employees[u] || 0} onChange={(e) => handleAdmParamChange('employees', e.target.value, u)} />
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
@@ -2874,52 +2832,26 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                         {/* 2. TABELA FINAL DE RATEIO */}
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
                             <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                                <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2">
-                                    <Calculator size={18} className="text-emerald-500"/>
-                                    Resultado do Rateio Administrativo
-                                </h4>
+                                <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Calculator size={18} className="text-emerald-500"/>Resultado do Rateio Administrativo</h4>
                                 <span className="text-xs bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded text-slate-600 dark:text-slate-300">Vol. Total: {grandTotalVolume.toLocaleString()} m³</span>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase">
-                                        <tr>
-                                            <th className="p-3 pl-6">Unidade</th>
-                                            <th className="p-3 text-center">Func.</th>
-                                            <th className="p-3 text-right">Volume</th>
-                                            <th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Rateio Folha (C3)</th>
-                                            <th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Rateio Despesas (C2)</th>
-                                            <th className="p-3 text-right font-bold bg-slate-100 dark:bg-slate-800">TOTAL FINAL</th>
-                                        </tr>
+                                        <tr><th className="p-3 pl-6">Unidade</th><th className="p-3 text-center">Func.</th><th className="p-3 text-right">Volume</th><th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Rateio Folha (C3)</th><th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Rateio Despesas (C2)</th><th className="p-3 text-right font-bold bg-slate-100 dark:bg-slate-800">TOTAL FINAL</th></tr>
                                     </thead>
                                     <tbody className="divide-y dark:divide-slate-700">
                                         {table.map((row, idx) => (
                                             <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
-                                                <td className="p-3 pl-6 font-medium">
-                                                    {row.name}
-                                                    {row.fullName.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}
-                                                </td>
+                                                <td className="p-3 pl-6 font-medium">{row.name} {row.fullName.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}</td>
                                                 <td className="p-3 text-center text-xs">{row.employees}</td>
                                                 <td className="p-3 text-right font-mono text-xs opacity-70">{row.volume.toLocaleString()}</td>
-                                                <td className="p-3 text-right font-medium text-indigo-700 dark:text-indigo-400 bg-indigo-50/30">
-                                                    {row.rateioFolha.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </td>
-                                                <td className="p-3 text-right font-medium text-amber-700 dark:text-amber-400 bg-amber-50/30">
-                                                    {row.rateioDespesas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </td>
-                                                <td className="p-3 text-right font-bold bg-slate-100 dark:bg-slate-800">
-                                                    {row.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                                </td>
+                                                <td className="p-3 text-right font-medium text-indigo-700 dark:text-indigo-400 bg-indigo-50/30">{row.rateioFolha.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                                <td className="p-3 text-right font-medium text-amber-700 dark:text-amber-400 bg-amber-50/30">{row.rateioDespesas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                                <td className="p-3 text-right font-bold bg-slate-100 dark:bg-slate-800">{row.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                                             </tr>
                                         ))}
-                                        {table.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">Sem dados de volume. Certifique-se de lançar a Produção (metric/producao) para o período.</td></tr>}
-                                        {/* Totalizador */}
-                                        <tr className="bg-slate-900 text-white font-bold">
-                                            <td colSpan={3} className="p-3 pl-6 text-right uppercase text-xs tracking-wider">Totais Calculados</td>
-                                            <td className="p-3 text-right">{table.reduce((a,b)=>a+b.rateioFolha,0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td>
-                                            <td className="p-3 text-right">{table.reduce((a,b)=>a+b.rateioDespesas,0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td>
-                                            <td className="p-3 text-right text-emerald-400">{table.reduce((a,b)=>a+b.total,0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td>
-                                        </tr>
+                                        <tr className="bg-slate-900 text-white font-bold"><td colSpan={3} className="p-3 pl-6 text-right uppercase text-xs tracking-wider">Totais Calculados</td><td className="p-3 text-right">{table.reduce((a,b)=>a+b.rateioFolha,0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td><td className="p-3 text-right">{table.reduce((a,b)=>a+b.rateioDespesas,0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td><td className="p-3 text-right text-emerald-400">{table.reduce((a,b)=>a+b.total,0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td></tr>
                                     </tbody>
                                 </table>
                             </div>
@@ -2973,15 +2905,29 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             );
         }
 
-        // --- TELA VENDEDORES (Mantida) ---
+        // --- TELA VENDEDORES (ATUALIZADA COM BOTÕES SALVAR/EDITAR) ---
         if (activeRateioType === 'VENDEDORES') {
             if (selectedSegment === 'Noromix Concreteiras') {
                 return (
                     <div className="space-y-6 animate-in fade-in">
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
-                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700">
-                                <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Settings size={18} className="text-slate-500"/>Configuração de Rateio por Centro de Custo</h4>
-                                <p className="text-xs text-slate-500 mt-1">Defina a % que fica na Concreteira. O restante irá automaticamente para a Fábrica de Tubos.</p>
+                            {/* HEADER COM BOTÕES */}
+                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
+                                <div>
+                                    <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Settings size={18} className="text-slate-500"/>Configuração de Rateio por Centro de Custo</h4>
+                                    <p className="text-xs text-slate-500 mt-1">Defina a % que fica na Concreteira. O restante irá automaticamente para a Fábrica de Tubos.</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    {isLockedVend ? (
+                                        <button onClick={() => setIsLockedVend(false)} className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm">
+                                            <Edit2 size={16}/> Editar
+                                        </button>
+                                    ) : (
+                                        <button onClick={handleSaveVendedores} disabled={isSavingVend} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50">
+                                            {isSavingVend ? <Loader2 className="animate-spin" size={16}/> : <Save size={16}/>} Salvar
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm text-left">
@@ -2995,7 +2941,18 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                                 <tr key={mapItem.cc} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                                     <td className="p-3 font-mono font-bold dark:text-slate-300">{mapItem.cc}</td>
                                                     <td className="p-3 dark:text-slate-300">{mapItem.unit.includes('-') ? mapItem.unit.split('-')[1].trim() : mapItem.unit}</td>
-                                                    <td className="p-3 text-center bg-indigo-50/30"><div className="flex items-center justify-center gap-1"><input type="number" min="0" max="100" value={percConc} onChange={(e) => handlePercChange(mapItem.cc, null, e.target.value)} className="w-16 text-center border rounded p-1 dark:bg-slate-700 dark:text-white dark:border-slate-600 font-bold text-indigo-700"/><span className="text-indigo-400">%</span></div></td>
+                                                    <td className="p-3 text-center bg-indigo-50/30">
+                                                        <div className="flex items-center justify-center gap-1">
+                                                            <input 
+                                                                type="number" min="0" max="100" 
+                                                                disabled={isLockedVend}
+                                                                value={percConc} 
+                                                                onChange={(e) => handlePercChange(mapItem.cc, null, e.target.value)} 
+                                                                className={`w-16 text-center border rounded p-1 dark:bg-slate-700 dark:text-white dark:border-slate-600 font-bold text-indigo-700 ${isLockedVend ? 'bg-slate-100' : ''}`}
+                                                            />
+                                                            <span className="text-indigo-400">%</span>
+                                                        </div>
+                                                    </td>
                                                     <td className="p-3 text-center bg-amber-50/30"><span className="font-bold text-amber-700 dark:text-amber-500">{(100 - percConc).toFixed(0)}%</span></td>
                                                 </tr>
                                             );
