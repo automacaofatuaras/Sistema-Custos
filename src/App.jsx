@@ -2411,32 +2411,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
         </div>
     );
 };
-// --- COMPONENTE INTERNO: INPUT DE MOEDA (Movido para fora para evitar perda de foco) ---
-const CurrencyInput = ({ value, onChange, disabled, className }) => {
-    const handleChange = (e) => {
-        // Remove tudo que não é dígito
-        const rawValue = e.target.value.replace(/\D/g, ""); 
-        // Divide por 100 para considerar os centavos
-        const numberValue = rawValue ? parseInt(rawValue, 10) / 100 : 0;
-        onChange(numberValue);
-    };
-
-    const displayValue = value 
-        ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-        : 'R$ 0,00';
-
-    return (
-        <input
-            type="text"
-            value={displayValue}
-            onChange={handleChange}
-            disabled={disabled}
-            className={className}
-            placeholder="R$ 0,00"
-        />
-    );
-};
-
 // --- COMPONENTE INTERNO: INPUT DE MOEDA (Mantido fora para corrigir foco) ---
 const CurrencyInput = ({ value, onChange, disabled, className }) => {
     const handleChange = (e) => {
