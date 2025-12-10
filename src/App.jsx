@@ -675,9 +675,27 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
         let data = transactions.filter(t => t.type === 'expense');
 
         // B. GERAÇÃO DOS RATEIOS (Lógica Noromix Concreteiras)
-        const isNoromixContext = selectedUnit === 'Noromix Concreteiras' || BUSINESS_HIERARCHY['Noromix Concreteiras'].includes(selectedUnit.split(':')[1]?.trim() || selectedUnit) || selectedUnit.includes('Fábrica');
+        // Verifica se estamos visualizando algo relacionado a Noromix
+        const isNoromixContext = selectedUnit === 'Noromix Concreteiras' || 
+                                 (BUSINESS_HIERARCHY['Noromix Concreteiras'] && BUSINESS_HIERARCHY['Noromix Concreteiras'].some(u => selectedUnit.includes(u.split('-')[1]?.trim()))) || 
+                                 selectedUnit.includes('Fábrica') ||
+                                 !selectedUnit; // Se não tiver filtro, processa também
         
         if (isNoromixContext && allTransactions && allTransactions.length > 0) {
+            
+            // --- PASSO IMPORTANTE: REMOVER ORIGINAIS QUE SERÃO RATEADOS ---
+            // Para não duplicar valor (Ex: Remove a despesa original do CC 8003 para entrar a rateada)
+            const CCs_TO_EXCLUDE_PREFIX = ['1104', '1075', '1046', '1087', '1089'];
+            const CCs_TO_EXCLUDE_EXACT = VENDEDORES_MAP.map(v => v.cc.toString());
+
+            data = data.filter(t => {
+                const ccCode = t.costCenter.split(' ')[0];
+                const isExcludedPrefix = CCs_TO_EXCLUDE_PREFIX.some(prefix => ccCode.startsWith(prefix));
+                const isExcludedExact = CCs_TO_EXCLUDE_EXACT.includes(ccCode);
+                return !isExcludedPrefix && !isExcludedExact;
+            });
+            // -------------------------------------------------------------
+
             const virtualTransactions = [];
             
             // Helper: Filtrar transações do período globalmente
@@ -695,12 +713,13 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
             const unitVolumes = {};
             targetUnits.forEach(u => {
                 const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
+                // Match inteligente de volume
                 const vol = periodTxs.filter(t => t.type === 'metric' && t.metricType === 'producao' && (t.segment.includes(targetName) || targetName.includes(t.segment))).reduce((acc, t) => acc + t.value, 0);
                 unitVolumes[u] = vol;
                 grandTotalProd += vol;
             });
 
-            // --- 1. RATEIO ADMINISTRATIVO (FOLHA) - Mantém Agregado (Valor Único) ---
+            // --- 1. RATEIO ADMINISTRATIVO (FOLHA) ---
             if (admParams) {
                 let totalSalariosCalc = 0;
                 targetUnits.forEach(u => {
@@ -733,18 +752,16 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
                 });
             }
 
-            // --- 2. RATEIO COMERCIAL (1104) & 3. TÉCNICO (1075) - Detalhado por Classe ---
+            // --- 2. RATEIO COMERCIAL (1104) & 3. TÉCNICO (1075) ---
             const rateiosProporcionais = [
                 { cc: '1104', sub: 'CUSTO COMERCIAL GERÊNCIA' },
                 { cc: '1075', sub: 'CUSTO DEPARTAMENTO TÉCNICO' }
             ];
 
             rateiosProporcionais.forEach(config => {
-                // Pega cada despesa individual desses CCs
                 const rawTxs = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith(config.cc));
                 
                 rawTxs.forEach(tx => {
-                    // Para cada despesa, cria uma cópia proporcional para CADA unidade alvo
                     targetUnits.forEach(u => {
                         if (grandTotalProd > 0) {
                             const vol = unitVolumes[u] || 0;
@@ -753,10 +770,10 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
                             
                             if (allocatedValue > 0) {
                                 virtualTransactions.push({
-                                    ...tx, // Copia Classe, Descrição, Data originais
+                                    ...tx, 
                                     id: `rateio_${config.cc}_${tx.id}_${u}`,
-                                    segment: u, // Atribui à unidade alvo
-                                    value: allocatedValue, // Valor proporcional
+                                    segment: u,
+                                    value: allocatedValue,
                                     description: `${tx.description} (Rateio)`,
                                     customGroup: "DESPESAS DA UNIDADE",
                                     customSubGroup: config.sub
@@ -767,7 +784,7 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
                 });
             });
 
-            // --- 4. RATEIO VENDEDORES (8003...38003) - Detalhado (Já estava assim) ---
+            // --- 4. RATEIO VENDEDORES (8003...38003) ---
             const vendedorCCs = VENDEDORES_MAP.map(v => v.cc);
             const rawVendorTxs = periodTxs.filter(t => t.type === 'expense' && vendedorCCs.includes(parseInt(t.costCenter.split(' ')[0])));
 
@@ -778,11 +795,13 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
                 if (mapInfo) {
                     const percConcreto = vendPercents[cc] !== undefined ? vendPercents[cc] : 100;
                     const valConcreto = t.value * (percConcreto / 100);
+                    const valTubos = t.value - valConcreto;
                     
+                    // Parte Concreto
                     if (valConcreto > 0) {
                         virtualTransactions.push({
                             ...t,
-                            id: `rateio_vend_${t.id}`,
+                            id: `rateio_vend_${t.id}_conc`,
                             segment: mapInfo.unit,
                             value: valConcreto,
                             description: `${t.description} (Rateio ${percConcreto}%)`,
@@ -790,19 +809,30 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
                             customSubGroup: "CUSTO COMERCIAL"
                         });
                     }
+
+                    // Parte Tubos (Garante que o valor não suma se filtrar pela fábrica)
+                    if (valTubos > 0) {
+                        const factoryUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
+                        virtualTransactions.push({
+                            ...t,
+                            id: `rateio_vend_${t.id}_tubos`,
+                            segment: factoryUnit,
+                            value: valTubos,
+                            description: `${t.description} (Rateio Tubos ${100-percConcreto}%)`,
+                            customGroup: "DESPESAS DA UNIDADE",
+                            customSubGroup: "CUSTO COMERCIAL"
+                        });
+                    }
                 }
             });
 
-            // --- 5. RATEIO NOROMIX (1046) - Detalhado por Classe (1/10) ---
+            // --- 5. RATEIO NOROMIX (1046) ---
             const rawTxs1046 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1046'));
-            
             rawTxs1046.forEach(tx => {
-                // Divide cada despesa individualmente por 10
                 const valorPorUnidade = tx.value / 10; 
-                
                 targetUnits.forEach(u => {
                     virtualTransactions.push({
-                        ...tx, // Copia Classe, Descrição originais
+                        ...tx,
                         id: `rateio_1046_${tx.id}_${u}`,
                         segment: u,
                         value: valorPorUnidade,
@@ -813,19 +843,30 @@ const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, 
                 });
             });
 
-            // C. FILTRAR APENAS O QUE É DA UNIDADE SELECIONADA ATUALMENTE
-            const dataToView = [...data, ...virtualTransactions].filter(t => {
-                if (selectedUnit === 'Noromix Concreteiras') return true;
-                if (!selectedUnit) return true;
+            // C. MESCLAR E FILTRAR PELA UNIDADE SELECIONADA
+            const allReadyData = [...data, ...virtualTransactions];
+            
+            const finalData = allReadyData.filter(t => {
+                if (!selectedUnit) return true; // Mostra tudo se não houver filtro
+                
+                // Se o filtro for um Segmento Pai (ex: "Noromix Concreteiras"), verifica se a unidade pertence
+                if (BUSINESS_HIERARCHY[selectedUnit]) {
+                    const unitsInSegment = BUSINESS_HIERARCHY[selectedUnit];
+                    const txUnitClean = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                    // Verifica se a unidade da transação está na lista do segmento
+                    return unitsInSegment.some(u => u.includes(txUnitClean) || txUnitClean.includes(u));
+                }
 
+                // Se o filtro for uma Unidade Específica
                 const targetName = selectedUnit.includes(':') ? selectedUnit.split(':')[1].trim() : selectedUnit;
                 const txName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
                 return txName === targetName;
             });
 
-            data = dataToView;
+            data = finalData;
         }
 
+        // Filtro de Texto (Busca)
         if (searchTerm) {
             const lowerTerm = searchTerm.toLowerCase();
             data = data.filter(t => 
