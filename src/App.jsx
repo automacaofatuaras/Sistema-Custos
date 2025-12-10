@@ -1492,22 +1492,85 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                             selectedUnit.includes('Fábrica') ||
                             (typeof BUSINESS_HIERARCHY !== 'undefined' && BUSINESS_HIERARCHY['Noromix Concreteiras'] && BUSINESS_HIERARCHY['Noromix Concreteiras'].some(u => selectedUnit.includes(u.split('-')[1]?.trim())));
 
-    // --- CÁLCULO DADOS PADRÃO (PORTOS/PEDREIRAS) ---
+    // --- CÁLCULO DADOS PADRÃO (PORTOS/PEDREIRAS) - CORRIGIDO (LÓGICA COMPLETA RESTAURADA) ---
     const standardData = useMemo(() => {
         if (isNoromixLayout) return null; 
 
         const sum = (fn) => transactions.filter(fn).reduce((acc, t) => acc + t.value, 0);
         const totalRevenue = transactions.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
 
-        const recMaterial = sum(t => t.type === 'revenue');
-        const totalCustoOperacional = sum(t => t.type === 'expense' && !t.accountPlan.startsWith('06') && !t.description.toLowerCase().includes('rateio'));
-        const margemContribuicao = totalRevenue - totalCustoOperacional;
-        const rateioAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('rateio'));
-        const investimentos = sum(t => t.type === 'expense' && t.accountPlan.startsWith('06'));
-        const resultFinal = totalRevenue - totalCustoOperacional - rateioAdm - investimentos;
+        // Helper para verificar se uma transação pertence a um grupo de regras de custo
+        // (Necessário para a lógica padrão de Portos/Pedreiras)
+        const isInRuleGroup = (t, groupName, subGroupName = null) => {
+            const currentSegment = Object.keys(BUSINESS_HIERARCHY).find(key => BUSINESS_HIERARCHY[key].some(u => selectedUnit.includes(u.split('-')[1]?.trim()))) || "Portos de Areia";
+            const rules = COST_CENTER_RULES[currentSegment] || COST_CENTER_RULES["Portos de Areia"];
+            if (!rules || !rules[groupName]) return false;
+            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
+            if (subGroupName) return rules[groupName][subGroupName]?.includes(ccCode);
+            return Object.values(rules[groupName]).flat().includes(ccCode);
+        };
 
-        return { totalRevenue, recMaterial, totalCustoOperacional, margemContribuicao, rateioAdm, investimentos, resultFinal };
-    }, [transactions, isNoromixLayout]);
+        // --- CÁLCULOS DAS LINHAS (PADRÃO) ---
+        // RECEITAS
+        const recMaterial = sum(t => t.type === 'revenue' && (t.description.toLowerCase().includes('retira') || t.description.toLowerCase().includes('entrega') || t.accountPlan === '01.01'));
+        const recFrete = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('frete'));
+        const subsidio = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('subsídio'));
+        
+        // Detalhe Receitas
+        const recRetira = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('retira'));
+        const recEntrega = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('entrega'));
+        const freteCarreta = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('carreta'));
+        const freteTruck = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('truck'));
+        const freteTerceiros = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('terceiros') && t.description.toLowerCase().includes('frete'));
+
+        // CUSTO OPERACIONAL
+        const despUnidade = sum(t => t.type === 'expense' && isInRuleGroup(t, 'DESPESAS DA UNIDADE'));
+        const combustivel = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && (t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel') || t.accountPlan === '03.07.01'));
+        const totalCustoOperacional = despUnidade + combustivel;
+
+        // MARGEM DE CONTRIBUIÇÃO
+        const margemContribuicao = totalRevenue - totalCustoOperacional;
+
+        // MANUTENÇÃO
+        const manutencaoTotal = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05'));
+        const manuPrev = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('preventiva'));
+        const manuCorr = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('corretiva'));
+        const manuReform = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('reforma'));
+        const manuFrete = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('frete')); 
+        const manuPneus = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('pneu'));
+        const manuRessolado = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('ressolado'));
+        const manuNovos = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('novos'));
+        
+        // TOTAL DESPESAS TRANSPORTE
+        const totalTransporteGroup = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE'));
+        const residualTransporte = totalTransporteGroup - combustivel - manutencaoTotal;
+
+        // MANUAIS E ESPECÍFICOS
+        const transpTerceiros = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('transporte terceiros'));
+        const impostos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('02') || t.description.toLowerCase().includes('imposto')));
+        
+        // RESULTADO OPERACIONAL
+        const resultOperacional = margemContribuicao - manutencaoTotal - residualTransporte - transpTerceiros - impostos;
+
+        // PÓS OPERACIONAL
+        const rateioAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('rateio despesas'));
+        const multas = sum(t => t.type === 'expense' && (t.description.toLowerCase().includes('multa') || t.description.toLowerCase().includes('taxa')));
+        const frotaParada = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('frota parada'));
+
+        const resultPosDespesas = resultOperacional - rateioAdm - multas - frotaParada;
+
+        // INVESTIMENTOS
+        const investimentos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('06') || t.description.toLowerCase().includes('consórcio') || t.description.toLowerCase().includes('investimento')));
+        const resultFinal = resultPosDespesas - investimentos;
+
+        return {
+            totalRevenue, recMaterial, recRetira, recEntrega, recFrete, freteCarreta, freteTruck, freteTerceiros, subsidio,
+            totalCustoOperacional, despUnidade, combustivel, margemContribuicao,
+            manutencaoTotal, manuPrev, manuCorr, manuReform, manuFrete, manuPneus, manuRessolado, manuNovos,
+            residualTransporte, transpTerceiros, impostos, resultOperacional, rateioAdm, multas, frotaParada,
+            resultPosDespesas, investimentos, resultFinal
+        };
+    }, [transactions, isNoromixLayout, selectedUnit]);
 
     // --- CÁLCULO DADOS ESPECÍFICOS NOROMIX ---
     const noromixData = useMemo(() => {
@@ -1519,8 +1582,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const volRetira = sum(t => t.type === 'metric' && t.metricType === 'producao' && t.description.toLowerCase().includes('retira'));
         const volEntrega = sum(t => t.type === 'metric' && t.metricType === 'producao' && t.description.toLowerCase().includes('entrega'));
         const volTotal = totalProduction; 
-        
-        // Volume específico de bombas (se houver métrica lançada com "bomba" ou "bombeado")
         const volBombeado = sum(t => t.type === 'metric' && t.metricType === 'producao' && (t.description.toLowerCase().includes('bomba') || t.description.toLowerCase().includes('bombeado')));
 
         // 2. RECEITAS
@@ -1538,28 +1599,30 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
         // 4. GRUPO BOMBAS
         const isBomba = (t) => t.description.toLowerCase().includes('bomba');
-        
         const combBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.07.01') || t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel')));
         const manuBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.05') || t.description.toLowerCase().includes('manutencao') || t.description.toLowerCase().includes('peça')));
         const transpBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.07') && !t.accountPlan.startsWith('03.07.01')));
         const motBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.01') || t.description.toLowerCase().includes('motorista') || t.description.toLowerCase().includes('operador')));
         
         const subtotalBombas = manuBombas + transpBombas + motBombas;
-
+        
         // CÁLCULOS ESPECÍFICOS ABA BOMBAS
         const mcBombas = recBombeado - combBombas;
-        const resOpBombas = mcBombas - subtotalBombas; // (Receita - Combustivel - Despesas)
-        
+        const resOpBombas = mcBombas - subtotalBombas;
+
         // 5. GRUPO BETONEIRAS
         const isBetoneira = (t) => (t.description.toLowerCase().includes('betoneira') || t.description.toLowerCase().includes('caminhão') || t.description.toLowerCase().includes('caminhao')) && !t.description.toLowerCase().includes('bomba');
         const combBetoneiras = sum(t => t.type === 'expense' && isBetoneira(t) && (t.accountPlan.startsWith('03.07.01') || t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel')));
         const manuBetoneiras = sum(t => t.type === 'expense' && isBetoneira(t) && (t.accountPlan.startsWith('03.05') || t.description.toLowerCase().includes('manutencao') || t.description.toLowerCase().includes('peça') || t.description.toLowerCase().includes('pneu')));
         const transpBetoneiras = sum(t => t.type === 'expense' && isBetoneira(t) && (t.accountPlan.startsWith('03.07') && !t.accountPlan.startsWith('03.07.01')));
         const motBetoneiras = sum(t => t.type === 'expense' && isBetoneira(t) && (t.accountPlan.startsWith('03.01') || t.description.toLowerCase().includes('motorista')));
+
         const subtotalBetoneiras = manuBetoneiras + transpBetoneiras + motBetoneiras;
 
-        // MARGEM 2 (Geral)
+        // MARGEM 2
         const margem2 = margem1 + recBombeado - combBombas - combBetoneiras;
+
+        // RESULTADOS PARCIAIS
         const resPosBombas = margem2 - subtotalBombas;
         const resPosBetoneiras = resPosBombas - subtotalBetoneiras;
 
@@ -1568,6 +1631,7 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             if (t.type !== 'expense') return false;
             const desc = t.description.toLowerCase();
             const plan = t.accountPlan;
+            
             if (plan.startsWith('03.02') || desc.includes('materia') || desc.includes('cimento') || desc.includes('agregado') || desc.includes('aditivo')) return false; 
             if (isBomba(t)) return false; 
             if (isBetoneira(t)) return false; 
@@ -1575,6 +1639,7 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             if (desc.includes('parada')) return false; 
             if (plan.startsWith('02') || desc.includes('imposto')) return false; 
             if (plan.startsWith('06') || desc.includes('investimento') || desc.includes('consórcio')) return false;
+            
             return true; 
         });
 
@@ -1589,11 +1654,11 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const manuVeicLeveParado = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('veículo') && t.description.toLowerCase().includes('parado'));
         const resPosDespesas = resOperacional - rateioAdm - manuBetoneiraParada - manuVeicLeveParado;
 
-        // 8. INVESTIMENTOS GERAIS
+        // 8. INVESTIMENTOS
         const investimentos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('06') || t.description.toLowerCase().includes('investimento') || t.description.toLowerCase().includes('consórcio')));
         const resPosInvestimentos = resPosDespesas - investimentos;
 
-        // 9. INVESTIMENTOS ESPECÍFICOS DE BOMBAS
+        // 9. INVESTIMENTOS BOMBAS (NOVO)
         const investBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('06') || t.description.toLowerCase().includes('investimento') || t.description.toLowerCase().includes('consórcio')));
         const resPosInvestBombas = resOpBombas - investBombas;
 
@@ -1612,10 +1677,9 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             rateioAdm, manuBetoneiraParada, manuVeicLeveParado, resPosDespesas,
             investimentos, resPosInvestimentos,
             clientesPrejuizo,
-            // Dados exclusivos Bombas
+            // Bombas
             mcBombas, resOpBombas, investBombas, resPosInvestBombas
         };
-
     }, [transactions, totalProduction, isNoromixLayout]);
 
     // --- RENDERIZAÇÃO DA LINHA ---
@@ -1643,8 +1707,8 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                     <span className={`${isHeader ? 'font-bold uppercase text-sm' : 'text-xs font-medium'}`}>{label}</span>
                 </td>
                 <td className={`p-2 text-right font-bold ${finalTextColor} dark:text-slate-200`}>
-                    {type === 'money' ? val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 
-                     type === 'vol' ? val.toLocaleString('pt-BR') : val}
+                    {type === 'money' ? (val || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 
+                     type === 'vol' ? (val || 0).toLocaleString('pt-BR') : val}
                 </td>
                 <td className="p-2 text-right text-xs font-mono text-slate-500 dark:text-slate-400">{type === 'money' && percent !== 0 ? `${percent.toFixed(2)}%` : '-'}</td>
                 <td className="p-2 text-right text-xs font-mono text-slate-500 dark:text-slate-400">{type === 'money' && perUnit !== 0 ? perUnit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td>
@@ -1764,14 +1828,11 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                                 <Row label="Volume M³ (Bombeado)" val={noromixData.volBombeado} type="vol" isHeader bgClass="bg-slate-50 dark:bg-slate-800" />
                                 
                                 <div className="my-4"></div>
-
                                 <Row label="Receitas Bombeado" val={noromixData.recBombeado} indent={0} colorClass="text-emerald-600" />
                                 <Row label="(-) Combustível" val={noromixData.combBombas} indent={0} colorClass="text-rose-500" />
-                                
                                 <Row label="= Margem de Contribuição" val={noromixData.mcBombas} isHeader isResult customColor="dynamic" bgClass="bg-slate-100 dark:bg-slate-700" />
 
                                 <div className="my-4"></div>
-
                                 <Row label="Despesas Manutenção Bombas" val={noromixData.manuBombas} indent={1} colorClass="text-rose-500" />
                                 <Row label="Despesas Transportes" val={noromixData.transpBombas} indent={1} colorClass="text-rose-500" />
                                 <Row label="Custo Motorista Bombas" val={noromixData.motBombas} indent={1} colorClass="text-rose-500" />
@@ -1781,7 +1842,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
                                 <div className="my-4"></div>
                                 <Row label="(-) Investimentos Bombas" val={noromixData.investBombas} indent={0} colorClass="text-rose-500" />
-                                
                                 <Row label="= Resultado Pós Investimentos" val={noromixData.resPosInvestBombas} isHeader isResult customColor="dynamic" bgClass="bg-slate-400 dark:bg-slate-800" />
                             </>
                         )}
@@ -1852,7 +1912,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         </div>
     );
 };
-
 const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentFilter }) => {
     const stockData = useMemo(() => {
         // 1. CÁLCULO DO ANO TODO (Para garantir o saldo acumulado correto)
