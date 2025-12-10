@@ -2437,6 +2437,30 @@ const CurrencyInput = ({ value, onChange, disabled, className }) => {
     );
 };
 
+// --- COMPONENTE INTERNO: INPUT DE MOEDA (Mantido fora para corrigir foco) ---
+const CurrencyInput = ({ value, onChange, disabled, className }) => {
+    const handleChange = (e) => {
+        const rawValue = e.target.value.replace(/\D/g, ""); 
+        const numberValue = rawValue ? parseInt(rawValue, 10) / 100 : 0;
+        onChange(numberValue);
+    };
+
+    const displayValue = value 
+        ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
+        : 'R$ 0,00';
+
+    return (
+        <input
+            type="text"
+            value={displayValue}
+            onChange={handleChange}
+            disabled={disabled}
+            className={className}
+            placeholder="R$ 0,00"
+        />
+    );
+};
+
 const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList }) => {
     // Estado local
     const [selectedSegment, setSelectedSegment] = useState('Portos de Areia');
@@ -2445,15 +2469,15 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     // Estados para Rateio Vendedores (Manual)
     const [manualPercents, setManualPercents] = useState({});
 
-    // --- ESTADOS PARA RATEIO ADM NOROMIX (Novo com Bloqueio) ---
+    // --- ESTADOS PARA RATEIO ADM NOROMIX ---
     const [admParams, setAdmParams] = useState({
         totalValue: 0,      // Valor Total a Ratear
         minWage: 1412,      // Salário Mínimo
         employees: {}       // Mapa: { 'Unidade': qtd_funcionarios }
     });
     
-    const [isLocked, setIsLocked] = useState(false); // Controla se está em modo visualização (Salvo) ou edição
-    const [isSaving, setIsSaving] = useState(false); // Loading do botão salvar
+    const [isLocked, setIsLocked] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     // --- CONFIGURAÇÃO DOS RATEIOS ---
     const RATEIO_CONFIG = {
@@ -2610,12 +2634,12 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             
             let grandTotalProd = 0;
             const unitsCalculated = targetUnits.map(unitName => {
-                // CORREÇÃO DE VOLUME AQUI TAMBÉM
+                // CORREÇÃO: Match Inteligente de Volume
                 const prod = periodTxs.filter(t => {
                     if(t.type !== 'metric' || t.metricType !== 'producao') return false;
-                    const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                    const targetUnit = unitName.includes(':') ? unitName.split(':')[1].trim() : unitName;
-                    return txUnit === targetUnit;
+                    // Se o nome no lançamento contiver o nome da unidade (ex: "Noromix Concreteiras: Votuporanga")
+                    // Ou se o nome da unidade for exatamente igual
+                    return t.segment.includes(unitName) || unitName.includes(t.segment);
                 }).reduce((acc, t) => acc + t.value, 0);
 
                 grandTotalProd += prod;
@@ -2658,24 +2682,22 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
             const allUnits = [...concreteUnits, pipeUnit];
 
-            // 1. Calcular Volumes (CORREÇÃO DA COLUNA DE VOLUME AQUI)
+            // 1. Calcular Volumes (CORREÇÃO DE VOLUME APLICADA)
             let volConcretoTotal = 0;
             let volGlobalTotal = 0;
             const unitVolumes = {};
 
             allUnits.forEach(u => {
-                // Normaliza o nome da unidade para garantir o match
-                const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
-
                 const vol = periodTxs
                     .filter(t => {
-                        // Filtra apenas métricas de produção
+                        // Filtro rigoroso: Apenas Produção
                         if (t.type !== 'metric' || t.metricType !== 'producao') return false;
                         
-                        // Limpa o nome da unidade no lançamento (tira "Segmento: ")
-                        const txUnitName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                        
-                        return txUnitName === targetName;
+                        // Match Inteligente:
+                        // Verifica se "Noromix Concreto S/A - Votuporanga" está contido no segmento do lançamento
+                        // OU se o segmento do lançamento está contido no nome da unidade
+                        // Isso resolve o problema de prefixos como "Noromix Concreteiras: ..."
+                        return t.segment.includes(u) || u.includes(t.segment);
                     })
                     .reduce((acc, t) => acc + t.value, 0);
                 
