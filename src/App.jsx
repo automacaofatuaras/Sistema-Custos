@@ -2900,56 +2900,10 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             // >>> LÓGICA ANTIGA: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas) <<<
             const activeCount = calculatedData.activeUnits.length;
             const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
-            return (
-                <div className="space-y-6 animate-in fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="bg-amber-500 text-white p-6 rounded-xl shadow-lg">
-                            <p className="text-amber-100 text-xs font-bold uppercase mb-1">Total Comercial (CC 1104)</p>
-                            <h3 className="text-2xl font-bold">{calculatedData.totalComercial.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                        </div>
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
-                            <p className="text-slate-500 text-xs font-bold uppercase mb-1">Unidades Ativas</p>
-                            <h3 className="text-2xl font-bold text-slate-700 dark:text-white">{activeCount} <span className="text-sm font-normal text-slate-400">/ 14</span></h3>
-                            <p className="text-xs text-slate-400 mt-1">Com produção no período</p>
-                        </div>
-                        <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
-                            <p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade Ativa</p>
-                            <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                        </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden">
-                        <div className="p-4 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white border-b dark:border-slate-700">Distribuição por Unidade</div>
-                        <div className="max-h-96 overflow-y-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 sticky top-0"><tr><th className="p-3">Unidade</th><th className="p-3">Status</th><th className="p-3 text-right">Valor Rateado</th></tr></thead>
-                                <tbody className="divide-y dark:divide-slate-700">
-                                    {[...BUSINESS_HIERARCHY["Pedreiras"], ...BUSINESS_HIERARCHY["Portos de Areia"], ...BUSINESS_HIERARCHY["Usinas de Asfalto"]].sort().map(unit => {
-                                        const isActive = calculatedData.activeUnits.includes(unit);
-                                        return (
-                                            <tr key={unit} className={`dark:text-slate-300 ${!isActive ? 'opacity-50 bg-slate-50 dark:bg-slate-900' : ''}`}>
-                                                <td className="p-3">{unit}</td>
-                                                <td className="p-3">
-                                                    {isActive 
-                                                        ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> 
-                                                        : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}
-                                                </td>
-                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-white">
-                                                    {isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            );
-        
-     return (
-        <div className="space-y-6">
-            {/* Header com Filtros Simplificados */}
+return (
+        <div className="space-y-6 animate-in fade-in">
+            
+            {/* --- 1. HEADER E FILTROS --- */}
             <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 shadow-sm gap-4">
                 <div className="flex items-center gap-2">
                     <Share2 className="text-indigo-500" size={24}/>
@@ -2967,7 +2921,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 </div>
             </div>
 
-            {/* Sub-menu de Tipos de Rateio */}
+            {/* --- 2. SUB-MENU --- */}
             <div className="flex gap-2 overflow-x-auto pb-2">
                 {RATEIO_CONFIG[selectedSegment]?.map(type => (
                     <button
@@ -2984,12 +2938,55 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 ))}
             </div>
 
-            {/* Conteúdo Principal */}
-            {renderContent()}
-        </div>
+            {/* --- 3. CARTÕES DE DADOS (KPIs) --- */}
+            {/* Nota: Removi o {renderContent()} pois o conteúdo está explícito abaixo */}
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-amber-500 text-white p-6 rounded-xl shadow-lg">
+                    <p className="text-amber-100 text-xs font-bold uppercase mb-1">Total Comercial (CC 1104)</p>
+                    <h3 className="text-2xl font-bold">{calculatedData.totalComercial.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
+                    <p className="text-slate-500 text-xs font-bold uppercase mb-1">Unidades Ativas</p>
+                    <h3 className="text-2xl font-bold text-slate-700 dark:text-white">{activeCount} <span className="text-sm font-normal text-slate-400">/ 14</span></h3>
+                    <p className="text-xs text-slate-400 mt-1">Com produção no período</p>
+                </div>
+                <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
+                    <p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade Ativa</p>
+                    <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                </div>
+            </div>
+
+            {/* --- 4. TABELA DE DISTRIBUIÇÃO --- */}
+            <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden">
+                <div className="p-4 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white border-b dark:border-slate-700">Distribuição por Unidade</div>
+                <div className="max-h-96 overflow-y-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 sticky top-0"><tr><th className="p-3">Unidade</th><th className="p-3">Status</th><th className="p-3 text-right">Valor Rateado</th></tr></thead>
+                        <tbody className="divide-y dark:divide-slate-700">
+                            {[...BUSINESS_HIERARCHY["Pedreiras"], ...BUSINESS_HIERARCHY["Portos de Areia"], ...BUSINESS_HIERARCHY["Usinas de Asfalto"]].sort().map(unit => {
+                                const isActive = calculatedData.activeUnits.includes(unit);
+                                return (
+                                    <tr key={unit} className={`dark:text-slate-300 ${!isActive ? 'opacity-50 bg-slate-50 dark:bg-slate-900' : ''}`}>
+                                        <td className="p-3">{unit}</td>
+                                        <td className="p-3">
+                                            {isActive 
+                                                ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> 
+                                                : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}
+                                        </td>
+                                        <td className="p-3 text-right font-bold text-slate-700 dark:text-white">
+                                            {isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div> 
     );
-
-
 export default function App() {
   const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
   const [userRole, setUserRole] = useState('admin');
