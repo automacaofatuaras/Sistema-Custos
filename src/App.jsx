@@ -2470,24 +2470,25 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             { id: 'PERFURATRIZ', label: 'Rateio Perfuratriz' }
         ],
         'Noromix Concreteiras': [
-            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo (Salários)' }, 
-            { id: 'COMERCIAL', label: 'Rateio Comercial (Produção)' },
-            { id: 'VENDEDORES', label: 'Rateio Vendedores (CC Específico)' }
+            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo' }, 
+            { id: 'COMERCIAL', label: 'Rateio Comercial' },
+            { id: 'VENDEDORES', label: 'Rateio Vendedores' }
         ]
     };
 
     // --- MAPEAMENTO DE VENDEDORES ---
     const VENDEDORES_MAP = [
-        { cc: 8003, unit: "Noromix Concreto S/A - Votuporanga" },
-        { cc: 9003, unit: "Noromix Concreto S/A - Três Fronteiras" },
+        { cc: 27003, unit: "Noromix Concreto S/A - Fernandópolis" },
         { cc: 22003, unit: "Noromix Concreto S/A - Ilha Solteira" },
         { cc: 25003, unit: "Noromix Concreto S/A - Jales" },
-        { cc: 27003, unit: "Noromix Concreto S/A - Fernandópolis" },
-        { cc: 29003, unit: "Noromix Concreto S/A - Pereira Barreto" },
-        { cc: 33003, unit: "Noromix Concreto S/A - Ouroeste" },
         { cc: 34003, unit: "Noromix Concreto S/A - Monções" },
-        { cc: 38003, unit: "Noromix Concreto S/A - Paranaíba" }
+        { cc: 38003, unit: "Noromix Concreto S/A - Paranaíba" },
+        { cc: 33003, unit: "Noromix Concreto S/A - Ouroeste" },
+        { cc: 29003, unit: "Noromix Concreto S/A - Pereira Barreto" },
+        { cc: 9003, unit: "Noromix Concreto S/A - Três Fronteiras" },
+        { cc: 8003, unit: "Noromix Concreto S/A - Votuporanga" }
     ];
+
 
     // --- EFEITO: CARREGAR DADOS SALVOS DO RATEIO ADM ---
     useEffect(() => {
@@ -2832,11 +2833,11 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                     {/* Card de Resumo dos Potes */}
                                     <div className="mt-4 bg-slate-100 dark:bg-slate-900 p-4 rounded-lg space-y-2">
                                         <div className="flex justify-between text-sm">
-                                            <span>Pot Salários (Cálculo 1)</span>
+                                            <span>Rateio Folha Adm (Cálculo 1)</span>
                                             <span className="font-bold">{totalSalariosPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                         <div className="flex justify-between text-sm">
-                                            <span>Pot Despesas (Cálculo 2 + Fixo)</span>
+                                            <span>Rateio Despesas Adm (Cálculo 2 + Fixo)</span>
                                             <span className="font-bold">{totalDespesasPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                         <div className="border-t border-slate-300 pt-2 flex justify-between font-bold text-indigo-600">
