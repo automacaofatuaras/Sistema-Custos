@@ -1463,7 +1463,7 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
 };
 
 const FechamentoComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit }) => {
-    // Estados para controle de expansão (Layout Padrão)
+    // Estados para controle de expansão
     const [expanded, setExpanded] = useState({
         'receitas': true,
         'custo_operacional': true,
@@ -1483,36 +1483,114 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
     const unitLabel = selectedUnit.includes(':') ? selectedUnit.split(':')[1].trim() : selectedUnit;
     const dynamicTitle = `Fechamento: ${unitLabel} - ${getPeriodLabel()}`;
 
-    // VERIFICA SE DEVE USAR O LAYOUT ESPECIAL NOROMIX
+    // VERIFICAÇÃO DE QUAL LAYOUT USAR
     const isNoromixLayout = selectedUnit === 'Noromix Concreteiras' || 
                             selectedUnit === 'Fábrica de Tubos' || 
                             selectedUnit.includes('Fábrica') ||
                             (typeof BUSINESS_HIERARCHY !== 'undefined' && BUSINESS_HIERARCHY['Noromix Concreteiras'] && BUSINESS_HIERARCHY['Noromix Concreteiras'].some(u => selectedUnit.includes(u.split('-')[1]?.trim())));
 
-    // --- CÁLCULO DADOS PADRÃO (PORTOS/PEDREIRAS) ---
+    // =================================================================================
+    // 1. DADOS PADRÃO (PORTOS/PEDREIRAS) - Lógica original restaurada e completa
+    // =================================================================================
     const standardData = useMemo(() => {
         if (isNoromixLayout) return null; 
 
+        // Helper para somar baseado em filtros
         const sum = (fn) => transactions.filter(fn).reduce((acc, t) => acc + t.value, 0);
         const totalRevenue = transactions.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
 
-        const recMaterial = sum(t => t.type === 'revenue');
-        const totalCustoOperacional = sum(t => t.type === 'expense' && !t.accountPlan.startsWith('06') && !t.description.toLowerCase().includes('rateio'));
+        // Helper para verificar se uma transação pertence a um grupo de regras de custo
+        const isInRuleGroup = (t, groupName, subGroupName = null) => {
+            // Tenta pegar regras do segmento atual, fallback para Portos se não achar
+            // (Isso mantem a compatibilidade com o código original que forçava Portos)
+            const currentSegment = Object.keys(BUSINESS_HIERARCHY).find(key => BUSINESS_HIERARCHY[key].some(u => selectedUnit.includes(u.split('-')[1]?.trim()))) || "Portos de Areia";
+            const rules = COST_CENTER_RULES[currentSegment] || COST_CENTER_RULES["Portos de Areia"];
+            
+            if (!rules || !rules[groupName]) return false;
+            
+            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
+            
+            if (subGroupName) {
+                return rules[groupName][subGroupName]?.includes(ccCode);
+            }
+            return Object.values(rules[groupName]).flat().includes(ccCode);
+        };
+
+        // --- CÁLCULOS DAS LINHAS (CÓDIGO ORIGINAL) ---
+        // RECEITAS
+        const recMaterial = sum(t => t.type === 'revenue' && (t.description.toLowerCase().includes('retira') || t.description.toLowerCase().includes('entrega') || t.accountPlan === '01.01'));
+        const recFrete = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('frete'));
+        const subsidio = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('subsídio'));
+        
+        // Detalhe Receitas
+        const recRetira = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('retira'));
+        const recEntrega = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('entrega'));
+        const freteCarreta = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('carreta'));
+        const freteTruck = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('truck'));
+        const freteTerceiros = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('terceiros') && t.description.toLowerCase().includes('frete'));
+
+        // CUSTO OPERACIONAL
+        const despUnidade = sum(t => t.type === 'expense' && isInRuleGroup(t, 'DESPESAS DA UNIDADE'));
+        const combustivel = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && (t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel') || t.accountPlan === '03.07.01'));
+        const totalCustoOperacional = despUnidade + combustivel;
+
+        // MARGEM DE CONTRIBUIÇÃO
         const margemContribuicao = totalRevenue - totalCustoOperacional;
-        const rateioAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('rateio'));
-        const investimentos = sum(t => t.type === 'expense' && t.accountPlan.startsWith('06'));
-        const resultFinal = totalRevenue - totalCustoOperacional - rateioAdm - investimentos;
 
-        return { totalRevenue, recMaterial, totalCustoOperacional, margemContribuicao, rateioAdm, investimentos, resultFinal };
-    }, [transactions, isNoromixLayout]);
+        // MANUTENÇÃO
+        const manutencaoTotal = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05'));
+        const manuPrev = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('preventiva'));
+        const manuCorr = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('corretiva'));
+        const manuReform = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('reforma'));
+        const manuFrete = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('frete')); 
+        const manuPneus = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('pneu'));
+        const manuRessolado = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('ressolado'));
+        const manuNovos = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('novos'));
+        
+        // TOTAL DESPESAS TRANSPORTE
+        const totalTransporteGroup = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE'));
+        const residualTransporte = totalTransporteGroup - combustivel - manutencaoTotal;
 
-    // --- CÁLCULO DADOS ESPECÍFICOS NOROMIX ---
+        // MANUAIS E ESPECÍFICOS
+        const transpTerceiros = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('transporte terceiros'));
+        const impostos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('02') || t.description.toLowerCase().includes('imposto')));
+        
+        // RESULTADO OPERACIONAL
+        const resultOperacional = margemContribuicao - manutencaoTotal - residualTransporte - transpTerceiros - impostos;
+
+        // PÓS OPERACIONAL
+        const rateioAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('rateio despesas'));
+        const multas = sum(t => t.type === 'expense' && (t.description.toLowerCase().includes('multa') || t.description.toLowerCase().includes('taxa')));
+        const frotaParada = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('frota parada'));
+
+        const resultPosDespesas = resultOperacional - rateioAdm - multas - frotaParada;
+
+        // INVESTIMENTOS
+        const investimentos = sum(t => t.type === 'expense' && (
+            t.accountPlan.startsWith('06') || 
+            t.description.toLowerCase().includes('consórcio') || 
+            t.description.toLowerCase().includes('investimento')
+        ));
+        const resultFinal = resultPosDespesas - investimentos;
+
+        return {
+            totalRevenue, recMaterial, recRetira, recEntrega, recFrete, freteCarreta, freteTruck, freteTerceiros, subsidio,
+            totalCustoOperacional, despUnidade, combustivel, margemContribuicao,
+            manutencaoTotal, manuPrev, manuCorr, manuReform, manuFrete, manuPneus, manuRessolado, manuNovos,
+            residualTransporte, transpTerceiros, impostos, resultOperacional, rateioAdm, multas, frotaParada,
+            resultPosDespesas, investimentos, resultFinal
+        };
+    }, [transactions, isNoromixLayout, selectedUnit]);
+
+    // =================================================================================
+    // 2. DADOS ESPECÍFICOS NOROMIX
+    // =================================================================================
     const noromixData = useMemo(() => {
         if (!isNoromixLayout) return null;
 
         const sum = (fn) => transactions.filter(fn).reduce((acc, t) => acc + t.value, 0);
         
-        // 1. VOLUMES (Métricas)
+        // 1. VOLUMES
         const volRetira = sum(t => t.type === 'metric' && t.metricType === 'producao' && t.description.toLowerCase().includes('retira'));
         const volEntrega = sum(t => t.type === 'metric' && t.metricType === 'producao' && t.description.toLowerCase().includes('entrega'));
         const volTotal = totalProduction; 
@@ -1532,30 +1610,21 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
         // 4. GRUPO BOMBAS
         const isBomba = (t) => t.description.toLowerCase().includes('bomba');
-        
         const combBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.07.01') || t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel')));
-        
         const manuBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.05') || t.description.toLowerCase().includes('manutencao') || t.description.toLowerCase().includes('peça')));
         const transpBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.07') && !t.accountPlan.startsWith('03.07.01')));
         const motBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.01') || t.description.toLowerCase().includes('motorista') || t.description.toLowerCase().includes('operador')));
-        
         const subtotalBombas = manuBombas + transpBombas + motBombas;
 
         // 5. GRUPO BETONEIRAS
         const isBetoneira = (t) => (t.description.toLowerCase().includes('betoneira') || t.description.toLowerCase().includes('caminhão') || t.description.toLowerCase().includes('caminhao')) && !t.description.toLowerCase().includes('bomba');
-
         const combBetoneiras = sum(t => t.type === 'expense' && isBetoneira(t) && (t.accountPlan.startsWith('03.07.01') || t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel')));
-        
         const manuBetoneiras = sum(t => t.type === 'expense' && isBetoneira(t) && (t.accountPlan.startsWith('03.05') || t.description.toLowerCase().includes('manutencao') || t.description.toLowerCase().includes('peça') || t.description.toLowerCase().includes('pneu')));
         const transpBetoneiras = sum(t => t.type === 'expense' && isBetoneira(t) && (t.accountPlan.startsWith('03.07') && !t.accountPlan.startsWith('03.07.01')));
         const motBetoneiras = sum(t => t.type === 'expense' && isBetoneira(t) && (t.accountPlan.startsWith('03.01') || t.description.toLowerCase().includes('motorista')));
-
         const subtotalBetoneiras = manuBetoneiras + transpBetoneiras + motBetoneiras;
 
-        // MARGEM 2
         const margem2 = margem1 + recBombeado - combBombas - combBetoneiras;
-
-        // RESULTADOS PARCIAIS
         const resPosBombas = margem2 - subtotalBombas;
         const resPosBetoneiras = resPosBombas - subtotalBetoneiras;
 
@@ -1571,36 +1640,27 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             if (desc.includes('rateio') && desc.includes('adm')) return false; 
             if (desc.includes('parada')) return false; 
             if (plan.startsWith('02') || desc.includes('imposto')) return false; 
-            if (plan.startsWith('06') || desc.includes('investimento') || desc.includes('consórcio')) return false; // Exclui investimento aqui
+            if (plan.startsWith('06') || desc.includes('investimento') || desc.includes('consórcio')) return false;
             
             return true; 
         });
 
         const impostos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('02') || t.description.toLowerCase().includes('imposto')));
-        
         const subtotalDespUnidade = despFixasUnidade + impostos;
         const resPosDespUnidade = resPosBetoneiras - subtotalDespUnidade;
-        
         const resOperacional = resPosDespUnidade;
 
-        // 7. PÓS OPERACIONAL (RATEIOS E PARADAS)
+        // 7. PÓS OPERACIONAL
         const rateioAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('rateio') && t.description.toLowerCase().includes('adm'));
         const manuBetoneiraParada = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('betoneira') && t.description.toLowerCase().includes('parada'));
         const manuVeicLeveParado = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('veículo') && t.description.toLowerCase().includes('parado'));
-        
         const resPosDespesas = resOperacional - rateioAdm - manuBetoneiraParada - manuVeicLeveParado;
 
-        // 8. INVESTIMENTOS (NOVO)
-        const investimentos = sum(t => t.type === 'expense' && (
-            t.accountPlan.startsWith('06') || 
-            t.description.toLowerCase().includes('investimento') || 
-            t.description.toLowerCase().includes('consórcio')
-        ));
-
-        // 9. RESULTADO FINAL PÓS INVESTIMENTOS (NOVO)
+        // 8. INVESTIMENTOS
+        const investimentos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('06') || t.description.toLowerCase().includes('investimento') || t.description.toLowerCase().includes('consórcio')));
         const resPosInvestimentos = resPosDespesas - investimentos;
 
-        // 10. GANHO DE MERCADO
+        // 9. GANHO DE MERCADO
         const clientesPrejuizo = sum(t => t.type === 'revenue' && (t.description.toLowerCase().includes('ganho mercado') || t.description.toLowerCase().includes('clientes prejuizo')));
 
         return {
@@ -1613,14 +1673,14 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             despFixasUnidade, impostos, subtotalDespUnidade, resPosDespUnidade,
             resOperacional,
             rateioAdm, manuBetoneiraParada, manuVeicLeveParado, resPosDespesas,
-            investimentos, resPosInvestimentos, // NOVOS CAMPOS
+            investimentos, resPosInvestimentos,
             clientesPrejuizo
         };
+    }, [transactions, totalProduction, isNoromixLayout, selectedUnit]);
 
-    }, [transactions, totalProduction, isNoromixLayout]);
-
-    // --- RENDERIZAÇÃO DA LINHA (Customizada) ---
-    const Row = ({ label, val, isHeader = false, isResult = false, isSub = false, colorClass = "text-slate-700", bgClass = "", indent = 0, type = 'money', customColor = null }) => {
+    // --- RENDERIZAÇÃO DA LINHA ---
+    const Row = ({ label, val, isHeader = false, isResult = false, isSub = false, colorClass = "text-slate-700", bgClass = "", indent = 0, type = 'money', customColor = null, onClick = null, hasArrow = false, expanded = false }) => {
+        // Para Noromix, usa uma base aproximada; para Padrão, usa TotalRevenue
         const baseRevenue = isNoromixLayout 
             ? (noromixData?.totalRecCGanhos + noromixData?.recBombeado) 
             : standardData?.totalRevenue;
@@ -1633,11 +1693,14 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             finalTextColor = val >= 0 ? 'text-emerald-600' : 'text-rose-600';
         } else if (customColor === 'purple') {
             finalTextColor = 'text-purple-600 font-bold';
+        } else if (isResult) {
+            finalTextColor = val >= 0 ? 'text-emerald-600' : 'text-rose-600';
         }
 
         return (
-            <tr className={`${bgClass} border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors`}>
+            <tr className={`${bgClass} border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors cursor-pointer`} onClick={onClick}>
                 <td className={`p-2 py-3 flex items-center ${finalTextColor} dark:text-slate-200`} style={{ paddingLeft: `${indent * 20 + 10}px` }}>
+                    {hasArrow && (expanded ? <ChevronDown size={14} className="mr-2"/> : <ChevronRight size={14} className="mr-2"/>)}
                     <span className={`${isHeader ? 'font-bold uppercase text-sm' : 'text-xs font-medium'}`}>{label}</span>
                 </td>
                 <td className={`p-2 text-right font-bold ${finalTextColor} dark:text-slate-200`}>
@@ -1682,23 +1745,19 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                                 <Row label="Volume m³ (Total)" val={noromixData.volTotal} type="vol" isHeader bgClass="bg-slate-50 dark:bg-slate-800" />
                                 
                                 <div className="my-4"></div>
-
                                 <Row label="Receitas Concreto" val={noromixData.recConcreto} indent={0} colorClass="text-blue-600" />
                                 <Row label="Ganho Produtividade" val={noromixData.ganhoProdutividade} indent={0} colorClass="text-blue-600" />
                                 <Row label="Total Receitas C/ Ganhos" val={noromixData.totalRecCGanhos} isHeader bgClass="bg-blue-50 dark:bg-blue-900/20" />
-                                
                                 <Row label="(-) Matéria Prima" val={noromixData.materiaPrima} indent={1} colorClass="text-rose-500" />
                                 <Row label="= Margem de Contribuição 1" val={noromixData.margem1} isHeader isResult customColor="dynamic" bgClass="bg-slate-100 dark:bg-slate-700" />
 
                                 <div className="my-4"></div>
-
                                 <Row label="(+) Receitas Bombeado" val={noromixData.recBombeado} indent={1} colorClass="text-emerald-500" />
                                 <Row label="(-) Combustível Bombas" val={noromixData.combBombas} indent={1} colorClass="text-rose-500" />
                                 <Row label="(-) Combustível Betoneiras" val={noromixData.combBetoneiras} indent={1} colorClass="text-rose-500" />
                                 <Row label="= Margem de Contribuição 2" val={noromixData.margem2} isHeader isResult customColor="dynamic" bgClass="bg-slate-100 dark:bg-slate-700" />
 
                                 <div className="my-4"></div>
-
                                 <Row label="Despesas Manutenção Bombas" val={noromixData.manuBombas} indent={1} colorClass="text-rose-500" />
                                 <Row label="Despesas Transportes Bombas" val={noromixData.transpBombas} indent={1} colorClass="text-rose-500" />
                                 <Row label="Custo Motorista Bombas" val={noromixData.motBombas} indent={1} colorClass="text-rose-500" />
@@ -1706,7 +1765,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                                 <Row label="= Resultado Pós Bombas" val={noromixData.resPosBombas} isHeader isResult customColor="dynamic" bgClass="bg-slate-100 dark:bg-slate-700" />
 
                                 <div className="my-4"></div>
-
                                 <Row label="Despesas Manutenção Betoneiras" val={noromixData.manuBetoneiras} indent={1} colorClass="text-rose-500" />
                                 <Row label="Despesas Transportes Betoneiras" val={noromixData.transpBetoneiras} indent={1} colorClass="text-rose-500" />
                                 <Row label="Custo Motorista Betoneiras" val={noromixData.motBetoneiras} indent={1} colorClass="text-rose-500" />
@@ -1714,7 +1772,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                                 <Row label="= Resultado Pós Betoneiras" val={noromixData.resPosBetoneiras} isHeader isResult customColor="dynamic" bgClass="bg-slate-100 dark:bg-slate-700" />
 
                                 <div className="my-4"></div>
-
                                 <Row label="Total de Despesas Unidades" val={noromixData.despFixasUnidade} indent={1} colorClass="text-rose-500" />
                                 <Row label="Despesas Fixas Adm P/ Unidade" val={0} indent={1} colorClass="text-rose-500" />
                                 <Row label="Impostos" val={noromixData.impostos} indent={1} colorClass="text-rose-500" />
@@ -1731,7 +1788,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                                 
                                 <Row label="= RESULTADO PÓS DESPESAS" val={noromixData.resPosDespesas} isHeader isResult customColor="dynamic" bgClass="bg-slate-300 dark:bg-slate-500" />
 
-                                {/* NOVO: INVESTIMENTOS E RESULTADO FINAL */}
                                 <div className="my-4"></div>
                                 <Row label="(-) Investimentos" val={noromixData.investimentos} indent={1} colorClass="text-rose-500" />
                                 <Row label="= RESULTADO PÓS INVESTIMENTOS" val={noromixData.resPosInvestimentos} isHeader isResult customColor="dynamic" bgClass="bg-slate-400 dark:bg-slate-800" />
@@ -1744,16 +1800,62 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                         {/* ================= LAYOUT PADRÃO (PORTOS/PEDREIRAS) ================= */}
                         {!isNoromixLayout && standardData && (
                             <>
-                                <Row label="Total Receitas" val={standardData.totalRevenue} isHeader colorClass="text-blue-600" />
-                                <Row label="Receita de Material" val={standardData.recMaterial} indent={1} colorClass="text-blue-500" />
-                                
-                                <Row label="Total Custo Operacional" val={standardData.totalCustoOperacional} isHeader colorClass="text-rose-600" />
-                                <Row label="= Margem de Contribuição" val={standardData.margemContribuicao} isHeader isResult bgClass="bg-blue-50 dark:bg-blue-900/20" />
-                                
-                                <Row label="(-) Rateio Administrativo" val={standardData.rateioAdm} indent={1} colorClass="text-rose-500" />
-                                <Row label="(-) Investimentos" val={standardData.investimentos} indent={1} colorClass="text-rose-500" />
-                                
-                                <Row label="= Resultado Final" val={standardData.resultFinal} isHeader isResult bgClass="bg-slate-200 dark:bg-slate-700" />
+                                {/* RECEITAS */}
+                                <Row label="Total Receitas" val={standardData.totalRevenue} isHeader colorClass="text-blue-600" onClick={()=>toggle('receitas')} hasArrow expanded={expanded['receitas']} />
+                                {expanded['receitas'] && (
+                                    <>
+                                        <Row label="Receita de Material" val={standardData.recMaterial} indent={1} colorClass="text-blue-500" />
+                                        <Row label="Receita Retira" val={standardData.recRetira} indent={2} isSub colorClass="text-blue-400" />
+                                        <Row label="Receita Entrega" val={standardData.recEntrega} indent={2} isSub colorClass="text-blue-400" />
+                                        <Row label="Receita de Frete" val={standardData.recFrete} indent={1} colorClass="text-blue-500" />
+                                        <Row label="Frete Carreta" val={standardData.freteCarreta} indent={2} isSub colorClass="text-blue-400" />
+                                        <Row label="Frete Truck" val={standardData.freteTruck} indent={2} isSub colorClass="text-blue-400" />
+                                        <Row label="Frete Terceiros" val={standardData.freteTerceiros} indent={2} isSub colorClass="text-blue-400" />
+                                        <Row label="Subsídio de Terceiros" val={standardData.subsidio} indent={1} colorClass="text-blue-500" />
+                                    </>
+                                )}
+
+                                <Row label="Custo Operacional" val={standardData.totalCustoOperacional} isHeader colorClass="text-rose-600" onClick={()=>toggle('custo_operacional')} hasArrow expanded={expanded['custo_operacional']} />
+                                {expanded['custo_operacional'] && (
+                                    <>
+                                        <Row label="Despesas da Unidade" val={standardData.despUnidade} indent={1} colorClass="text-rose-500" />
+                                        <Row label="Custo Administrativo" val={0} indent={1} colorClass="text-rose-500" /> 
+                                        <Row label="Combustível Transporte" val={standardData.combustivel} indent={1} colorClass="text-rose-500" />
+                                    </>
+                                )}
+
+                                <Row label="Margem de Contribuição" val={standardData.margemContribuicao} isHeader isResult bgClass="bg-blue-50 dark:bg-blue-900/20" />
+
+                                <Row label="Despesas Comerciais" val={0} indent={0} colorClass="text-rose-600" />
+
+                                <Row label="Manutenção Transporte" val={standardData.manutencaoTotal} isHeader colorClass="text-rose-600" onClick={()=>toggle('manutencao')} hasArrow expanded={expanded['manutencao']} indent={0}/>
+                                {expanded['manutencao'] && (
+                                    <>
+                                        <Row label="Manutenção Preventiva" val={standardData.manuPrev} indent={1} isSub colorClass="text-rose-500" />
+                                        <Row label="Manutenção Corretiva" val={standardData.manuCorr} indent={1} isSub colorClass="text-rose-500" />
+                                        <Row label="Manutenção Reforma" val={standardData.manuReform} indent={1} isSub colorClass="text-rose-500" />
+                                        <Row label="Fretes compras p/ manutenção" val={standardData.manuFrete} indent={1} isSub colorClass="text-rose-500" />
+                                        <Row label="Serviços de Pneus/Borracharia" val={standardData.manuPneus} indent={1} isSub colorClass="text-rose-500" />
+                                        <Row label="Pneus Ressolados" val={standardData.manuRessolado} indent={1} isSub colorClass="text-rose-500" />
+                                        <Row label="Pneus Novos" val={standardData.manuNovos} indent={1} isSub colorClass="text-rose-500" />
+                                    </>
+                                )}
+
+                                <Row label="Total Despesas Transportes (Residual)" val={standardData.residualTransporte} indent={0} colorClass="text-rose-600 font-bold" />
+                                <Row label="Total Desp. Transp. Terceiros" val={standardData.transpTerceiros} indent={0} colorClass="text-rose-600" />
+                                <Row label="Impostos" val={standardData.impostos} indent={0} colorClass="text-rose-600" />
+
+                                <Row label="Resultado Operacional" val={standardData.resultOperacional} isHeader isResult bgClass="bg-slate-200 dark:bg-slate-700" />
+
+                                <Row label="Rateio Despesas Administrativas" val={standardData.rateioAdm} indent={0} colorClass="text-rose-600" />
+                                <Row label="Despesas Multas e Taxas" val={standardData.multas} indent={0} colorClass="text-rose-600" />
+                                <Row label="Frota Parada" val={standardData.frotaParada} indent={0} colorClass="text-rose-600" />
+
+                                <Row label="Resultado Pós Despesas" val={standardData.resultPosDespesas} isHeader isResult bgClass="bg-slate-200 dark:bg-slate-700" />
+
+                                <Row label="Investimentos / Consórcios" val={standardData.investimentos} indent={0} colorClass="text-rose-600" />
+
+                                <Row label="Resultado Pós Investimentos" val={standardData.resultFinal} isHeader isResult bgClass="bg-slate-300 dark:bg-slate-600" />
                             </>
                         )}
                     </tbody>
