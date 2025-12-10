@@ -2416,7 +2416,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     const [selectedSegment, setSelectedSegment] = useState('Portos de Areia');
     const [activeRateioType, setActiveRateioType] = useState('ADMINISTRATIVO');
     
-    // Estado para porcentagens manuais (usado apenas em Vendedores agora)
+    // --- ESTADOS PARA RATEIOS MANUAIS ---
+    // Estrutura: { 'NomeUnidade': { '2105': 50 }, '8003': 90 }
     const [manualPercents, setManualPercents] = useState({});
 
     // --- CONFIGURAÇÃO DOS RATEIOS ---
@@ -2437,10 +2438,39 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         ],
         'Noromix Concreteiras': [
             { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo' },
-            { id: 'COMERCIAL', label: 'Rateio Comercial (CC 1104)' }, // Nome atualizado
-            { id: 'VENDEDORES', label: 'Rateio Vendedores' }
+            { id: 'COMERCIAL', label: 'Rateio Comercial (Produção)' },
+            { id: 'VENDEDORES', label: 'Rateio Vendedores (CC Específico)' }
         ]
     };
+
+    // --- MAPEAMENTO DE CCs VENDEDORES CONCRETEIRAS ---
+    const VENDEDORES_MAP = [
+        { cc: 8003, unit: "Noromix Concreto S/A - Votuporanga" },
+        { cc: 9003, unit: "Noromix Concreto S/A - Três Fronteiras" },
+        { cc: 22003, unit: "Noromix Concreto S/A - Ilha Solteira" },
+        { cc: 25003, unit: "Noromix Concreto S/A - Jales" },
+        { cc: 27003, unit: "Noromix Concreto S/A - Fernandópolis" },
+        { cc: 29003, unit: "Noromix Concreto S/A - Pereira Barreto" },
+        { cc: 33003, unit: "Noromix Concreto S/A - Ouroeste" },
+        { cc: 34003, unit: "Noromix Concreto S/A - Monções" },
+        { cc: 38003, unit: "Noromix Concreto S/A - Paranaíba" }
+    ];
+
+    // Inicializa porcentagens padrão (100% Concreto) se não existirem
+    useEffect(() => {
+        if (selectedSegment === 'Noromix Concreteiras') {
+            setManualPercents(prev => {
+                const newState = { ...prev };
+                VENDEDORES_MAP.forEach(item => {
+                    // Se não tiver valor definido para este CC, define 100% padrão
+                    if (newState[item.cc] === undefined) {
+                        newState[item.cc] = 100;
+                    }
+                });
+                return newState;
+            });
+        }
+    }, [selectedSegment]);
 
     // --- HELPER DE FILTRO DE DATA ---
     const filterByDate = (txs) => {
@@ -2463,7 +2493,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     const calculatedData = useMemo(() => {
         const periodTxs = filterByDate(transactions);
         
-        // Helper para somar CCs
         const sumCC = (codes) => periodTxs
             .filter(t => t.type === 'expense')
             .filter(t => {
@@ -2472,7 +2501,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             })
             .reduce((acc, t) => acc + t.value, 0);
 
-        // Helper para listar itens (detalhamento)
         const listItems = (codes) => periodTxs
             .filter(t => t.type === 'expense')
             .filter(t => codes.includes(parseInt(t.costCenter.split(' ')[0])));
@@ -2486,116 +2514,116 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         const totalProd = sumCC(ccProd);
         const itemsProd = listItems(ccProd);
 
-        // 3. Vendedores
+        // 3. Vendedores (Genérico - Portos e Pedreiras)
         const totalVend2105 = sumCC([2105, 20105]);
         const totalVend3105 = sumCC([3105]);
         const totalVend5105 = sumCC([5105]);
 
-        // 4. Comercial (Genérico para Portos/Pedreiras)
+        // 4. Comercial (Genérico)
         const totalComercial = sumCC([1104]);
 
         // ---------------------------------------------------------
-        // 5. NOVA LÓGICA: Rateio Comercial Noromix (CC 1104)
+        // 5. Rateio Comercial Noromix (CC 1104) - Lógica de Produção
         // ---------------------------------------------------------
-        let noromixComercialData = {
-            units: [],
-            totalProduction: 0,
-            totalExpenses: 0,
-            expenseItems: []
-        };
-
+        let noromixComercialData = { units: [], totalProduction: 0, totalExpenses: 0, expenseItems: [] };
         if (selectedSegment === 'Noromix Concreteiras') {
-            // A. Definir as 10 Unidades (9 Concreteiras + 1 Fábrica)
-            const targetUnits = [
-                ...BUSINESS_HIERARCHY["Noromix Concreteiras"],
-                ...BUSINESS_HIERARCHY["Fábrica de Tubos"]
-            ];
-
-            // B. Pegar despesas do CC 1104
+            const targetUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
             const expenses1104 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1104'));
             const totalExp = expenses1104.reduce((acc, t) => acc + t.value, 0);
             
-            // C. Calcular produção de cada unidade
             let grandTotalProd = 0;
             const unitsCalculated = targetUnits.map(unitName => {
                 const prod = periodTxs
                     .filter(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === unitName)
                     .reduce((acc, t) => acc + t.value, 0);
-                
                 grandTotalProd += prod;
-                
-                return {
-                    name: unitName.includes('-') ? unitName.split('-')[1].trim() : unitName, // Nome curto
-                    fullName: unitName,
-                    production: prod,
-                    percent: 0, // Será calculado abaixo
-                    valueToPay: 0 // Será calculado abaixo
-                };
+                return { name: unitName.includes('-') ? unitName.split('-')[1].trim() : unitName, fullName: unitName, production: prod, percent: 0, valueToPay: 0 };
             });
 
-            // D. Calcular % e Valor final
             unitsCalculated.forEach(u => {
                 if (grandTotalProd > 0) {
                     u.percent = (u.production / grandTotalProd);
                     u.valueToPay = totalExp * u.percent;
                 }
             });
-
-            // Ordenar por produção (maior para menor)
             unitsCalculated.sort((a,b) => b.production - a.production);
-
-            noromixComercialData = {
-                units: unitsCalculated,
-                totalProduction: grandTotalProd,
-                totalExpenses: totalExp,
-                expenseItems: expenses1104
-            };
+            noromixComercialData = { units: unitsCalculated, totalProduction: grandTotalProd, totalExpenses: totalExp, expenseItems: expenses1104 };
         }
 
-        // Lógica de Produção Ativa (Para Portos/Pedreiras)
-        const targetUnitsGenerico = [
-            ...BUSINESS_HIERARCHY["Pedreiras"], 
-            ...BUSINESS_HIERARCHY["Portos de Areia"], 
-            ...BUSINESS_HIERARCHY["Usinas de Asfalto"]
-        ];
+        // ---------------------------------------------------------
+        // 6. Rateio Vendedores Noromix (CCs Específicos)
+        // ---------------------------------------------------------
+        let noromixVendedoresData = [];
+        if (selectedSegment === 'Noromix Concreteiras') {
+            // Lista dos CCs alvo
+            const targetCCs = VENDEDORES_MAP.map(m => m.cc);
+            
+            // Pega transações desses CCs
+            const vendorTxs = periodTxs.filter(t => {
+                const cc = parseInt(t.costCenter.split(' ')[0]);
+                return targetCCs.includes(cc) && t.type === 'expense';
+            });
+
+            // Agrupa por CC e por Classe (AccountPlan)
+            const grouped = {};
+            vendorTxs.forEach(t => {
+                const cc = parseInt(t.costCenter.split(' ')[0]);
+                const mapInfo = VENDEDORES_MAP.find(m => m.cc === cc);
+                const unitName = mapInfo ? mapInfo.unit : 'Desconhecida';
+                const shortUnit = unitName.includes('-') ? unitName.split('-')[1].trim() : unitName;
+                
+                // Chave única: CC + Código da Conta
+                const key = `${cc}-${t.accountPlan}`;
+
+                if (!grouped[key]) {
+                    grouped[key] = {
+                        cc: cc,
+                        unitName: shortUnit,
+                        accountCode: t.accountPlan,
+                        accountDesc: t.planDescription,
+                        originalValue: 0,
+                        items: []
+                    };
+                }
+                grouped[key].originalValue += t.value;
+                grouped[key].items.push(t);
+            });
+
+            noromixVendedoresData = Object.values(grouped).sort((a,b) => a.cc - b.cc);
+        }
+
+        // Lógica de Produção Ativa
+        const targetUnitsGenerico = [...BUSINESS_HIERARCHY["Pedreiras"], ...BUSINESS_HIERARCHY["Portos de Areia"], ...BUSINESS_HIERARCHY["Usinas de Asfalto"]];
         const activeUnits = targetUnitsGenerico.filter(unit => {
-            const prod = periodTxs
-                .filter(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === unit)
-                .reduce((acc, t) => acc + t.value, 0);
+            const prod = periodTxs.filter(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === unit).reduce((acc, t) => acc + t.value, 0);
             return prod > 0;
         });
 
         return { 
-            totalAdm, itemsAdm, 
-            totalProd, itemsProd,
-            totalVend2105, totalVend3105, totalVend5105,
-            totalComercial, activeUnits,
-            noromixComercialData // Dados novos exportados aqui
+            totalAdm, itemsAdm, totalProd, itemsProd, totalVend2105, totalVend3105, totalVend5105, totalComercial, activeUnits,
+            noromixComercialData, noromixVendedoresData
         };
     }, [transactions, filter, selectedSegment]);
 
-    // Handle change percentage
-    const handlePercChange = (unit, cc, val) => {
-        setManualPercents(prev => ({
-            ...prev,
-            [unit]: {
-                ...prev[unit],
-                [cc]: parseFloat(val) || 0
-            }
-        }));
+    // Handle change percentage (Genérico e Vendedores Noromix)
+    const handlePercChange = (key, subKey, val) => {
+        let numVal = parseFloat(val);
+        if (numVal < 0) numVal = 0;
+        if (numVal > 100) numVal = 100;
+
+        if (selectedSegment === 'Noromix Concreteiras') {
+            // Para Noromix, a chave é o próprio CC (ex: 8003)
+            setManualPercents(prev => ({ ...prev, [key]: numVal }));
+        } else {
+            // Para outros, usa estrutura aninhada
+            setManualPercents(prev => ({ ...prev, [key]: { ...prev[key], [subKey]: numVal } }));
+        }
     };
 
-    // --- FUNÇÃO DE RENDERIZAÇÃO DO CONTEÚDO ---
+    // --- RENDERIZAÇÃO ---
     const renderContent = () => {
-        
-        // --- TELA LIMPEZA / PERFURATRIZ (EM BRANCO) ---
         if (['LIMPEZA', 'PERFURATRIZ'].includes(activeRateioType)) {
-            return (
-                <div className="flex flex-col items-center justify-center h-64 text-slate-400 bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed dark:border-slate-700">
-                    <div className="mb-4 opacity-50 text-4xl">🏗️</div>
-                    <p>Módulo em desenvolvimento.</p>
-                </div>
-            );
+            return <div className="p-10 text-center text-slate-400 border border-dashed rounded-xl">Módulo em desenvolvimento.</div>;
         }
 
         // --- TELA ADMINISTRATIVO ---
@@ -2603,7 +2631,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             const shareValue = calculatedData.totalAdm / 8;
             const unitShare = selectedSegment === 'Portos de Areia' ? shareValue / 2 : shareValue; 
             const unitsCount = selectedSegment === 'Portos de Areia' ? 2 : 6;
-
             return (
                 <div className="space-y-6 animate-in fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2613,13 +2640,11 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                         </div>
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
                             <p className="text-slate-500 text-xs font-bold uppercase mb-1">Valor da Cota (1/8)</p>
-                            <h3 className="text-2xl font-bold text-slate-700 dark:text-white">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                            <p className="text-xs text-slate-400 mt-1">Base de rateio global</p>
+                            <h3 className="text-2xl font-bold dark:text-white">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
                         </div>
                         <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
                             <p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade ({unitsCount}x)</p>
                             <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{unitShare.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
-                            <p className="text-xs text-emerald-600/60 mt-1">Valor efetivo por filial</p>
                         </div>
                     </div>
                 </div>
@@ -2631,7 +2656,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             const ccOrigem = selectedSegment === 'Portos de Areia' ? '1042' : '1043';
             const divisor = selectedSegment === 'Portos de Areia' ? 2 : 6; 
             const unitShare = calculatedData.totalProd / divisor;
-
             return (
                 <div className="space-y-6 animate-in fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2641,7 +2665,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                         </div>
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
                             <p className="text-slate-500 text-xs font-bold uppercase mb-1">Alocado por Unidade ({divisor}x)</p>
-                            <h3 className="text-2xl font-bold text-slate-700 dark:text-white">{unitShare.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
+                            <h3 className="text-2xl font-bold dark:text-white">{unitShare.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
                         </div>
                     </div>
                 </div>
@@ -2650,8 +2674,124 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
 
         // --- TELA VENDEDORES ---
         if (activeRateioType === 'VENDEDORES') {
-            const allUnits = [...BUSINESS_HIERARCHY['Portos de Areia'], ...BUSINESS_HIERARCHY['Pedreiras']];
             
+            // A. LÓGICA NOROMIX CONCRETEIRAS (NOVA)
+            if (selectedSegment === 'Noromix Concreteiras') {
+                return (
+                    <div className="space-y-6 animate-in fade-in">
+                        
+                        {/* 1. CONFIGURAÇÃO DE RATEIO (TABELA DE % MANUAIS) */}
+                        <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
+                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700">
+                                <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2">
+                                    <Settings size={18} className="text-slate-500"/>
+                                    Configuração de Rateio por Centro de Custo
+                                </h4>
+                                <p className="text-xs text-slate-500 mt-1">Defina a % que fica na Concreteira. O restante irá automaticamente para a Fábrica de Tubos.</p>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase">
+                                        <tr>
+                                            <th className="p-3">CC</th>
+                                            <th className="p-3">Unidade Padrão (Concreto)</th>
+                                            <th className="p-3 w-40 text-center bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700">% Concreto</th>
+                                            <th className="p-3 w-40 text-center bg-amber-50 dark:bg-amber-900/20 text-amber-700">% Tubos</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y dark:divide-slate-700">
+                                        {VENDEDORES_MAP.map(mapItem => {
+                                            const percConc = manualPercents[mapItem.cc] !== undefined ? manualPercents[mapItem.cc] : 100;
+                                            const percTubos = 100 - percConc;
+
+                                            return (
+                                                <tr key={mapItem.cc} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                                    <td className="p-3 font-mono font-bold dark:text-slate-300">{mapItem.cc}</td>
+                                                    <td className="p-3 dark:text-slate-300">
+                                                        {mapItem.unit.includes('-') ? mapItem.unit.split('-')[1].trim() : mapItem.unit}
+                                                    </td>
+                                                    <td className="p-3 text-center bg-indigo-50/30">
+                                                        <div className="flex items-center justify-center gap-1">
+                                                            <input 
+                                                                type="number" min="0" max="100" 
+                                                                value={percConc}
+                                                                onChange={(e) => handlePercChange(mapItem.cc, null, e.target.value)}
+                                                                className="w-16 text-center border rounded p-1 dark:bg-slate-700 dark:text-white dark:border-slate-600 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-700"
+                                                            />
+                                                            <span className="text-indigo-400">%</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-3 text-center bg-amber-50/30">
+                                                        <span className="font-bold text-amber-700 dark:text-amber-500">{percTubos.toFixed(0)}%</span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* 2. DEMONSTRATIVO DE LANÇAMENTOS (RESULTADO) */}
+                        <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
+                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700">
+                                <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2">
+                                    <FileText size={18} className="text-slate-500"/>
+                                    Demonstrativo de Lançamentos (Aberto por Classe)
+                                </h4>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase">
+                                        <tr>
+                                            <th className="p-3">CC Origem / Unidade</th>
+                                            <th className="p-3">Classe de Despesa</th>
+                                            <th className="p-3 text-right">Valor Original</th>
+                                            <th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Concreto</th>
+                                            <th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Tubos</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y dark:divide-slate-700">
+                                        {calculatedData.noromixVendedoresData.map((row, idx) => {
+                                            const percConc = manualPercents[row.cc] !== undefined ? manualPercents[row.cc] : 100;
+                                            const valConcreto = row.originalValue * (percConc / 100);
+                                            const valTubos = row.originalValue - valConcreto;
+
+                                            return (
+                                                <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
+                                                    <td className="p-3">
+                                                        <div className="font-bold text-slate-700 dark:text-slate-200">{row.unitName}</div>
+                                                        <div className="text-xs font-mono text-slate-400">CC {row.cc}</div>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <div className="font-mono text-xs opacity-70">{row.accountCode}</div>
+                                                        <div className="font-medium">{row.accountDesc}</div>
+                                                    </td>
+                                                    <td className="p-3 text-right font-medium">{row.originalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                    <td className="p-3 text-right font-bold text-indigo-600 bg-indigo-50/30">
+                                                        {valConcreto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                        <span className="block text-[9px] font-normal text-indigo-400">({percConc}%)</span>
+                                                    </td>
+                                                    <td className="p-3 text-right font-bold text-amber-600 bg-amber-50/30">
+                                                        {valTubos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                        <span className="block text-[9px] font-normal text-amber-400">({100 - percConc}%)</span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                        {calculatedData.noromixVendedoresData.length === 0 && (
+                                            <tr><td colSpan={5} className="p-8 text-center text-slate-400">Nenhum lançamento encontrado nos CCs de vendas selecionados.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // B. LÓGICA GENÉRICA (PORTOS E PEDREIRAS)
+            const allUnits = [...BUSINESS_HIERARCHY['Portos de Areia'], ...BUSINESS_HIERARCHY['Pedreiras']];
             return (
                 <div className="space-y-6 animate-in fade-in">
                     <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 mb-4 flex gap-4 text-sm">
@@ -2701,16 +2841,10 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
 
         // --- TELA COMERCIAL ---
         if (activeRateioType === 'COMERCIAL') {
-            
-            // -------------------------------------------------------------
-            // MODIFICAÇÃO SOLICITADA: RATEIO AUTOMÁTICO POR PRODUÇÃO
-            // -------------------------------------------------------------
             if (selectedSegment === 'Noromix Concreteiras') {
                 const { units, totalProduction, totalExpenses, expenseItems } = calculatedData.noromixComercialData;
-
                 return (
                     <div className="space-y-6 animate-in fade-in">
-                        {/* 1. CARDS DE RESUMO */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                              <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-rose-500 shadow-sm">
                                 <p className="text-xs font-bold text-slate-500 uppercase">Despesas Totais (CC 1104)</p>
@@ -2727,82 +2861,39 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-emerald-500 shadow-sm">
                                 <p className="text-xs font-bold text-slate-500 uppercase">Custo Médio do Rateio</p>
                                 <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                                    {totalProduction > 0 
-                                        ? (totalExpenses / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) 
-                                        : 'R$ 0,00'}
+                                    {totalProduction > 0 ? (totalExpenses / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : 'R$ 0,00'}
                                     <span className="text-sm font-normal text-slate-400"> / unidade produzida</span>
                                 </h3>
                             </div>
                         </div>
-
-                        {/* 2. TABELA DE RATEIO POR UNIDADE */}
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
-                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                                <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2">
-                                    <Factory size={18} className="text-indigo-500"/>
-                                    Distribuição por Produção
-                                </h4>
-                            </div>
+                            <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center"><h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Factory size={18} className="text-indigo-500"/>Distribuição por Produção</h4></div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm text-left">
                                     <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase">
-                                        <tr>
-                                            <th className="p-3 pl-6">Unidade</th>
-                                            <th className="p-3 text-right">Produção</th>
-                                            <th className="p-3 text-right">% Participação</th>
-                                            <th className="p-3 text-right">Valor a Pagar (Rateio)</th>
-                                        </tr>
+                                        <tr><th className="p-3 pl-6">Unidade</th><th className="p-3 text-right">Produção</th><th className="p-3 text-right">% Participação</th><th className="p-3 text-right">Valor a Pagar (Rateio)</th></tr>
                                     </thead>
                                     <tbody className="divide-y dark:divide-slate-700">
                                         {units.map((u, idx) => (
                                             <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
-                                                <td className="p-3 pl-6 font-medium">
-                                                    {u.name} 
-                                                    {u.name.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}
-                                                </td>
-                                                <td className="p-3 text-right font-mono text-slate-600 dark:text-slate-400">
-                                                    {u.production.toLocaleString()}
-                                                </td>
-                                                <td className="p-3 text-right">
-                                                    <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-xs font-bold">
-                                                        {(u.percent * 100).toFixed(2)}%
-                                                    </span>
-                                                </td>
-                                                <td className="p-3 text-right font-bold text-rose-600 dark:text-rose-400">
-                                                    {u.valueToPay.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                                                </td>
+                                                <td className="p-3 pl-6 font-medium">{u.name} {u.name.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}</td>
+                                                <td className="p-3 text-right font-mono text-slate-600 dark:text-slate-400">{u.production.toLocaleString()}</td>
+                                                <td className="p-3 text-right"><span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-xs font-bold">{(u.percent * 100).toFixed(2)}%</span></td>
+                                                <td className="p-3 text-right font-bold text-rose-600 dark:text-rose-400">{u.valueToPay.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                             </tr>
                                         ))}
-                                        {units.length === 0 && (
-                                            <tr><td colSpan={4} className="p-8 text-center text-slate-400">Nenhuma produção encontrada para calcular o rateio.</td></tr>
-                                        )}
-                                        {/* TOTALIZADOR */}
-                                        <tr className="bg-slate-100 dark:bg-slate-900 font-bold border-t-2 border-slate-200 dark:border-slate-600">
-                                            <td className="p-3 pl-6 text-slate-700 dark:text-white">TOTAL</td>
-                                            <td className="p-3 text-right">{totalProduction.toLocaleString()}</td>
-                                            <td className="p-3 text-right">100.00%</td>
-                                            <td className="p-3 text-right text-rose-700 dark:text-rose-400">
-                                                {totalExpenses.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                                            </td>
-                                        </tr>
+                                        {units.length === 0 && (<tr><td colSpan={4} className="p-8 text-center text-slate-400">Nenhuma produção encontrada para calcular o rateio.</td></tr>)}
+                                        <tr className="bg-slate-100 dark:bg-slate-900 font-bold border-t-2 border-slate-200 dark:border-slate-600"><td className="p-3 pl-6 text-slate-700 dark:text-white">TOTAL</td><td className="p-3 text-right">{totalProduction.toLocaleString()}</td><td className="p-3 text-right">100.00%</td><td className="p-3 text-right text-rose-700 dark:text-rose-400">{totalExpenses.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td></tr>
                                     </tbody>
                                 </table>
                             </div>
                         </div>
-
-                        {/* 3. DETALHAMENTO DAS DESPESAS (LISTA COLAPSÁVEL OU SIMPLES) */}
                         <div className="bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4">
                             <h5 className="text-xs font-bold text-slate-500 uppercase mb-3">Detalhamento das Despesas Rateadas (CC 1104)</h5>
                             <div className="max-h-60 overflow-y-auto pr-2">
                                 <table className="w-full text-xs text-left">
                                     <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                                        {expenseItems.map((item, idx) => (
-                                            <tr key={idx} className="dark:text-slate-400">
-                                                <td className="py-2">{formatDate(item.date)}</td>
-                                                <td className="py-2 font-medium">{item.description}</td>
-                                                <td className="py-2 text-right">{item.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-                                            </tr>
-                                        ))}
+                                        {expenseItems.map((item, idx) => (<tr key={idx} className="dark:text-slate-400"><td className="py-2">{formatDate(item.date)}</td><td className="py-2 font-medium">{item.description}</td><td className="py-2 text-right">{item.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td></tr>))}
                                     </tbody>
                                 </table>
                             </div>
@@ -2811,10 +2902,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 );
             }
 
-            // CASO PADRÃO: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas)
+            // Genérico
             const activeCount = calculatedData.activeUnits.length;
             const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
-            
             return (
                 <div className="space-y-6 animate-in fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2832,7 +2922,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                             <h3 className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</h3>
                         </div>
                     </div>
-
                     <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden">
                         <div className="p-4 bg-slate-50 dark:bg-slate-900 font-bold dark:text-white border-b dark:border-slate-700">Distribuição por Unidade</div>
                         <div className="max-h-96 overflow-y-auto">
@@ -2843,15 +2932,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                         const isActive = calculatedData.activeUnits.includes(unit);
                                         return (
                                             <tr key={unit} className={`dark:text-slate-300 ${!isActive ? 'opacity-50 bg-slate-50 dark:bg-slate-900' : ''}`}>
-                                                <td className="p-3">{unit}</td>
-                                                <td className="p-3">
-                                                    {isActive 
-                                                        ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> 
-                                                        : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}
-                                                </td>
-                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-white">
-                                                    {isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
-                                                </td>
+                                                <td className="p-3">{unit}</td><td className="p-3">{isActive ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}</td><td className="p-3 text-right font-bold text-slate-700 dark:text-white">{isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
                                             </tr>
                                         );
                                     })}
@@ -2863,50 +2944,16 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             );
         }
 
-        // RETORNO PADRÃO (Se nenhum IF for satisfeito)
         return <div className="p-10 text-center text-slate-400">Selecione um tipo de rateio acima.</div>;
+    };
 
-    }; // FIM DA FUNÇÃO renderContent
-
-    // *** INÍCIO DO RETURN PRINCIPAL DO COMPONENTE ***
     return (
         <div className="space-y-6">
-            {/* Header com Filtros Simplificados */}
             <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 shadow-sm gap-4">
-                <div className="flex items-center gap-2">
-                    <Share2 className="text-indigo-500" size={24}/>
-                    <h3 className="font-bold text-lg dark:text-white">Painel de Rateios</h3>
-                </div>
-                <div className="flex gap-2">
-                    <PeriodSelector filter={filter} setFilter={setFilter} years={years} />
-                    <select 
-                        className="bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:text-white outline-none focus:ring-2 ring-indigo-500"
-                        value={selectedSegment}
-                        onChange={(e) => { setSelectedSegment(e.target.value); setActiveRateioType('ADMINISTRATIVO'); }}
-                    >
-                        {Object.keys(RATEIO_CONFIG).map(seg => <option key={seg} value={seg}>{seg}</option>)}
-                    </select>
-                </div>
+                <div className="flex items-center gap-2"><Share2 className="text-indigo-500" size={24}/><h3 className="font-bold text-lg dark:text-white">Painel de Rateios</h3></div>
+                <div className="flex gap-2"><PeriodSelector filter={filter} setFilter={setFilter} years={years} /><select className="bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:text-white outline-none focus:ring-2 ring-indigo-500" value={selectedSegment} onChange={(e) => { setSelectedSegment(e.target.value); setActiveRateioType('ADMINISTRATIVO'); }}>{Object.keys(RATEIO_CONFIG).map(seg => <option key={seg} value={seg}>{seg}</option>)}</select></div>
             </div>
-
-            {/* Sub-menu de Tipos de Rateio */}
-            <div className="flex gap-2 overflow-x-auto pb-2">
-                {RATEIO_CONFIG[selectedSegment]?.map(type => (
-                    <button
-                        key={type.id}
-                        onClick={() => setActiveRateioType(type.id)}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
-                            activeRateioType === type.id 
-                            ? 'bg-indigo-600 text-white shadow-lg' 
-                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border dark:border-slate-700 hover:bg-slate-50'
-                        }`}
-                    >
-                        {type.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* Conteúdo Principal (Chama a função renderContent) */}
+            <div className="flex gap-2 overflow-x-auto pb-2">{RATEIO_CONFIG[selectedSegment]?.map(type => (<button key={type.id} onClick={() => setActiveRateioType(type.id)} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${activeRateioType === type.id ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border dark:border-slate-700 hover:bg-slate-50'}`}>{type.label}</button>))}</div>
             {renderContent()}
         </div>
     );
