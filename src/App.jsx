@@ -2724,11 +2724,11 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                     {/* Card de Resumo dos Potes */}
                                     <div className="mt-4 bg-slate-100 dark:bg-slate-900 p-4 rounded-lg space-y-2">
                                         <div className="flex justify-between text-sm">
-                                            <span>Pot Salários (Cálculo 1)</span>
+                                            <span>Rateio Folha Adm (Cálculo 1)</span>
                                             <span className="font-bold">{totalSalariosPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                         <div className="flex justify-between text-sm">
-                                            <span>Pot Despesas (Cálculo 2 + Fixo)</span>
+                                            <span>Rateio Despesas Adm (Cálculo 2 + Fixo)</span>
                                             <span className="font-bold">{totalDespesasPot.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
                                         </div>
                                         <div className="border-t border-slate-300 pt-2 flex justify-between font-bold text-indigo-600">
