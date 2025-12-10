@@ -2701,9 +2701,10 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
 
 // --- TELA COMERCIAL - NOROMIX CONCRETEIRAS ---
        // --- TELA COMERCIAL ---
+// --- TELA COMERCIAL ---
         if (activeRateioType === 'COMERCIAL') {
             
-            // >>> NOVA LÓGICA: CONCRETEIRAS <<<
+            // 1. LÓGICA ESPECÍFICA: NOROMIX CONCRETEIRAS
             if (selectedSegment === 'Noromix Concreteiras') {
                 const percTubos = 100 - percConcreto;
                 const totalGeral = calculatedData.concreteiraData.reduce((acc, curr) => acc + curr.total, 0);
@@ -2807,8 +2808,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                     </div>
                 );
             }
-        }
-            // >>> LÓGICA ANTIGA: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas) <<<
+
+            // 2. LÓGICA PADRÃO: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas)
+            // Se não entrou no IF acima, executa este aqui:
             const activeCount = calculatedData.activeUnits.length;
             const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
             return (
@@ -2857,8 +2859,56 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                     </div>
                 </div>
             );
-          return <div className="p-10 text-center text-slate-400">Selecione um tipo de rateio acima.</div>;
-};
+        } // <--- FECHA O IF (COMERCIAL)
+
+        // RETORNO PADRÃO DA FUNÇÃO (Se nenhum IF for satisfeito)
+        return <div className="p-10 text-center text-slate-400">Selecione um tipo de rateio acima.</div>;
+
+    }; // <--- FECHA A FUNÇÃO renderContent (AQUI ESTAVA O ERRO DE FECHAMENTO)
+
+    // *** AQUI COMEÇA O RETORNO PRINCIPAL DO COMPONENTE QUE ESTAVA FALTANDO ***
+    return (
+        <div className="space-y-6">
+            {/* Header com Filtros Simplificados */}
+            <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 shadow-sm gap-4">
+                <div className="flex items-center gap-2">
+                    <Share2 className="text-indigo-500" size={24}/>
+                    <h3 className="font-bold text-lg dark:text-white">Painel de Rateios</h3>
+                </div>
+                <div className="flex gap-2">
+                    <PeriodSelector filter={filter} setFilter={setFilter} years={years} />
+                    <select 
+                        className="bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:text-white outline-none focus:ring-2 ring-indigo-500"
+                        value={selectedSegment}
+                        onChange={(e) => { setSelectedSegment(e.target.value); setActiveRateioType('ADMINISTRATIVO'); }}
+                    >
+                        {Object.keys(RATEIO_CONFIG).map(seg => <option key={seg} value={seg}>{seg}</option>)}
+                    </select>
+                </div>
+            </div>
+
+            {/* Sub-menu de Tipos de Rateio */}
+            <div className="flex gap-2 overflow-x-auto pb-2">
+                {RATEIO_CONFIG[selectedSegment]?.map(type => (
+                    <button
+                        key={type.id}
+                        onClick={() => setActiveRateioType(type.id)}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
+                            activeRateioType === type.id 
+                            ? 'bg-indigo-600 text-white shadow-lg' 
+                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border dark:border-slate-700 hover:bg-slate-50'
+                        }`}
+                    >
+                        {type.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* Conteúdo Principal (Chama a função renderContent) */}
+            {renderContent()}
+        </div>
+    );
+}; // <--- FIM DO COMPONENTE RateiosComponent
             // >>> LÓGICA ANTIGA: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas) <<<
             const activeCount = calculatedData.activeUnits.length;
             const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
