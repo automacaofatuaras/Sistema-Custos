@@ -1463,14 +1463,14 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
 };
 
 const FechamentoComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit }) => {
-    // Estados para controle de expansão (Layout Padrão)
+    // Estados para controle de expansão
     const [expanded, setExpanded] = useState({
         'receitas': true,
         'custo_operacional': true,
         'manutencao': true
     });
 
-    // Novo estado para controlar a aba ativa (Noromix Geral ou Só Bombas)
+    // Estado para controlar a aba ativa (Noromix Geral ou Só Bombas)
     const [activeSubTab, setActiveSubTab] = useState('noromix');
 
     const toggle = (key) => setExpanded(prev => ({...prev, [key]: !prev[key]}));
@@ -1492,15 +1492,14 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                             selectedUnit.includes('Fábrica') ||
                             (typeof BUSINESS_HIERARCHY !== 'undefined' && BUSINESS_HIERARCHY['Noromix Concreteiras'] && BUSINESS_HIERARCHY['Noromix Concreteiras'].some(u => selectedUnit.includes(u.split('-')[1]?.trim())));
 
-    // --- CÁLCULO DADOS PADRÃO (PORTOS/PEDREIRAS) - CORRIGIDO (LÓGICA COMPLETA RESTAURADA) ---
+    // --- CÁLCULO DADOS PADRÃO (PORTOS/PEDREIRAS) ---
     const standardData = useMemo(() => {
         if (isNoromixLayout) return null; 
 
         const sum = (fn) => transactions.filter(fn).reduce((acc, t) => acc + t.value, 0);
         const totalRevenue = transactions.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
 
-        // Helper para verificar se uma transação pertence a um grupo de regras de custo
-        // (Necessário para a lógica padrão de Portos/Pedreiras)
+        // Helper para verificar regras de custo
         const isInRuleGroup = (t, groupName, subGroupName = null) => {
             const currentSegment = Object.keys(BUSINESS_HIERARCHY).find(key => BUSINESS_HIERARCHY[key].some(u => selectedUnit.includes(u.split('-')[1]?.trim()))) || "Portos de Areia";
             const rules = COST_CENTER_RULES[currentSegment] || COST_CENTER_RULES["Portos de Areia"];
@@ -1510,28 +1509,22 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             return Object.values(rules[groupName]).flat().includes(ccCode);
         };
 
-        // --- CÁLCULOS DAS LINHAS (PADRÃO) ---
-        // RECEITAS
         const recMaterial = sum(t => t.type === 'revenue' && (t.description.toLowerCase().includes('retira') || t.description.toLowerCase().includes('entrega') || t.accountPlan === '01.01'));
         const recFrete = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('frete'));
         const subsidio = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('subsídio'));
         
-        // Detalhe Receitas
         const recRetira = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('retira'));
         const recEntrega = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('entrega'));
         const freteCarreta = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('carreta'));
         const freteTruck = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('truck'));
         const freteTerceiros = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('terceiros') && t.description.toLowerCase().includes('frete'));
 
-        // CUSTO OPERACIONAL
         const despUnidade = sum(t => t.type === 'expense' && isInRuleGroup(t, 'DESPESAS DA UNIDADE'));
         const combustivel = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && (t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel') || t.accountPlan === '03.07.01'));
         const totalCustoOperacional = despUnidade + combustivel;
 
-        // MARGEM DE CONTRIBUIÇÃO
         const margemContribuicao = totalRevenue - totalCustoOperacional;
 
-        // MANUTENÇÃO
         const manutencaoTotal = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05'));
         const manuPrev = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('preventiva'));
         const manuCorr = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('corretiva'));
@@ -1541,25 +1534,20 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const manuRessolado = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('ressolado'));
         const manuNovos = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan.startsWith('03.05') && t.description.toLowerCase().includes('novos'));
         
-        // TOTAL DESPESAS TRANSPORTE
         const totalTransporteGroup = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE'));
         const residualTransporte = totalTransporteGroup - combustivel - manutencaoTotal;
 
-        // MANUAIS E ESPECÍFICOS
         const transpTerceiros = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('transporte terceiros'));
         const impostos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('02') || t.description.toLowerCase().includes('imposto')));
         
-        // RESULTADO OPERACIONAL
         const resultOperacional = margemContribuicao - manutencaoTotal - residualTransporte - transpTerceiros - impostos;
 
-        // PÓS OPERACIONAL
         const rateioAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('rateio despesas'));
         const multas = sum(t => t.type === 'expense' && (t.description.toLowerCase().includes('multa') || t.description.toLowerCase().includes('taxa')));
         const frotaParada = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('frota parada'));
 
         const resultPosDespesas = resultOperacional - rateioAdm - multas - frotaParada;
 
-        // INVESTIMENTOS
         const investimentos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('06') || t.description.toLowerCase().includes('consórcio') || t.description.toLowerCase().includes('investimento')));
         const resultFinal = resultPosDespesas - investimentos;
 
@@ -1576,7 +1564,18 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
     const noromixData = useMemo(() => {
         if (!isNoromixLayout) return null;
 
-        const sum = (fn) => transactions.filter(fn).reduce((acc, t) => acc + t.value, 0);
+        // --- CORREÇÃO DO PROBLEMA DA FÁBRICA ---
+        // Filtra transações garantindo que pertencem EXATAMENTE ao segmento/unidade selecionado
+        const safeTransactions = transactions.filter(t => {
+            if (typeof BUSINESS_HIERARCHY !== 'undefined' && BUSINESS_HIERARCHY[selectedUnit]) {
+                const targetUnits = BUSINESS_HIERARCHY[selectedUnit];
+                const txUnitClean = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                return targetUnits.includes(txUnitClean);
+            }
+            return true;
+        });
+
+        const sum = (fn) => safeTransactions.filter(fn).reduce((acc, t) => acc + t.value, 0);
         
         // 1. VOLUMES
         const volRetira = sum(t => t.type === 'metric' && t.metricType === 'producao' && t.description.toLowerCase().includes('retira'));
@@ -1603,10 +1602,9 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const manuBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.05') || t.description.toLowerCase().includes('manutencao') || t.description.toLowerCase().includes('peça')));
         const transpBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.07') && !t.accountPlan.startsWith('03.07.01')));
         const motBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.01') || t.description.toLowerCase().includes('motorista') || t.description.toLowerCase().includes('operador')));
-        
         const subtotalBombas = manuBombas + transpBombas + motBombas;
         
-        // CÁLCULOS ESPECÍFICOS ABA BOMBAS
+        // Dados Aba Bombas
         const mcBombas = recBombeado - combBombas;
         const resOpBombas = mcBombas - subtotalBombas;
 
@@ -1622,7 +1620,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         // MARGEM 2
         const margem2 = margem1 + recBombeado - combBombas - combBetoneiras;
 
-        // RESULTADOS PARCIAIS
         const resPosBombas = margem2 - subtotalBombas;
         const resPosBetoneiras = resPosBombas - subtotalBetoneiras;
 
@@ -1658,7 +1655,7 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const investimentos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('06') || t.description.toLowerCase().includes('investimento') || t.description.toLowerCase().includes('consórcio')));
         const resPosInvestimentos = resPosDespesas - investimentos;
 
-        // 9. INVESTIMENTOS BOMBAS (NOVO)
+        // 9. INVESTIMENTOS BOMBAS
         const investBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('06') || t.description.toLowerCase().includes('investimento') || t.description.toLowerCase().includes('consórcio')));
         const resPosInvestBombas = resOpBombas - investBombas;
 
@@ -1680,7 +1677,7 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             // Bombas
             mcBombas, resOpBombas, investBombas, resPosInvestBombas
         };
-    }, [transactions, totalProduction, isNoromixLayout]);
+    }, [transactions, totalProduction, isNoromixLayout, selectedUnit]);
 
     // --- RENDERIZAÇÃO DA LINHA ---
     const Row = ({ label, val, isHeader = false, isResult = false, isSub = false, colorClass = "text-slate-700", bgClass = "", indent = 0, type = 'money', customColor = null, onClick = null, hasArrow = false, expanded = false }) => {
@@ -1718,7 +1715,18 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
     return (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 overflow-hidden animate-in fade-in print:shadow-none print:border-none">
-            <style>{`@media print { aside, header, button.no-print { display: none !important; } main { padding: 0 !important; overflow: visible !important; } body { background: white !important; } .print\\:shadow-none { box-shadow: none !important; } .print\\:border-none { border: none !important; } tbody tr { display: table-row !important; } }`}</style>
+            {/* ESTILOS DE IMPRESSÃO: Esconde sidebar e cabeçalho do app, mantém só o relatório */}
+            <style>{`
+                @media print {
+                    aside, header, button.no-print { display: none !important; }
+                    main { padding: 0 !important; overflow: visible !important; }
+                    body { background: white !important; }
+                    .print\\:shadow-none { box-shadow: none !important; }
+                    .print\\:border-none { border: none !important; }
+                    /* Expande tudo na impressão */
+                    tbody tr { display: table-row !important; } 
+                }
+            `}</style>
 
             <div className="p-4 bg-slate-50 dark:bg-slate-900 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="flex items-center gap-4">
@@ -1758,7 +1766,12 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             <div className="overflow-x-auto">
                 <table className="w-full text-left">
                     <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-xs uppercase">
-                        <tr><th className="p-3 pl-4">Descrição</th><th className="p-3 text-right">Valor</th><th className="p-3 text-right">% Rec.</th><th className="p-3 text-right">R$ / {measureUnit}</th></tr>
+                        <tr>
+                            <th className="p-3 pl-4">Descrição</th>
+                            <th className="p-3 text-right">Valor</th>
+                            <th className="p-3 text-right">% Rec.</th>
+                            <th className="p-3 text-right">R$ / {measureUnit}</th>
+                        </tr>
                     </thead>
                     <tbody className="divide-y dark:divide-slate-700">
                         
