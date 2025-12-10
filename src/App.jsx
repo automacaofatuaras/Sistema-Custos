@@ -2411,7 +2411,7 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
         </div>
     );
 };
-// --- COMPONENTE INTERNO: INPUT DE MOEDA (Mantido fora para corrigir foco) ---
+// --- COMPONENTE INTERNO: INPUT DE MOEDA (Mantido fora) ---
 const CurrencyInput = ({ value, onChange, disabled, className }) => {
     const handleChange = (e) => {
         const rawValue = e.target.value.replace(/\D/g, ""); 
@@ -2608,12 +2608,16 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             
             let grandTotalProd = 0;
             const unitsCalculated = targetUnits.map(unitName => {
-                // CORREÇÃO: Match Inteligente de Volume
+                // CORREÇÃO: Comparação EXATA para separar Fábrica de Concreteira
                 const prod = periodTxs.filter(t => {
                     if(t.type !== 'metric' || t.metricType !== 'producao') return false;
-                    // Se o nome no lançamento contiver o nome da unidade (ex: "Noromix Concreteiras: Votuporanga")
-                    // Ou se o nome da unidade for exatamente igual
-                    return t.segment.includes(unitName) || unitName.includes(t.segment);
+                    
+                    // Limpa os nomes para garantir a comparação
+                    const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                    const targetUnit = unitName.includes(':') ? unitName.split(':')[1].trim() : unitName;
+                    
+                    // COMPARAÇÃO EXATA (Remove o problema do .includes)
+                    return txUnit === targetUnit;
                 }).reduce((acc, t) => acc + t.value, 0);
 
                 grandTotalProd += prod;
@@ -2656,22 +2660,24 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
             const allUnits = [...concreteUnits, pipeUnit];
 
-            // 1. Calcular Volumes (CORREÇÃO DE VOLUME APLICADA)
+            // 1. Calcular Volumes (CORREÇÃO DE VOLUME AQUI TAMBÉM)
             let volConcretoTotal = 0;
             let volGlobalTotal = 0;
             const unitVolumes = {};
 
             allUnits.forEach(u => {
+                // Prepara nome limpo da unidade alvo (hierarquia)
+                const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
+
                 const vol = periodTxs
                     .filter(t => {
-                        // Filtro rigoroso: Apenas Produção
                         if (t.type !== 'metric' || t.metricType !== 'producao') return false;
                         
-                        // Match Inteligente:
-                        // Verifica se "Noromix Concreto S/A - Votuporanga" está contido no segmento do lançamento
-                        // OU se o segmento do lançamento está contido no nome da unidade
-                        // Isso resolve o problema de prefixos como "Noromix Concreteiras: ..."
-                        return t.segment.includes(u) || u.includes(t.segment);
+                        // Prepara nome limpo da unidade da transação
+                        const txUnitName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                        
+                        // COMPARAÇÃO EXATA para evitar que "Votuporanga" pegue "Votuporanga (Fábrica)"
+                        return txUnitName === targetName;
                     })
                     .reduce((acc, t) => acc + t.value, 0);
                 
