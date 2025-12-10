@@ -1462,7 +1462,7 @@ const ProductionComponent = ({ transactions, measureUnit }) => {
     );
 };
 
-const FechamentoComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit }) => {
+cconst FechamentoComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit }) => {
     // Estados para controle de expansão (Layout Padrão)
     const [expanded, setExpanded] = useState({
         'receitas': true,
@@ -1493,12 +1493,9 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
     const standardData = useMemo(() => {
         if (isNoromixLayout) return null; 
 
-        // Reaproveitando a lógica anterior para não quebrar os outros segmentos
         const sum = (fn) => transactions.filter(fn).reduce((acc, t) => acc + t.value, 0);
         const totalRevenue = transactions.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
 
-        // ... (Lógica simplificada do padrão para focar no Noromix abaixo)
-        // Recalculando itens principais para o layout padrão funcionar básico
         const recMaterial = sum(t => t.type === 'revenue');
         const totalCustoOperacional = sum(t => t.type === 'expense' && !t.accountPlan.startsWith('06') && !t.description.toLowerCase().includes('rateio'));
         const margemContribuicao = totalRevenue - totalCustoOperacional;
@@ -1518,7 +1515,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         // 1. VOLUMES (Métricas)
         const volRetira = sum(t => t.type === 'metric' && t.metricType === 'producao' && t.description.toLowerCase().includes('retira'));
         const volEntrega = sum(t => t.type === 'metric' && t.metricType === 'producao' && t.description.toLowerCase().includes('entrega'));
-        // Se a soma parcial for 0, assume que tudo é um tipo só ou usa o total geral
         const volTotal = totalProduction; 
 
         // 2. RECEITAS
@@ -1526,18 +1522,15 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const ganhoProdutividade = sum(t => t.type === 'revenue' && t.description.toLowerCase().includes('produtividade'));
         const recBombeado = sum(t => t.type === 'revenue' && (t.description.toLowerCase().includes('bombeado') || t.description.toLowerCase().includes('bomba')));
         
-        // Receita Concreto = Total - (Ganhos + Bombeado)
         const recConcreto = totalReceitas - ganhoProdutividade - recBombeado; 
         const totalRecCGanhos = recConcreto + ganhoProdutividade;
 
-        // 3. MATÉRIA PRIMA (Classe 03.02 ou keywords)
+        // 3. MATÉRIA PRIMA
         const materiaPrima = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('03.02') || t.description.toLowerCase().includes('materia') || t.description.toLowerCase().includes('cimento') || t.description.toLowerCase().includes('agregado') || t.description.toLowerCase().includes('aditivo') || t.description.toLowerCase().includes('areia') || t.description.toLowerCase().includes('brita')));
 
-        // MARGEM DE CONTRIBUIÇÃO 1
         const margem1 = totalRecCGanhos - materiaPrima;
 
         // 4. GRUPO BOMBAS
-        // Filtros: Palavra 'bomba' E (Combustível OU Manutenção OU Transporte OU Motorista)
         const isBomba = (t) => t.description.toLowerCase().includes('bomba');
         
         const combBombas = sum(t => t.type === 'expense' && isBomba(t) && (t.accountPlan.startsWith('03.07.01') || t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel')));
@@ -1549,7 +1542,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const subtotalBombas = manuBombas + transpBombas + motBombas;
 
         // 5. GRUPO BETONEIRAS
-        // Filtros: (Palavra 'betoneira' OU 'caminhão') E NÃO 'bomba'
         const isBetoneira = (t) => (t.description.toLowerCase().includes('betoneira') || t.description.toLowerCase().includes('caminhão') || t.description.toLowerCase().includes('caminhao')) && !t.description.toLowerCase().includes('bomba');
 
         const combBetoneiras = sum(t => t.type === 'expense' && isBetoneira(t) && (t.accountPlan.startsWith('03.07.01') || t.description.toLowerCase().includes('combustivel') || t.description.toLowerCase().includes('diesel')));
@@ -1560,33 +1552,28 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
         const subtotalBetoneiras = manuBetoneiras + transpBetoneiras + motBetoneiras;
 
-        // MARGEM DE CONTRIBUIÇÃO 2
-        // (Margem 1 + Rec Bombeado - Combustível Bombas - Combustível Betoneiras)
+        // MARGEM 2
         const margem2 = margem1 + recBombeado - combBombas - combBetoneiras;
 
-        // RESULTADO PÓS BOMBAS
+        // RESULTADOS PARCIAIS
         const resPosBombas = margem2 - subtotalBombas;
-
-        // RESULTADO PÓS BETONEIRAS
         const resPosBetoneiras = resPosBombas - subtotalBetoneiras;
 
-        // 6. DESPESAS DA UNIDADE (FIXAS/ADM LOCAL)
-        // Tudo que é despesa operacional MAS NÃO é Matéria Prima, Nem Bomba, Nem Betoneira, Nem Rateio ADM Central
+        // 6. DESPESAS DA UNIDADE
         const despFixasUnidade = sum(t => {
             if (t.type !== 'expense') return false;
             const desc = t.description.toLowerCase();
             const plan = t.accountPlan;
             
-            // Exclui o que já foi classificado
-            if (plan.startsWith('03.02') || desc.includes('materia') || desc.includes('cimento') || desc.includes('agregado') || desc.includes('aditivo')) return false; // Matéria Prima
-            if (isBomba(t)) return false; // Bombas
-            if (isBetoneira(t)) return false; // Betoneiras
-            if (desc.includes('rateio') && desc.includes('adm')) return false; // Rateio ADM Central
-            if (desc.includes('parada')) return false; // Frota parada
-            if (plan.startsWith('02') || desc.includes('imposto')) return false; // Impostos (separado)
-            if (plan.startsWith('06') || desc.includes('investimento')) return false; // Investimento (separado)
+            if (plan.startsWith('03.02') || desc.includes('materia') || desc.includes('cimento') || desc.includes('agregado') || desc.includes('aditivo')) return false; 
+            if (isBomba(t)) return false; 
+            if (isBetoneira(t)) return false; 
+            if (desc.includes('rateio') && desc.includes('adm')) return false; 
+            if (desc.includes('parada')) return false; 
+            if (plan.startsWith('02') || desc.includes('imposto')) return false; 
+            if (plan.startsWith('06') || desc.includes('investimento') || desc.includes('consórcio')) return false; // Exclui investimento aqui
             
-            return true; // O resto é custo fixo da unidade
+            return true; 
         });
 
         const impostos = sum(t => t.type === 'expense' && (t.accountPlan.startsWith('02') || t.description.toLowerCase().includes('imposto')));
@@ -1594,17 +1581,26 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const subtotalDespUnidade = despFixasUnidade + impostos;
         const resPosDespUnidade = resPosBetoneiras - subtotalDespUnidade;
         
-        // RESULTADO OPERACIONAL
         const resOperacional = resPosDespUnidade;
 
-        // 7. PÓS OPERACIONAL
+        // 7. PÓS OPERACIONAL (RATEIOS E PARADAS)
         const rateioAdm = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('rateio') && t.description.toLowerCase().includes('adm'));
         const manuBetoneiraParada = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('betoneira') && t.description.toLowerCase().includes('parada'));
         const manuVeicLeveParado = sum(t => t.type === 'expense' && t.description.toLowerCase().includes('veículo') && t.description.toLowerCase().includes('parado'));
         
         const resPosDespesas = resOperacional - rateioAdm - manuBetoneiraParada - manuVeicLeveParado;
 
-        // 8. GANHO DE MERCADO / CLIENTES (Manual ou específico)
+        // 8. INVESTIMENTOS (NOVO)
+        const investimentos = sum(t => t.type === 'expense' && (
+            t.accountPlan.startsWith('06') || 
+            t.description.toLowerCase().includes('investimento') || 
+            t.description.toLowerCase().includes('consórcio')
+        ));
+
+        // 9. RESULTADO FINAL PÓS INVESTIMENTOS (NOVO)
+        const resPosInvestimentos = resPosDespesas - investimentos;
+
+        // 10. GANHO DE MERCADO
         const clientesPrejuizo = sum(t => t.type === 'revenue' && (t.description.toLowerCase().includes('ganho mercado') || t.description.toLowerCase().includes('clientes prejuizo')));
 
         return {
@@ -1617,6 +1613,7 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
             despFixasUnidade, impostos, subtotalDespUnidade, resPosDespUnidade,
             resOperacional,
             rateioAdm, manuBetoneiraParada, manuVeicLeveParado, resPosDespesas,
+            investimentos, resPosInvestimentos, // NOVOS CAMPOS
             clientesPrejuizo
         };
 
@@ -1624,7 +1621,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
     // --- RENDERIZAÇÃO DA LINHA (Customizada) ---
     const Row = ({ label, val, isHeader = false, isResult = false, isSub = false, colorClass = "text-slate-700", bgClass = "", indent = 0, type = 'money', customColor = null }) => {
-        // Cálculo de % sobre a Receita Bruta (TotalRecCGanhos + RecBombeado, aproximado para base de cálculo)
         const baseRevenue = isNoromixLayout 
             ? (noromixData?.totalRecCGanhos + noromixData?.recBombeado) 
             : standardData?.totalRevenue;
@@ -1632,7 +1628,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
         const percent = (type === 'money' && baseRevenue > 0) ? (val / baseRevenue) * 100 : 0;
         const perUnit = totalProduction > 0 ? val / totalProduction : 0;
         
-        // Lógica de Cor Condicional (Verde/Vermelho)
         let finalTextColor = colorClass;
         if (customColor === 'dynamic') {
             finalTextColor = val >= 0 ? 'text-emerald-600' : 'text-rose-600';
@@ -1664,7 +1659,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                     <h3 className="font-bold text-lg dark:text-white">{dynamicTitle}</h3>
                     <button onClick={() => window.print()} className="no-print p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Exportar PDF"><Printer size={20}/></button>
                 </div>
-                {/* Cabeçalho de Volume Resumido */}
                 <div className="flex gap-4">
                     <div className="bg-white dark:bg-slate-800 px-3 py-1 rounded border dark:border-slate-700 text-sm">
                         <span className="text-slate-500 mr-2">Volume Total:</span>
@@ -1683,14 +1677,12 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                         {/* ================= LAYOUT NOROMIX ================= */}
                         {isNoromixLayout && noromixData && (
                             <>
-                                {/* 1. Volumes */}
                                 <Row label="Volume m³ (Retira)" val={noromixData.volRetira} type="vol" indent={1} />
                                 <Row label="Volume m³ (Entrega)" val={noromixData.volEntrega} type="vol" indent={1} />
                                 <Row label="Volume m³ (Total)" val={noromixData.volTotal} type="vol" isHeader bgClass="bg-slate-50 dark:bg-slate-800" />
                                 
                                 <div className="my-4"></div>
 
-                                {/* 2. Receitas e Margem 1 */}
                                 <Row label="Receitas Concreto" val={noromixData.recConcreto} indent={0} colorClass="text-blue-600" />
                                 <Row label="Ganho Produtividade" val={noromixData.ganhoProdutividade} indent={0} colorClass="text-blue-600" />
                                 <Row label="Total Receitas C/ Ganhos" val={noromixData.totalRecCGanhos} isHeader bgClass="bg-blue-50 dark:bg-blue-900/20" />
@@ -1700,7 +1692,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
                                 <div className="my-4"></div>
 
-                                {/* 3. Margem 2 (Bombeado e Combustíveis) */}
                                 <Row label="(+) Receitas Bombeado" val={noromixData.recBombeado} indent={1} colorClass="text-emerald-500" />
                                 <Row label="(-) Combustível Bombas" val={noromixData.combBombas} indent={1} colorClass="text-rose-500" />
                                 <Row label="(-) Combustível Betoneiras" val={noromixData.combBetoneiras} indent={1} colorClass="text-rose-500" />
@@ -1708,7 +1699,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
                                 <div className="my-4"></div>
 
-                                {/* 4. Despesas Bombas */}
                                 <Row label="Despesas Manutenção Bombas" val={noromixData.manuBombas} indent={1} colorClass="text-rose-500" />
                                 <Row label="Despesas Transportes Bombas" val={noromixData.transpBombas} indent={1} colorClass="text-rose-500" />
                                 <Row label="Custo Motorista Bombas" val={noromixData.motBombas} indent={1} colorClass="text-rose-500" />
@@ -1717,7 +1707,6 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
                                 <div className="my-4"></div>
 
-                                {/* 5. Despesas Betoneiras */}
                                 <Row label="Despesas Manutenção Betoneiras" val={noromixData.manuBetoneiras} indent={1} colorClass="text-rose-500" />
                                 <Row label="Despesas Transportes Betoneiras" val={noromixData.transpBetoneiras} indent={1} colorClass="text-rose-500" />
                                 <Row label="Custo Motorista Betoneiras" val={noromixData.motBetoneiras} indent={1} colorClass="text-rose-500" />
@@ -1726,9 +1715,8 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
 
                                 <div className="my-4"></div>
 
-                                {/* 6. Despesas Unidade */}
                                 <Row label="Total de Despesas Unidades" val={noromixData.despFixasUnidade} indent={1} colorClass="text-rose-500" />
-                                <Row label="Despesas Fixas Adm P/ Unidade" val={0} indent={1} colorClass="text-rose-500" /> {/* Placeholder se não tiver específico */}
+                                <Row label="Despesas Fixas Adm P/ Unidade" val={0} indent={1} colorClass="text-rose-500" />
                                 <Row label="Impostos" val={noromixData.impostos} indent={1} colorClass="text-rose-500" />
                                 <Row label="Subtotal Despesas da Unidade" val={noromixData.subtotalDespUnidade} isHeader customColor="purple" />
                                 <Row label="= Resultado Pós Desp. Unidade" val={noromixData.resPosDespUnidade} isHeader isResult customColor="dynamic" bgClass="bg-slate-100 dark:bg-slate-700" />
@@ -1737,12 +1725,16 @@ const FechamentoComponent = ({ transactions, totalSales, totalProduction, measur
                                 <Row label="= RESULTADO OPERACIONAL" val={noromixData.resOperacional} isHeader isResult customColor="dynamic" bgClass="bg-slate-200 dark:bg-slate-600" />
                                 <div className="my-2"></div>
 
-                                {/* 7. Pós Operacional */}
                                 <Row label="(-) Rateio Despesas Administrativas" val={noromixData.rateioAdm} indent={1} colorClass="text-rose-500" />
                                 <Row label="(-) Desp. Manut. (Betoneira Parada)" val={noromixData.manuBetoneiraParada} indent={1} colorClass="text-rose-500" />
                                 <Row label="(-) Desp. Manut. (Veículo Leve Parado)" val={noromixData.manuVeicLeveParado} indent={1} colorClass="text-rose-500" />
                                 
                                 <Row label="= RESULTADO PÓS DESPESAS" val={noromixData.resPosDespesas} isHeader isResult customColor="dynamic" bgClass="bg-slate-300 dark:bg-slate-500" />
+
+                                {/* NOVO: INVESTIMENTOS E RESULTADO FINAL */}
+                                <div className="my-4"></div>
+                                <Row label="(-) Investimentos" val={noromixData.investimentos} indent={1} colorClass="text-rose-500" />
+                                <Row label="= RESULTADO PÓS INVESTIMENTOS" val={noromixData.resPosInvestimentos} isHeader isResult customColor="dynamic" bgClass="bg-slate-400 dark:bg-slate-800" />
 
                                 <div className="my-4"></div>
                                 <Row label="Clientes C/ Prejuízo (Ganho de Mercado)" val={noromixData.clientesPrejuizo} indent={0} colorClass="text-indigo-600" />
