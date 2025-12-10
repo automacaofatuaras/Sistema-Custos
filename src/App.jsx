@@ -2807,7 +2807,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                     </div>
                 );
             }
-
+        }
             // >>> LÓGICA ANTIGA: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas) <<<
             const activeCount = calculatedData.activeUnits.length;
             const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
