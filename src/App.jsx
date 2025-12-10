@@ -2702,16 +2702,17 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
 // --- TELA COMERCIAL - NOROMIX CONCRETEIRAS ---
        // --- TELA COMERCIAL ---
 // --- TELA COMERCIAL ---
+     // --- TELA COMERCIAL ---
         if (activeRateioType === 'COMERCIAL') {
             
-            // 1. LÓGICA ESPECÍFICA: NOROMIX CONCRETEIRAS
+            // 1. CASO ESPECÍFICO: NOROMIX CONCRETEIRAS
             if (selectedSegment === 'Noromix Concreteiras') {
                 const percTubos = 100 - percConcreto;
                 const totalGeral = calculatedData.concreteiraData.reduce((acc, curr) => acc + curr.total, 0);
 
                 return (
                     <div className="space-y-6 animate-in fade-in">
-                        {/* 1. Controles de Porcentagem */}
+                        {/* Controles de Porcentagem */}
                         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm flex flex-col md:flex-row gap-8 items-center justify-between">
                             <div>
                                 <h4 className="font-bold text-lg dark:text-white">Definição de Rateio ({filter.month + 1}/{filter.year})</h4>
@@ -2723,13 +2724,10 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                     <label className="block text-xs font-bold text-slate-500 mb-1">Noromix Concreto</label>
                                     <div className="flex items-center gap-1">
                                         <input 
-                                            type="number" 
-                                            min="0" max="100"
-                                            value={percConcreto}
+                                            type="number" min="0" max="100" value={percConcreto}
                                             onChange={(e) => {
                                                 let val = parseFloat(e.target.value);
-                                                if(val > 100) val = 100;
-                                                if(val < 0) val = 0;
+                                                if(val > 100) val = 100; if(val < 0) val = 0;
                                                 setPercConcreto(val);
                                             }}
                                             className="w-20 text-center font-bold text-lg border-b-2 border-indigo-500 bg-transparent outline-none dark:text-white"
@@ -2740,14 +2738,12 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                 <div className="h-8 w-px bg-slate-300 dark:bg-slate-600"></div>
                                 <div className="text-center">
                                     <label className="block text-xs font-bold text-slate-500 mb-1">Fábrica de Tubos</label>
-                                    <div className="text-xl font-bold text-slate-700 dark:text-slate-300">
-                                        {percTubos.toFixed(0)}%
-                                    </div>
+                                    <div className="text-xl font-bold text-slate-700 dark:text-slate-300">{percTubos.toFixed(0)}%</div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* 2. Resumo de Valores */}
+                        {/* Resumo de Valores */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 border-slate-400 shadow-sm">
                                 <p className="text-xs font-bold text-slate-500 uppercase">Total Selecionado</p>
@@ -2763,7 +2759,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                             </div>
                         </div>
 
-                        {/* 3. Tabela Detalhada */}
+                        {/* Tabela Detalhada */}
                         <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden">
                             <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 font-bold dark:text-white flex justify-between">
                                 <span>Simulação de Lançamentos (Classe a Classe)</span>
@@ -2797,9 +2793,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                             );
                                         })}
                                         {calculatedData.concreteiraData.length === 0 && (
-                                            <tr>
-                                                <td colSpan={5} className="p-8 text-center text-slate-400">Nenhum lançamento encontrado nos Centros de Custo elegíveis (8003, 9003, etc) para este período.</td>
-                                            </tr>
+                                            <tr><td colSpan={5} className="p-8 text-center text-slate-400">Nenhum lançamento encontrado.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
@@ -2809,10 +2803,10 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 );
             }
 
-            // 2. LÓGICA PADRÃO: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas)
-            // Se não entrou no IF acima, executa este aqui:
+            // 2. CASO PADRÃO: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas)
             const activeCount = calculatedData.activeUnits.length;
             const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
+            
             return (
                 <div className="space-y-6 animate-in fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2842,14 +2836,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                                         return (
                                             <tr key={unit} className={`dark:text-slate-300 ${!isActive ? 'opacity-50 bg-slate-50 dark:bg-slate-900' : ''}`}>
                                                 <td className="p-3">{unit}</td>
-                                                <td className="p-3">
-                                                    {isActive 
-                                                        ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> 
-                                                        : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}
-                                                </td>
-                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-white">
-                                                    {isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
-                                                </td>
+                                                <td className="p-3">{isActive ? <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded font-bold">Produzindo</span> : <span className="text-xs bg-slate-200 text-slate-500 px-2 py-1 rounded">Sem Produção</span>}</td>
+                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-white">{isActive ? shareValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}</td>
                                             </tr>
                                         );
                                     })}
@@ -2861,12 +2849,12 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             );
         } // <--- FECHA O IF (COMERCIAL)
 
-        // RETORNO PADRÃO DA FUNÇÃO (Se nenhum IF for satisfeito)
+        // RETORNO PADRÃO (Se nenhum IF for satisfeito)
         return <div className="p-10 text-center text-slate-400">Selecione um tipo de rateio acima.</div>;
 
-    }; // <--- FECHA A FUNÇÃO renderContent (AQUI ESTAVA O ERRO DE FECHAMENTO)
+    }; // <--- FECHA A FUNÇÃO renderContent
 
-    // *** AQUI COMEÇA O RETORNO PRINCIPAL DO COMPONENTE QUE ESTAVA FALTANDO ***
+    // *** INÍCIO DO RETURN PRINCIPAL DO COMPONENTE ***
     return (
         <div className="space-y-6">
             {/* Header com Filtros Simplificados */}
@@ -3000,7 +2988,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             {renderContent()}
         </div>
     );
-}
+};
 export default function App() {
   const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
   const [userRole, setUserRole] = useState('admin');
