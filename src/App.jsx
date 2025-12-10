@@ -2443,9 +2443,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             { id: 'PERFURATRIZ', label: 'Rateio Perfuratriz' }
         ],
         'Noromix Concreteiras': [
-            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo (Complexo)' }, // Atualizado
-            { id: 'COMERCIAL', label: 'Rateio Comercial (Produção)' },
-            { id: 'VENDEDORES', label: 'Rateio Vendedores (CC Específico)' }
+            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo' }, // Atualizado
+            { id: 'COMERCIAL', label: 'Rateio Comercial' },
+            { id: 'VENDEDORES', label: 'Rateio Vendedores' }
         ]
     };
 
