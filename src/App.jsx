@@ -2411,6 +2411,32 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
         </div>
     );
 };
+// --- COMPONENTE INTERNO: INPUT DE MOEDA (Movido para fora para evitar perda de foco) ---
+const CurrencyInput = ({ value, onChange, disabled, className }) => {
+    const handleChange = (e) => {
+        // Remove tudo que não é dígito
+        const rawValue = e.target.value.replace(/\D/g, ""); 
+        // Divide por 100 para considerar os centavos
+        const numberValue = rawValue ? parseInt(rawValue, 10) / 100 : 0;
+        onChange(numberValue);
+    };
+
+    const displayValue = value 
+        ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
+        : 'R$ 0,00';
+
+    return (
+        <input
+            type="text"
+            value={displayValue}
+            onChange={handleChange}
+            disabled={disabled}
+            className={className}
+            placeholder="R$ 0,00"
+        />
+    );
+};
+
 const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList }) => {
     // Estado local
     const [selectedSegment, setSelectedSegment] = useState('Portos de Areia');
@@ -2428,33 +2454,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     
     const [isLocked, setIsLocked] = useState(false); // Controla se está em modo visualização (Salvo) ou edição
     const [isSaving, setIsSaving] = useState(false); // Loading do botão salvar
-
-    // --- COMPONENTE INTERNO: INPUT DE MOEDA ---
-    // Transforma digitação direta em formato R$
-    const CurrencyInput = ({ value, onChange, disabled, className }) => {
-        const handleChange = (e) => {
-            // Remove tudo que não é dígito
-            const rawValue = e.target.value.replace(/\D/g, ""); 
-            // Divide por 100 para considerar os centavos
-            const numberValue = rawValue ? parseInt(rawValue, 10) / 100 : 0;
-            onChange(numberValue);
-        };
-
-        const displayValue = value 
-            ? value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-            : 'R$ 0,00';
-
-        return (
-            <input
-                type="text"
-                value={displayValue}
-                onChange={handleChange}
-                disabled={disabled}
-                className={className}
-                placeholder="R$ 0,00"
-            />
-        );
-    };
 
     // --- CONFIGURAÇÃO DOS RATEIOS ---
     const RATEIO_CONFIG = {
@@ -2497,19 +2496,14 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         const loadSavedParams = async () => {
             if (selectedSegment !== 'Noromix Concreteiras') return;
 
-            // ID do documento baseia-se no mês/ano (ex: '2025_10')
-            // Isso garante que cada mês tenha sua própria configuração
             const docId = `rateio_adm_${filter.year}_${filter.month}`;
             const docRef = doc(db, 'artifacts', appId, 'rateio_adm_config', docId);
 
             try {
                 const docSnap = await getDoc(docRef);
-                
-                // Lista padrão de unidades para inicializar se não existir
                 const allUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
                 
                 if (docSnap.exists()) {
-                    // SE JÁ EXISTE SALVO: Carrega e BLOQUEIA a edição
                     const data = docSnap.data();
                     setAdmParams({
                         totalValue: data.totalValue || 0,
@@ -2518,15 +2512,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                     });
                     setIsLocked(true); 
                 } else {
-                    // SE NÃO EXISTE: Inicia zerado e LIBERA edição
                     const initialEmployees = {};
                     allUnits.forEach(u => initialEmployees[u] = 0);
-                    
-                    setAdmParams({
-                        totalValue: 0,
-                        minWage: 1412,
-                        employees: initialEmployees
-                    });
+                    setAdmParams({ totalValue: 0, minWage: 1412, employees: initialEmployees });
                     setIsLocked(false);
                 }
             } catch (error) {
@@ -2536,7 +2524,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
 
         loadSavedParams();
         
-        // Inicializa Vendedores também
         if (selectedSegment === 'Noromix Concreteiras') {
             setManualPercents(prev => {
                 const newState = { ...prev };
@@ -2546,7 +2533,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 return newState;
             });
         }
-    }, [selectedSegment, filter.month, filter.year]); // Recarrega se mudar o mês/ano
+    }, [selectedSegment, filter.month, filter.year]);
 
     // --- FUNÇÃO DE SALVAR ---
     const handleSaveAdmParams = async () => {
@@ -2560,7 +2547,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 updatedAt: new Date().toISOString(),
                 user: 'system' 
             });
-            setIsLocked(true); // Bloqueia após salvar
+            setIsLocked(true); 
         } catch (error) {
             console.error("Erro ao salvar:", error);
             alert("Erro ao salvar rateio.");
@@ -2623,7 +2610,14 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             
             let grandTotalProd = 0;
             const unitsCalculated = targetUnits.map(unitName => {
-                const prod = periodTxs.filter(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === unitName).reduce((acc, t) => acc + t.value, 0);
+                // CORREÇÃO DE VOLUME AQUI TAMBÉM
+                const prod = periodTxs.filter(t => {
+                    if(t.type !== 'metric' || t.metricType !== 'producao') return false;
+                    const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                    const targetUnit = unitName.includes(':') ? unitName.split(':')[1].trim() : unitName;
+                    return txUnit === targetUnit;
+                }).reduce((acc, t) => acc + t.value, 0);
+
                 grandTotalProd += prod;
                 return { name: unitName, production: prod, percent: 0, valueToPay: 0 };
             });
@@ -2664,16 +2658,25 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
             const allUnits = [...concreteUnits, pipeUnit];
 
-            // 1. Calcular Volumes (CORREÇÃO DA COLUNA DE VOLUME)
+            // 1. Calcular Volumes (CORREÇÃO DA COLUNA DE VOLUME AQUI)
             let volConcretoTotal = 0;
             let volGlobalTotal = 0;
             const unitVolumes = {};
 
             allUnits.forEach(u => {
-                // Filtra explicitamente por métrica de produção para a unidade
-                // Garante que a transação esteja no período (periodTxs já está filtrado)
+                // Normaliza o nome da unidade para garantir o match
+                const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
+
                 const vol = periodTxs
-                    .filter(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === u)
+                    .filter(t => {
+                        // Filtra apenas métricas de produção
+                        if (t.type !== 'metric' || t.metricType !== 'producao') return false;
+                        
+                        // Limpa o nome da unidade no lançamento (tira "Segmento: ")
+                        const txUnitName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                        
+                        return txUnitName === targetName;
+                    })
                     .reduce((acc, t) => acc + t.value, 0);
                 
                 unitVolumes[u] = vol;
