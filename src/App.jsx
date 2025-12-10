@@ -2857,7 +2857,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                     </div>
                 </div>
             );
-        }
+          return <div className="p-10 text-center text-slate-400">Selecione um tipo de rateio acima.</div>;
+};
             // >>> LÓGICA ANTIGA: OUTROS SEGMENTOS (Portos, Pedreiras, Usinas) <<<
             const activeCount = calculatedData.activeUnits.length;
             const shareValue = activeCount > 0 ? calculatedData.totalComercial / activeCount : 0;
