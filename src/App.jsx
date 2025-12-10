@@ -2474,9 +2474,9 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         'Noromix Concreteiras': [
             { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo (Salários)' }, 
             { id: 'COMERCIAL', label: 'Rateio Comercial (Produção)' },
-            { id: 'TECNICO', label: 'Rateio Dep. Técnico (CC 1075)' }, // NOVO
+            { id: 'TECNICO', label: 'Rateio Dep. Técnico (CC 1075)' },
             { id: 'VENDEDORES', label: 'Rateio Vendedores (CC Específico)' },
-            { id: 'NOROMIX_1046', label: 'Rateio Noromix (CC 1046)' } // NOVO
+            { id: 'NOROMIX_1046', label: 'Rateio Noromix (CC 1046)' }
         ]
     };
 
@@ -2620,13 +2620,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         const totalVend5105 = sumCC([5105]);
         const totalComercial = sumCC([1104]);
 
-        // =========================================================
-        // A. Rateio Comercial Noromix (CC 1104)
-        // =========================================================
+        // A. Rateio Comercial e Técnico Noromix
         let noromixComercialData = { units: [], totalProduction: 0, totalExpenses: 0, expenseItems: [] };
-        // =========================================================
-        // D. Rateio Departamento Técnico (CC 1075) - NOVO
-        // =========================================================
         let noromixTecnicoData = { units: [], totalProduction: 0, totalExpenses: 0, expenseItems: [] };
         
         if (selectedSegment === 'Noromix Concreteiras') {
@@ -2640,9 +2635,8 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             const expenses1075 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1075'));
             const totalExp1075 = expenses1075.reduce((acc, t) => acc + t.value, 0);
 
-            // Calcular Produção para ambos (Mesma base)
             let grandTotalProd = 0;
-            const productionMap = {}; // Cache de produção por unidade
+            const productionMap = {};
 
             targetUnits.forEach(u => {
                 const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
@@ -2656,7 +2650,6 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                 grandTotalProd += prod;
             });
 
-            // Gerar objetos finais
             const buildRateioProducao = (totalExpense) => {
                 const result = targetUnits.map(unitName => {
                     const prod = productionMap[unitName] || 0;
@@ -2686,9 +2679,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
             };
         }
 
-        // =========================================================
-        // E. Rateio Noromix (CC 1046) - NOVO (Divisão por 10)
-        // =========================================================
+        // E. Rateio Noromix (CC 1046)
         let noromix1046Data = { units: [], totalExpenses: 0, expenseItems: [] };
         if (selectedSegment === 'Noromix Concreteiras') {
             const targetUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
@@ -2928,7 +2919,29 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
                         <div className="bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4">
                             <h5 className="text-xs font-bold text-slate-500 uppercase mb-3">Detalhamento das Despesas Rateadas (CC {ccLabel})</h5>
                             <div className="max-h-60 overflow-y-auto pr-2">
-                                <table className="w-full text-xs text-left"><tbody className="divide-y divide-slate-200 dark:divide-slate-700">{expenseItems.map((item, idx) => (<tr key={idx} className="dark:text-slate-400"><td className="py-2">{formatDate(item.date)}</td><td className="py-2 font-medium">{item.description}</td><td className="py-2 text-right">{item.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td></tr>))}</tbody></table>
+                                <table className="w-full text-xs text-left">
+                                    <thead className="text-slate-500 font-bold bg-slate-100 dark:bg-slate-800">
+                                        <tr>
+                                            <th className="p-2">Data</th>
+                                            <th className="p-2">Descrição</th>
+                                            <th className="p-2">Classe</th> 
+                                            <th className="p-2 text-right">Valor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                                        {expenseItems.map((item, idx) => (
+                                            <tr key={idx} className="dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                                <td className="py-2">{formatDate(item.date)}</td>
+                                                <td className="py-2 font-medium">{item.description}</td>
+                                                <td className="py-2">
+                                                    <span className="font-mono text-[10px] bg-slate-200 dark:bg-slate-700 px-1 rounded mr-1">{item.accountPlan}</span>
+                                                    <span className="font-bold text-[10px] uppercase">{item.planDescription}</span>
+                                                </td>
+                                                <td className="py-2 text-right font-bold">{item.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -2971,7 +2984,31 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
 
                     <div className="bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 p-4">
                         <h5 className="text-xs font-bold text-slate-500 uppercase mb-3">Detalhamento das Despesas (CC 1046)</h5>
-                        <div className="max-h-60 overflow-y-auto pr-2"><table className="w-full text-xs text-left"><tbody className="divide-y divide-slate-200 dark:divide-slate-700">{expenseItems.map((item, idx) => (<tr key={idx} className="dark:text-slate-400"><td className="py-2">{formatDate(item.date)}</td><td className="py-2 font-medium">{item.description}</td><td className="py-2 text-right">{item.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td></tr>))}</tbody></table></div>
+                        <div className="max-h-60 overflow-y-auto pr-2">
+                            <table className="w-full text-xs text-left">
+                                <thead className="text-slate-500 font-bold bg-slate-100 dark:bg-slate-800">
+                                    <tr>
+                                        <th className="p-2">Data</th>
+                                        <th className="p-2">Descrição</th>
+                                        <th className="p-2">Classe</th>
+                                        <th className="p-2 text-right">Valor</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                                    {expenseItems.map((item, idx) => (
+                                        <tr key={idx} className="dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                            <td className="py-2">{formatDate(item.date)}</td>
+                                            <td className="py-2 font-medium">{item.description}</td>
+                                            <td className="py-2">
+                                                <span className="font-mono text-[10px] bg-slate-200 dark:bg-slate-700 px-1 rounded mr-1">{item.accountPlan}</span>
+                                                <span className="font-bold text-[10px] uppercase">{item.planDescription}</span>
+                                            </td>
+                                            <td className="py-2 text-right font-bold">{item.value.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             );
