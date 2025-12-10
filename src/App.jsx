@@ -612,17 +612,229 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         </div>
     );
 };
-const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction }) => {
+const CustosComponent = ({ transactions, allTransactions, filter, selectedUnit, showToast, measureUnit, totalProduction }) => {
     const [filtered, setFiltered] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
+    
+    // Estados para configurações de Rateio (buscados do banco)
+    const [admParams, setAdmParams] = useState(null);
+    const [vendPercents, setVendPercents] = useState({});
+    const [loadingRateios, setLoadingRateios] = useState(true);
+
     const [expandedGroups, setExpandedGroups] = useState({
         'DESPESAS DA UNIDADE': true,
+        'ADMINISTRATIVO': true,
         'CUSTO OPERACIONAL INDÚSTRIA': true,
-        'CUSTO OPERACIONAL ADMINISTRATIVO': true,
-        'INVESTIMENTOS': true
+        'CUSTO COMERCIAL': true,
+        'CUSTO DEPARTAMENTO TÉCNICO': true
     });
+
+    // Mapeamento de Vendedores (Cópia da lógica do Rateios)
+    const VENDEDORES_MAP = useMemo(() => [
+        { cc: 8003, unit: "Noromix Concreto S/A - Votuporanga" },
+        { cc: 9003, unit: "Noromix Concreto S/A - Três Fronteiras" },
+        { cc: 22003, unit: "Noromix Concreto S/A - Ilha Solteira" },
+        { cc: 25003, unit: "Noromix Concreto S/A - Jales" },
+        { cc: 27003, unit: "Noromix Concreto S/A - Fernandópolis" },
+        { cc: 29003, unit: "Noromix Concreto S/A - Pereira Barreto" },
+        { cc: 33003, unit: "Noromix Concreto S/A - Ouroeste" },
+        { cc: 34003, unit: "Noromix Concreto S/A - Monções" },
+        { cc: 38003, unit: "Noromix Concreto S/A - Paranaíba" }
+    ], []);
+
+    // 1. Buscar Configurações de Rateio Salvas (Ao mudar o mês)
     useEffect(() => {
+        const fetchConfigs = async () => {
+            setLoadingRateios(true);
+            try {
+                // Rateio ADM
+                const docIdAdm = `rateio_adm_${filter.year}_${filter.month}`;
+                const snapAdm = await getDoc(doc(db, 'artifacts', appId, 'rateio_adm_config', docIdAdm));
+                if (snapAdm.exists()) setAdmParams(snapAdm.data());
+                else setAdmParams(null);
+
+                // Rateio Vendedores
+                const docIdVend = `rateio_vendedores_${filter.year}_${filter.month}`;
+                const snapVend = await getDoc(doc(db, 'artifacts', appId, 'rateio_vendedores_config', docIdVend));
+                if (snapVend.exists()) setVendPercents(snapVend.data().percents || {});
+                else setVendPercents({});
+
+            } catch (e) {
+                console.error("Erro ao buscar configs de rateio", e);
+            } finally {
+                setLoadingRateios(false);
+            }
+        };
+        fetchConfigs();
+    }, [filter.month, filter.year]);
+
+    // 2. Processar Transações Reais + Rateios Virtuais
+    useEffect(() => {
+        if (loadingRateios) return;
+
+        // A. Filtro básico das transações reais (existentes na tela)
         let data = transactions.filter(t => t.type === 'expense');
+
+        // B. GERAÇÃO DOS RATEIOS (Lógica Noromix Concreteiras)
+        const isNoromixContext = selectedUnit === 'Noromix Concreteiras' || BUSINESS_HIERARCHY['Noromix Concreteiras'].includes(selectedUnit.split(':')[1]?.trim() || selectedUnit) || selectedUnit.includes('Fábrica');
+        
+        if (isNoromixContext && allTransactions && allTransactions.length > 0) {
+            const virtualTransactions = [];
+            
+            // Helper: Filtrar transações do período globalmente (para calcular totais)
+            const periodTxs = allTransactions.filter(t => {
+                let y, m;
+                if (typeof t.date === 'string') { y = parseInt(t.date.substring(0, 4)); m = parseInt(t.date.substring(5, 7)) - 1; }
+                else { y = t.date.getFullYear(); m = t.date.getMonth(); }
+                return y === filter.year && m === filter.month;
+            });
+
+            // Dados Globais para Calculo
+            const targetUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
+            
+            // Calc Volume Global (Denominator)
+            let grandTotalProd = 0;
+            let volConcretoTotal = 0; // Para ADM Despesas (não usado aqui mas mantido a logica)
+            const unitVolumes = {};
+            targetUnits.forEach(u => {
+                const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
+                const vol = periodTxs.filter(t => t.type === 'metric' && t.metricType === 'producao' && (t.segment.includes(targetName) || targetName.includes(t.segment))).reduce((acc, t) => acc + t.value, 0);
+                unitVolumes[u] = vol;
+                grandTotalProd += vol;
+                if (!u.includes('Fábrica')) volConcretoTotal += vol;
+            });
+
+            // --- 1. RATEIO ADMINISTRATIVO (FOLHA) ---
+            if (admParams) {
+                // Recalcula o total de salários baseados nos params salvos
+                let totalSalariosCalc = 0;
+                targetUnits.forEach(u => {
+                    const count = admParams.employees?.[u] || 0;
+                    let factor = (count > 0 && count <= 6) ? 2 : (count > 6 && count <= 14) ? 4 : (count >= 15) ? 6 : 0;
+                    totalSalariosCalc += (factor * (admParams.minWage || 1412));
+                });
+
+                // Gera linha para cada unidade
+                targetUnits.forEach(u => {
+                    if (grandTotalProd > 0) {
+                        const vol = unitVolumes[u] || 0;
+                        const valorFolha = (totalSalariosCalc / grandTotalProd) * vol;
+                        
+                        if (valorFolha > 0) {
+                            virtualTransactions.push({
+                                id: `rateio_adm_${u}`,
+                                date: `${filter.year}-${String(filter.month+1).padStart(2, '0')}-28`, // Data fictícia fim do mês
+                                segment: u,
+                                description: "Rateio Automático",
+                                costCenter: "ADM-RATEIO",
+                                accountPlan: "RATEIO.ADM",
+                                planDescription: "Rateio Folha Adm", // Nome exato solicitado
+                                value: valorFolha,
+                                type: 'expense',
+                                customGroup: "ADMINISTRATIVO", // Grupo solicitado
+                                customSubGroup: "CUSTOS DESPESAS FIXAS E ADMINISTRATIVAS" // Subgrupo solicitado
+                            });
+                        }
+                    }
+                });
+            }
+
+            // --- 2. RATEIO COMERCIAL (1104) & 3. TÉCNICO (1075) ---
+            const rateiosProporcionais = [
+                { cc: '1104', name: 'Rateio Comercial', sub: 'CUSTO COMERCIAL GERÊNCIA', classDesc: 'Rateio Comercial' },
+                { cc: '1075', name: 'Rateio Dep. Técnico', sub: 'CUSTO DEPARTAMENTO TÉCNICO', classDesc: 'Rateio Dep. Técnico' }
+            ];
+
+            rateiosProporcionais.forEach(config => {
+                const totalExp = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith(config.cc)).reduce((acc, t) => acc + t.value, 0);
+                
+                targetUnits.forEach(u => {
+                    if (grandTotalProd > 0) {
+                        const vol = unitVolumes[u] || 0;
+                        const valorRateado = totalExp * (vol / grandTotalProd);
+                        
+                        if (valorRateado > 0) {
+                            virtualTransactions.push({
+                                id: `rateio_${config.cc}_${u}`,
+                                date: `${filter.year}-${String(filter.month+1).padStart(2, '0')}-28`,
+                                segment: u,
+                                description: "Rateio Automático Produção",
+                                costCenter: config.cc,
+                                accountPlan: `RATEIO.${config.cc}`,
+                                planDescription: config.classDesc,
+                                value: valorRateado,
+                                type: 'expense',
+                                customGroup: "DESPESAS DA UNIDADE",
+                                customSubGroup: config.sub
+                            });
+                        }
+                    }
+                });
+            });
+
+            // --- 4. RATEIO VENDEDORES (8003...38003) ---
+            // Itera sobre as transações ORIGINAIS desses CCs e cria cópias rateadas
+            const vendedorCCs = VENDEDORES_MAP.map(v => v.cc);
+            const rawVendorTxs = periodTxs.filter(t => t.type === 'expense' && vendedorCCs.includes(parseInt(t.costCenter.split(' ')[0])));
+
+            rawVendorTxs.forEach(t => {
+                const cc = parseInt(t.costCenter.split(' ')[0]);
+                const mapInfo = VENDEDORES_MAP.find(m => m.cc === cc);
+                
+                if (mapInfo) {
+                    const percConcreto = vendPercents[cc] !== undefined ? vendPercents[cc] : 100; // Default 100% se não salvo
+                    const valConcreto = t.value * (percConcreto / 100);
+                    // O restante vai para Tubos, mas o pedido 4 foca em mostrar na unidade do CC (Concreto)
+                    
+                    if (valConcreto > 0) {
+                        virtualTransactions.push({
+                            ...t, // Copia dados originais (descrição, classe, etc)
+                            id: `rateio_vend_${t.id}`,
+                            segment: mapInfo.unit, // Força a unidade correta (Ex: Votuporanga para 8003)
+                            value: valConcreto,
+                            description: `${t.description} (Rateio ${percConcreto}%)`,
+                            customGroup: "DESPESAS DA UNIDADE",
+                            customSubGroup: "CUSTO COMERCIAL" // Solicitação: Custo Comercial
+                        });
+                    }
+                }
+            });
+
+            // --- 5. RATEIO NOROMIX (1046) ---
+            const txs1046 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1046'));
+            // Itera sobre cada despesa 1046 e divide por 10 para cada unidade
+            txs1046.forEach(t => {
+                const valorPorUnidade = t.value / 10; // 10 Unidades
+                targetUnits.forEach(u => {
+                    virtualTransactions.push({
+                        ...t,
+                        id: `rateio_1046_${t.id}_${u}`,
+                        segment: u,
+                        value: valorPorUnidade,
+                        description: `${t.description} (1/10)`,
+                        customGroup: "DESPESAS DA UNIDADE",
+                        customSubGroup: "CUSTO OPERACIONAL INDÚSTRIA"
+                    });
+                });
+            });
+
+            // C. FILTRAR APENAS O QUE É DA UNIDADE SELECIONADA ATUALMENTE
+            // Se "selectedUnit" for o segmento global, mostra tudo. Se for unidade específica, filtra.
+            const dataToView = [...data, ...virtualTransactions].filter(t => {
+                // Se filtro for global (todas concreteiras), mantem tudo que geramos
+                if (selectedUnit === 'Noromix Concreteiras') return true;
+                if (!selectedUnit) return true;
+
+                // Filtro por unidade específica
+                const targetName = selectedUnit.includes(':') ? selectedUnit.split(':')[1].trim() : selectedUnit;
+                const txName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                return txName === targetName;
+            });
+
+            data = dataToView;
+        }
+
+        // Filtro de Texto (Busca)
         if (searchTerm) {
             const lowerTerm = searchTerm.toLowerCase();
             data = data.filter(t => 
@@ -632,13 +844,26 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
             );
         }
         setFiltered(data);
-    }, [transactions, searchTerm]);
+    }, [transactions, allTransactions, searchTerm, loadingRateios, admParams, vendPercents, selectedUnit, filter]);
 
-const groupedData = useMemo(() => {
+    // Lógica de Agrupamento Visual
+    const groupedData = useMemo(() => {
         const hierarchy = {
-            'DESPESAS DA UNIDADE': { total: 0, subgroups: { 'CUSTO OPERACIONAL INDÚSTRIA': { total: 0, classes: {} }, 'CUSTO OPERACIONAL ADMINISTRATIVO': { total: 0, classes: {} }, 'OUTRAS DESPESAS': { total: 0, classes: {} } } },
+            'DESPESAS DA UNIDADE': { total: 0, subgroups: { 
+                'CUSTO OPERACIONAL INDÚSTRIA': { total: 0, classes: {} }, 
+                'CUSTO OPERACIONAL ADMINISTRATIVO': { total: 0, classes: {} },
+                'CUSTO COMERCIAL GERÊNCIA': { total: 0, classes: {} },
+                'CUSTO COMERCIAL VENDEDORES': { total: 0, classes: {} },
+                'CUSTO COMERCIAL': { total: 0, classes: {} }, // Novo para Vendedores
+                'CUSTO DEPARTAMENTO TÉCNICO': { total: 0, classes: {} }, // Novo
+                'OUTRAS DESPESAS': { total: 0, classes: {} } 
+            }},
             'TRANSPORTE': { total: 0, subgroups: { 'CUSTO TRANSPORTE': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
-            'ADMINISTRATIVO': { total: 0, subgroups: { 'CUSTO RATEIO DESPESAS ADMINISTRATIVAS': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
+            'ADMINISTRATIVO': { total: 0, subgroups: { 
+                'CUSTO RATEIO DESPESAS ADMINISTRATIVAS': {total:0, classes:{}},
+                'CUSTOS DESPESAS FIXAS E ADMINISTRATIVAS': {total:0, classes:{}}, // Novo para ADM Folha
+                'Geral': {total:0, classes:{}} 
+            }},
             'IMPOSTOS': { total: 0, subgroups: { 'CUSTO IMPOSTOS': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
             'INVESTIMENTOS': { total: 0, subgroups: { 'INVESTIMENTOS GERAIS': {total:0, classes:{}}, 'Geral': {total:0, classes:{}} } },
             'OUTROS': { total: 0, subgroups: { 'Geral': {total:0, classes:{}} } }
@@ -647,50 +872,53 @@ const groupedData = useMemo(() => {
         const grandTotal = filtered.reduce((acc, t) => acc + t.value, 0);
 
         filtered.forEach(t => {
-            const segmentName = getParentSegment(t.segment);
-            const rules = COST_CENTER_RULES[segmentName] || {};
-            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
-            
             let targetRoot = 'OUTROS';
             let targetSub = 'Geral';
-            let matched = false;
-            
-            if (rules) {
-                for (const [rootGroup, subGroups] of Object.entries(rules)) {
-                    for (const [subGroup, ccList] of Object.entries(subGroups)) {
-                        if (ccList.includes(ccCode)) {
-                            targetRoot = rootGroup.toUpperCase();
-                            targetSub = subGroup.toUpperCase();
-                            matched = true;
-                            break;
-                        }
-                    }
-                    if (matched) break;
-                }
-            }
 
-            if (!matched) {
-                if (t.accountPlan?.startsWith('06')) { 
-                targetRoot = "INVESTIMENTOS"; 
-                targetSub = "INVESTIMENTOS GERAIS";
+            // 1. Prioridade: Se tem Custom Group (Rateios), usa ele
+            if (t.customGroup && t.customSubGroup) {
+                targetRoot = t.customGroup;
+                targetSub = t.customSubGroup;
+            } else {
+                // 2. Lógica Padrão (Regras de CC)
+                const segmentName = getParentSegment(t.segment);
+                const rules = COST_CENTER_RULES[segmentName] || {};
+                const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
+                let matched = false;
+                
+                if (rules) {
+                    for (const [rootGroup, subGroups] of Object.entries(rules)) {
+                        for (const [subGroup, ccList] of Object.entries(subGroups)) {
+                            if (ccList.includes(ccCode)) {
+                                targetRoot = rootGroup.toUpperCase();
+                                targetSub = subGroup.toUpperCase();
+                                matched = true;
+                                break;
+                            }
+                        }
+                        if (matched) break;
+                    }
                 }
-                else if (t.accountPlan === '02.01') { targetRoot = "IMPOSTOS"; targetSub = "CUSTO IMPOSTOS"; }
-                else if (ADMIN_CC_CODES.includes(ccCode)) { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'CUSTO OPERACIONAL ADMINISTRATIVO'; } 
-                else if (t.accountPlan?.startsWith('03')) { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'CUSTO OPERACIONAL INDÚSTRIA'; } 
-                else if (t.accountPlan?.startsWith('04')) { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'CUSTO OPERACIONAL ADMINISTRATIVO'; }
-                else { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'OUTRAS DESPESAS'; }
+
+                if (!matched) {
+                    if (t.accountPlan?.startsWith('06')) { targetRoot = "INVESTIMENTOS"; targetSub = "INVESTIMENTOS GERAIS"; }
+                    else if (t.accountPlan === '02.01') { targetRoot = "IMPOSTOS"; targetSub = "CUSTO IMPOSTOS"; }
+                    else if (ADMIN_CC_CODES.includes(ccCode)) { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'CUSTO OPERACIONAL ADMINISTRATIVO'; } 
+                    else if (t.accountPlan?.startsWith('03')) { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'CUSTO OPERACIONAL INDÚSTRIA'; } 
+                    else if (t.accountPlan?.startsWith('04')) { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'CUSTO OPERACIONAL ADMINISTRATIVO'; }
+                    else { targetRoot = 'DESPESAS DA UNIDADE'; targetSub = 'OUTRAS DESPESAS'; }
+                }
             }
 
             let finalValue = t.value;
+            // Garante existência dos grupos (caso venha algo novo)
             if (!hierarchy[targetRoot]) hierarchy[targetRoot] = { total: 0, subgroups: {} };
             if (!hierarchy[targetRoot].subgroups[targetSub]) hierarchy[targetRoot].subgroups[targetSub] = { total: 0, classes: {} };
             
             const subgroup = hierarchy[targetRoot].subgroups[targetSub];
             
-            // --- MODIFICAÇÃO: Se for imposto, usa a descrição manual ---
             let displayDesc = t.planDescription;
             if (targetRoot === 'IMPOSTOS' || t.accountPlan === '02.01') {
-                // Se tiver descrição manual, usa ela, senão usa a do plano
                 displayDesc = t.description && t.description.length > 2 ? t.description : t.planDescription;
             }
 
@@ -720,7 +948,10 @@ const groupedData = useMemo(() => {
     return (
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
             <div className="p-6 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4">
-                <h3 className="font-bold text-lg dark:text-white">Custos e Despesas</h3>
+                <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-lg dark:text-white">Custos e Despesas</h3>
+                    {loadingRateios && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded flex items-center gap-1"><Loader2 size={12} className="animate-spin"/> Processando Rateios...</span>}
+                </div>
                 <div className="flex gap-2 w-full md:w-auto">
                     <div className="relative flex-1 md:w-64"><Search className="absolute left-3 top-2.5 text-slate-400" size={16}/><input className="w-full pl-10 pr-4 py-2 border rounded-lg text-sm dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Pesquisar..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
                     <button onClick={() => exportData('xlsx')} className="text-emerald-500 flex items-center gap-1 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg hover:bg-emerald-100"><Download size={16}/> Excel</button>
@@ -740,7 +971,6 @@ const groupedData = useMemo(() => {
                                     <td className="p-3 text-center">{expandedGroups[rootName] ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</td>
                                     <td className="p-3 uppercase text-indigo-800 dark:text-indigo-400">{rootName}</td>
                                     <td className="p-3 text-right text-rose-600 dark:text-rose-400">{rootData.total.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
-                                    {/* ALTERAÇÃO AQUI: Exibe o calculo Custo/Ton no grupo principal também */}
                                     <td className="p-3 text-right font-mono text-xs text-slate-600 dark:text-slate-400">
                                         {totalProduction > 0 ? (rootData.total / totalProduction).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}) : '-'}
                                     </td>
@@ -771,7 +1001,10 @@ const groupedData = useMemo(() => {
                                                             <td></td>
                                                             <td className="p-2 pl-16">
                                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                                    <div><p className="font-bold text-slate-600 dark:text-slate-400">{t.description} <span className="font-normal text-[10px] ml-2 text-slate-400">{formatDate(t.date)}</span></p><p className="text-[10px] text-slate-400">CC: {t.costCenter}</p></div>
+                                                                    <div>
+                                                                        <p className="font-bold text-slate-600 dark:text-slate-400">{t.description} <span className="font-normal text-[10px] ml-2 text-slate-400">{formatDate(t.date)}</span></p>
+                                                                        <p className="text-[10px] text-slate-400">CC: {t.costCenter}</p>
+                                                                    </div>
                                                                     <div className="text-slate-500 italic">{t.materialDescription}</div>
                                                                 </div>
                                                             </td>
@@ -3586,7 +3819,17 @@ const stockDataRaw = useMemo(() => {
              </div>
           </div>
         )}
-        {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
+        {activeTab === 'custos' && (
+    <CustosComponent 
+        transactions={filteredData} 
+        allTransactions={transactions} // <--- NOVO: Passa tudo para calculos globais
+        filter={filter}                // <--- NOVO: Para saber o mês do rateio salvo
+        selectedUnit={globalUnitFilter}// <--- NOVO: Para filtrar os rateios gerados
+        showToast={showToast} 
+        measureUnit={currentMeasureUnit} 
+        totalProduction={totalProduction} 
+    />
+)}
         {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
         {/* Passando globalCostPerUnit para o componente de estoque */}
         {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} />}
