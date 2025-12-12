@@ -5,7 +5,7 @@ import {
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, Globe, 
   AlertTriangle, CheckCircle, Zap, Calculator, Percent, Share2, ChevronRight, ChevronDown, ChevronLeft, Printer,
-  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
+  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search, Archive
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
@@ -16,8 +16,6 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { PLANO_CONTAS } from './planoContas';
-// ALTERAÇÃO: Adicionar imports de Auth aqui
 import { 
   getFirestore, collection, addDoc, getDocs, deleteDoc, 
   doc, updateDoc, writeBatch, setDoc, getDoc, query, where 
@@ -25,7 +23,7 @@ import {
 import { 
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, 
   createUserWithEmailAndPassword 
-} from 'firebase/auth'; // <--- ADICIONADO
+} from 'firebase/auth';
 
 /**
  * ------------------------------------------------------------------
@@ -200,31 +198,29 @@ const COST_CENTER_RULES = {
 
 // --- SERVIÇOS (SEM AUTH) ---
 // --- SERVIÇOS DO BANCO DE DADOS ---
+// --- SERVIÇOS (COM AUTH E GESTÃO DE USUÁRIOS) ---
 const dbService = {
-  // Referência para coleções de dados da empresa (Transações, Segmentos)
+  // Helper para pegar referência da coleção correta
   getCollRef: (user, colName) => {
     return collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', colName);
   },
 
-  // --- GERENCIAMENTO DE USUÁRIOS (ADICIONADO) ---
+  // --- MÉTODOS DE USUÁRIOS ---
   getAllUsers: async () => { 
-      // Busca na coleção de usuários na raiz do artefato
       const snapshot = await getDocs(collection(db, 'artifacts', appId, 'users')); 
       return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })); 
   },
 
   updateUserRole: async (uid, role) => {
-      // Atualiza o cargo do usuário
       const docRef = doc(db, 'artifacts', appId, 'users', uid);
       await updateDoc(docRef, { role });
   }, 
 
   deleteUserAccess: async (uid) => { 
-      // Remove o registro do usuário do banco (não deleta do Auth, apenas revoga acesso ao app)
       const docRef = doc(db, 'artifacts', appId, 'users', uid);
       await deleteDoc(docRef);
   }, 
-  // ----------------------------------------------
+  // ---------------------------
 
   // Métodos Genéricos (CRUD)
   add: async (user, col, item) => addDoc(dbService.getCollRef(user, col), item),
@@ -1574,41 +1570,39 @@ const UsersScreen = ({ user, myRole, showToast }) => {
     const [newUserPass, setNewUserPass] = useState('');
     const [isCreating, setIsCreating] = useState(false);
 
-    // Carregar usuários do Firestore
     const loadUsers = async () => { 
         try {
-            const list = await dbService.getAllUsers(); // Usa sua função existente
+            const list = await dbService.getAllUsers(); 
             setUsers(list); 
-        } catch (e) { console.error(e); }
+        } catch (e) { 
+            console.error(e);
+            showToast("Erro ao carregar usuários", "error");
+        }
     }; 
     
     useEffect(() => { loadUsers(); }, []);
 
-    // Criar Usuário usando "Secondary App" (Segredo para não deslogar o admin)
     const handleCreateUser = async () => { 
         if (myRole !== 'admin') return; 
-        if (newUserPass.length < 6) return showToast("Senha deve ter min. 6 caracteres", "error");
+        if (newUserPass.length < 6) {
+            showToast("Senha deve ter min. 6 caracteres", "error");
+            return;
+        }
         
         setIsCreating(true);
         try { 
-            // 1. Inicializa uma instância secundária do Firebase Auth
             const secondaryApp = initializeApp(firebaseConfig, "Secondary"); 
             const secondaryAuth = getAuth(secondaryApp); 
-            
-            // 2. Cria o usuário na instância secundária
             const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPass); 
             
-            // 3. Salva os dados extras no Firestore (usando o DB principal)
             await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid), { 
                 email: newUserEmail, 
-                role: 'viewer', // Padrão: visualizador
+                role: 'viewer', 
                 createdAt: new Date().toISOString() 
             }); 
             
-            // 4. Limpa a instância secundária
             await signOut(secondaryAuth); 
-            
-            showToast("Usuário criado com sucesso!", 'success'); 
+            showToast("Usuário criado!", 'success'); 
             setNewUserEmail(''); 
             setNewUserPass(''); 
             loadUsers(); 
@@ -1618,20 +1612,89 @@ const UsersScreen = ({ user, myRole, showToast }) => {
             setIsCreating(false);
         }
     };
-    
-    // ... restante do código do UsersScreen (handleChangeRole, handleDelete, render) mantém igual ...
-    // (Apenas certifique-se de usar o isCreating no botão para mostrar loading)
-    
-        const handleCreateUser = async () => { if (myRole !== 'admin') return; try { const secondaryApp = initializeApp(firebaseConfig, "Secondary"); const secondaryAuth = getAuth(secondaryApp); const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPass); await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid), { email: newUserEmail, role: 'viewer', createdAt: new Date().toISOString() }); await signOut(secondaryAuth); showToast("Usuário criado!", 'success'); setNewUserEmail(''); setNewUserPass(''); loadUsers(); } catch (e) { showToast("Erro: " + e.message, 'error'); } };
-    const handleChangeRole = async (uid, role) => { await dbService.updateUserRole(uid, role); loadUsers(); showToast("Permissão alterada.", 'success'); };
-    const handleDelete = async (uid) => { if (!confirm("Remover acesso?")) return; await dbService.deleteUserAccess(uid); loadUsers(); showToast("Acesso revogado.", 'success'); };
+
+    const handleChangeRole = async (uid, role) => { 
+        try {
+            await dbService.updateUserRole(uid, role); 
+            loadUsers(); 
+            showToast("Permissão alterada.", 'success'); 
+        } catch (e) {
+            showToast("Erro ao alterar permissão", "error");
+        }
+    };
+
+    const handleDelete = async (uid) => { 
+        // CORREÇÃO AQUI: Usar window.confirm
+        if (!window.confirm("Remover acesso deste usuário?")) return; 
+        
+        try {
+            await dbService.deleteUserAccess(uid); 
+            loadUsers(); 
+            showToast("Acesso revogado.", 'success'); 
+        } catch (e) {
+            showToast("Erro ao remover usuário", "error");
+        }
+    };
+
     return (
-        // ... (seu layout existente)
-        // No botão de criar:
-        <button onClick={handleCreateUser} disabled={isCreating} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700 flex items-center gap-2">
-            {isCreating && <Loader2 className="animate-spin" size={16}/>} Criar
-        </button>
-        // ...
+        <div className="p-6 max-w-4xl mx-auto animate-in fade-in">
+            <h2 className="text-2xl font-bold mb-6 dark:text-white">Gestão de Acessos</h2>
+            
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-8 border dark:border-slate-700">
+                <h3 className="font-bold mb-4 flex items-center gap-2 dark:text-white"><PlusCircle size={20}/> Cadastrar Novo Usuário</h3>
+                <div className="flex flex-col md:flex-row gap-4 items-end">
+                    <div className="flex-1 w-full">
+                        <label className="text-xs font-bold text-slate-500">Email</label>
+                        <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserEmail} onChange={e=>setNewUserEmail(e.target.value)} placeholder="email@empresa.com"/>
+                    </div>
+                    <div className="flex-1 w-full">
+                        <label className="text-xs font-bold text-slate-500">Senha Provisória</label>
+                        <input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserPass} onChange={e=>setNewUserPass(e.target.value)} type="password" placeholder="******"/>
+                    </div>
+                    <button onClick={handleCreateUser} disabled={isCreating} className="bg-emerald-600 text-white px-6 py-2 rounded font-bold hover:bg-emerald-700 flex items-center gap-2 justify-center w-full md:w-auto">
+                        {isCreating ? <Loader2 className="animate-spin" size={18}/> : "Criar"}
+                    </button>
+                </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700">
+                <table className="w-full text-left">
+                    <thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs">
+                        <tr>
+                            <th className="p-4">Email</th>
+                            <th className="p-4">Permissão</th>
+                            <th className="p-4">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y dark:divide-slate-700">
+                        {users.map(u => (
+                            <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                <td className="p-4 dark:text-white">{u.email}</td>
+                                <td className="p-4">
+                                    <select 
+                                        value={u.role} 
+                                        onChange={(e)=>handleChangeRole(u.id, e.target.value)} 
+                                        disabled={u.role === 'admin' && u.email === user.email} 
+                                        className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"
+                                    >
+                                        <option value="viewer">Visualizador</option>
+                                        <option value="editor">Editor</option>
+                                        <option value="admin">Administrador</option>
+                                    </select>
+                                </td>
+                                <td className="p-4">
+                                    {u.email !== user.email && (
+                                        <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700 transition-colors">
+                                            <Trash2 size={18}/>
+                                        </button>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     );
 };
 
