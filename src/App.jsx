@@ -4096,24 +4096,42 @@ export default function App() {
   const [lancamentosSearch, setLancamentosSearch] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // --- 1. EFEITO DE AUTH (Monitora Login) ---
+ // --- 1. EFEITO DE AUTH (Monitora Login) ---
   useEffect(() => {
     const auth = getAuth(app);
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
         if (currentUser) {
-            // Busca a role no Firestore
-            try {
-                const userDoc = await getDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid));
-                if (userDoc.exists()) {
-                    setUserRole(userDoc.data().role);
-                } else {
-                    setUserRole('viewer'); // Fallback
+            // === CÓDIGO DE RESGATE (BOOTSTRAP) ===
+            // Se o email for o do admin mestre, força o papel de admin e salva no banco
+            if (currentUser.email === 'sabrina.miranda@escritoriovotuporanga.com.br') { // <--- COLOQUE O EMAIL QUE VOCÊ CRIOU NO PASSO 1
+                setUserRole('admin');
+                try {
+                    // Cria o registro no banco automaticamente para garantir acesso futuro
+                    await setDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid), {
+                        email: currentUser.email,
+                        role: 'admin',
+                        createdAt: new Date().toISOString()
+                    }, { merge: true });
+                } catch (e) {
+                    console.error("Erro ao auto-criar admin", e);
                 }
-            } catch (e) {
-                console.error("Erro ao buscar role", e);
+            } else {
+                // === LÓGICA PADRÃO PARA DEMAIS USUÁRIOS ===
+                try {
+                    const userDoc = await getDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid));
+                    if (userDoc.exists()) {
+                        setUserRole(userDoc.data().role);
+                    } else {
+                        setUserRole('viewer'); // Se não tiver registro, entra como visitante
+                    }
+                } catch (e) {
+                    console.error("Erro ao buscar role", e);
+                }
             }
+            // ===========================================
+            
             setUser(currentUser);
-            setAppStage('selection'); // Vai para seleção, não direto pro dashboard
+            setAppStage('selection'); 
         } else {
             setUser(null);
             setAppStage('login');
