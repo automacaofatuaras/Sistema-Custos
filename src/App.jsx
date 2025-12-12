@@ -17,11 +17,15 @@ import * as XLSX from 'xlsx';
 
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { PLANO_CONTAS } from './planoContas';
-// Imports de Auth removidos pois não serão usados para login real nesta versão
+// ALTERAÇÃO: Adicionar imports de Auth aqui
 import { 
   getFirestore, collection, addDoc, getDocs, deleteDoc, 
-  doc, updateDoc, writeBatch, setDoc, getDoc, query, where
+  doc, updateDoc, writeBatch, setDoc, getDoc, query, where 
 } from 'firebase/firestore';
+import { 
+  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, 
+  createUserWithEmailAndPassword 
+} from 'firebase/auth'; // <--- ADICIONADO
 
 /**
  * ------------------------------------------------------------------
@@ -492,6 +496,121 @@ const ConstrutoraFechamento = ({ transactions, filter, user, showToast }) => {
                         </div>
                     </>
                 )}
+            </div>
+        </div>
+    );
+};
+// --- TELA DE LOGIN ---
+const LoginScreen = ({ onLogin, loading }) => {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onLogin(email, password);
+    };
+
+    return (
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border dark:border-slate-700 animate-in fade-in zoom-in-95 duration-300">
+                <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-indigo-600 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/30">
+                        <Building2 size={32} className="text-white" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Sistema de Custos</h1>
+                    <p className="text-slate-500 mt-2 text-sm">Entre com suas credenciais para acessar</p>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Email Corporativo</label>
+                        <div className="relative">
+                            <UserCircle className="absolute left-3 top-3 text-slate-400" size={20}/>
+                            <input 
+                                type="email" 
+                                required
+                                className="w-full pl-10 pr-4 py-3 rounded-lg border dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 ring-indigo-500 outline-none transition-all"
+                                placeholder="usuario@noromix.com.br"
+                                value={email}
+                                onChange={e => setEmail(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Senha</label>
+                        <div className="relative">
+                            <Lock className="absolute left-3 top-3 text-slate-400" size={20}/>
+                            <input 
+                                type="password" 
+                                required
+                                className="w-full pl-10 pr-4 py-3 rounded-lg border dark:bg-slate-700 dark:border-slate-600 dark:text-white focus:ring-2 ring-indigo-500 outline-none transition-all"
+                                placeholder="••••••••"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <button 
+                        disabled={loading}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg hover:shadow-indigo-500/30 flex justify-center items-center gap-2"
+                    >
+                        {loading ? <Loader2 className="animate-spin"/> : <LogOut className="rotate-180" size={20}/>}
+                        ACESSAR SISTEMA
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// --- TELA DE SELEÇÃO DE SEGMENTO (CARREGAMENTO) ---
+const ContextSelectorScreen = ({ onSelect, userRole, onLogout }) => {
+    const segments = Object.keys(BUSINESS_HIERARCHY);
+
+    return (
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center p-6">
+            <div className="max-w-5xl w-full animate-in slide-in-from-bottom-8 duration-500">
+                <div className="flex justify-between items-end mb-8">
+                    <div>
+                        <h1 className="text-3xl font-bold text-slate-800 dark:text-white mb-2">Bem-vindo(a)</h1>
+                        <p className="text-slate-500">Selecione o segmento ou unidade para carregar os dados.</p>
+                    </div>
+                    <button onClick={onLogout} className="text-rose-500 font-bold text-sm hover:underline flex items-center gap-2">
+                        <LogOut size={16}/> Sair
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* Opção GLOBAL (Apenas Admins/Editores) */}
+                    {['admin', 'editor'].includes(userRole) && (
+                        <button 
+                            onClick={() => onSelect('ALL')}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white p-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all hover:-translate-y-1 group text-left relative overflow-hidden"
+                        >
+                            <Globe size={48} className="mb-4 opacity-80 group-hover:scale-110 transition-transform"/>
+                            <h3 className="text-2xl font-bold">Visão Global</h3>
+                            <p className="opacity-70 mt-2 text-sm">Consolidado de todas as empresas e unidades do grupo.</p>
+                            <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white opacity-10 rounded-full blur-2xl"></div>
+                        </button>
+                    )}
+
+                    {/* Botões dos Segmentos */}
+                    {segments.map(seg => (
+                        <button 
+                            key={seg}
+                            onClick={() => onSelect(seg)}
+                            className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-sm border dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-500 hover:shadow-lg transition-all text-left group"
+                        >
+                            <div className="w-12 h-12 bg-slate-100 dark:bg-slate-700 rounded-xl flex items-center justify-center mb-4 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/30 transition-colors">
+                                <Building2 className="text-slate-600 dark:text-slate-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400"/>
+                            </div>
+                            <h3 className="text-xl font-bold text-slate-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{seg}</h3>
+                            <p className="text-slate-500 text-sm mt-2">{BUSINESS_HIERARCHY[seg].length} Unidades vinculadas</p>
+                        </button>
+                    ))}
+                </div>
             </div>
         </div>
     );
@@ -1414,12 +1533,70 @@ const PeriodSelector = ({ filter, setFilter, years }) => {
 };
 
 const UsersScreen = ({ user, myRole, showToast }) => {
-    const [users, setUsers] = useState([]); const [newUserEmail, setNewUserEmail] = useState(''); const [newUserPass, setNewUserPass] = useState('');
-    const loadUsers = async () => { const list = await dbService.getAllUsers(); setUsers(list); }; useEffect(() => { loadUsers(); }, []);
-    const handleCreateUser = async () => { if (myRole !== 'admin') return; try { const secondaryApp = initializeApp(firebaseConfig, "Secondary"); const secondaryAuth = getAuth(secondaryApp); const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPass); await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid), { email: newUserEmail, role: 'viewer', createdAt: new Date().toISOString() }); await signOut(secondaryAuth); showToast("Usuário criado!", 'success'); setNewUserEmail(''); setNewUserPass(''); loadUsers(); } catch (e) { showToast("Erro: " + e.message, 'error'); } };
+    const [users, setUsers] = useState([]); 
+    const [newUserEmail, setNewUserEmail] = useState(''); 
+    const [newUserPass, setNewUserPass] = useState('');
+    const [isCreating, setIsCreating] = useState(false);
+
+    // Carregar usuários do Firestore
+    const loadUsers = async () => { 
+        try {
+            const list = await dbService.getAllUsers(); // Usa sua função existente
+            setUsers(list); 
+        } catch (e) { console.error(e); }
+    }; 
+    
+    useEffect(() => { loadUsers(); }, []);
+
+    // Criar Usuário usando "Secondary App" (Segredo para não deslogar o admin)
+    const handleCreateUser = async () => { 
+        if (myRole !== 'admin') return; 
+        if (newUserPass.length < 6) return showToast("Senha deve ter min. 6 caracteres", "error");
+        
+        setIsCreating(true);
+        try { 
+            // 1. Inicializa uma instância secundária do Firebase Auth
+            const secondaryApp = initializeApp(firebaseConfig, "Secondary"); 
+            const secondaryAuth = getAuth(secondaryApp); 
+            
+            // 2. Cria o usuário na instância secundária
+            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPass); 
+            
+            // 3. Salva os dados extras no Firestore (usando o DB principal)
+            await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid), { 
+                email: newUserEmail, 
+                role: 'viewer', // Padrão: visualizador
+                createdAt: new Date().toISOString() 
+            }); 
+            
+            // 4. Limpa a instância secundária
+            await signOut(secondaryAuth); 
+            
+            showToast("Usuário criado com sucesso!", 'success'); 
+            setNewUserEmail(''); 
+            setNewUserPass(''); 
+            loadUsers(); 
+        } catch (e) { 
+            showToast("Erro: " + e.message, 'error'); 
+        } finally {
+            setIsCreating(false);
+        }
+    };
+    
+    // ... restante do código do UsersScreen (handleChangeRole, handleDelete, render) mantém igual ...
+    // (Apenas certifique-se de usar o isCreating no botão para mostrar loading)
+    
+        const handleCreateUser = async () => { if (myRole !== 'admin') return; try { const secondaryApp = initializeApp(firebaseConfig, "Secondary"); const secondaryAuth = getAuth(secondaryApp); const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newUserEmail, newUserPass); await setDoc(doc(db, 'artifacts', appId, 'users', userCredential.user.uid), { email: newUserEmail, role: 'viewer', createdAt: new Date().toISOString() }); await signOut(secondaryAuth); showToast("Usuário criado!", 'success'); setNewUserEmail(''); setNewUserPass(''); loadUsers(); } catch (e) { showToast("Erro: " + e.message, 'error'); } };
     const handleChangeRole = async (uid, role) => { await dbService.updateUserRole(uid, role); loadUsers(); showToast("Permissão alterada.", 'success'); };
     const handleDelete = async (uid) => { if (!confirm("Remover acesso?")) return; await dbService.deleteUserAccess(uid); loadUsers(); showToast("Acesso revogado.", 'success'); };
-    return (<div className="p-6 max-w-4xl mx-auto"><h2 className="text-2xl font-bold mb-6 dark:text-white">Gestão de Acessos</h2><div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-8 border dark:border-slate-700"><h3 className="font-bold mb-4 flex items-center gap-2 dark:text-white"><PlusCircle size={20}/> Cadastrar Novo Usuário</h3><div className="flex gap-4 items-end"><div className="flex-1"><label className="text-xs font-bold text-slate-500">Email</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserEmail} onChange={e=>setNewUserEmail(e.target.value)}/></div><div className="flex-1"><label className="text-xs font-bold text-slate-500">Senha Provisória</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserPass} onChange={e=>setNewUserPass(e.target.value)}/></div><button onClick={handleCreateUser} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700">Criar</button></div></div><div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700"><table className="w-full text-left"><thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{users.map(u => (<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{u.email}</td><td className="p-4"><select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select></td><td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td></tr>))}</tbody></table></div></div>);
+    return (
+        // ... (seu layout existente)
+        // No botão de criar:
+        <button onClick={handleCreateUser} disabled={isCreating} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700 flex items-center gap-2">
+            {isCreating && <Loader2 className="animate-spin" size={16}/>} Criar
+        </button>
+        // ...
+    );
 };
 
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
@@ -3792,607 +3969,246 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
     );
 };
 export default function App() {
-  const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
-  const [userRole, setUserRole] = useState('admin');
-  const [loadingAuth, setLoadingAuth] = useState(false);
+  // ESTADOS DE FLUXO
+  const [appStage, setAppStage] = useState('login'); // 'login' | 'selection' | 'dashboard'
+  const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState('viewer');
+  const [loadingAuth, setLoadingAuth] = useState(true);
+
+  // ESTADOS DO SISTEMA
   const { theme, toggleTheme } = useTheme();
   const [toast, showToast] = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(true);
-
   const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // DADOS
   const [transactions, setTransactions] = useState([]);
   const [segments, setSegments] = useState([]);
   
+  // FILTROS
   const [filter, setFilter] = useState({ type: 'month', month: new Date().getMonth(), year: new Date().getFullYear(), quarter: 1, semester: 1 });
-  const [globalUnitFilter, setGlobalUnitFilter] = useState('Portos de Areia');
+  const [globalUnitFilter, setGlobalUnitFilter] = useState('ALL'); // Inicial 'ALL', mas será setado na seleção
 
+  // MODAIS E FLUXOS INTERNOS
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
-  // NOVOS ESTADOS PARA A ABA LANÇAMENTOS
-const [lancamentosSearch, setLancamentosSearch] = useState('');
-const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', end: '' });
-
-  const [importText, setImportText] = useState('');
-  const [importSegment, setImportSegment] = useState(''); 
+  const [lancamentosSearch, setLancamentosSearch] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const fileInputRef = useRef(null);
 
+  // --- 1. EFEITO DE AUTH (Monitora Login) ---
   useEffect(() => {
-      const init = async () => { await loadData(); };
-      init();
+    const auth = getAuth(app);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+        if (currentUser) {
+            // Busca a role no Firestore
+            try {
+                const userDoc = await getDoc(doc(db, 'artifacts', appId, 'users', currentUser.uid));
+                if (userDoc.exists()) {
+                    setUserRole(userDoc.data().role);
+                } else {
+                    setUserRole('viewer'); // Fallback
+                }
+            } catch (e) {
+                console.error("Erro ao buscar role", e);
+            }
+            setUser(currentUser);
+            setAppStage('selection'); // Vai para seleção, não direto pro dashboard
+        } else {
+            setUser(null);
+            setAppStage('login');
+        }
+        setLoadingAuth(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const loadData = async () => {
+  // --- 2. FUNÇÕES DE LOGIN/LOGOUT ---
+  const handleLogin = async (email, password) => {
+      setLoadingAuth(true);
+      try {
+          const auth = getAuth(app);
+          await signInWithEmailAndPassword(auth, email, password);
+          // O useEffect acima vai cuidar do redirecionamento
+      } catch (error) {
+          showToast("Erro ao entrar: Verifique e-mail e senha.", 'error');
+          setLoadingAuth(false);
+      }
+  };
+
+  const handleLogout = async () => {
+      const auth = getAuth(app);
+      await signOut(auth);
+      setTransactions([]); // Limpa dados da memória por segurança
+      setAppStage('login');
+  };
+
+  // --- 3. SELEÇÃO DE CONTEXTO ---
+  const handleContextSelect = (segment) => {
+      setGlobalUnitFilter(segment); // Define o filtro global ANTES de entrar
+      setAppStage('dashboard');     // Entra no dashboard
+      loadData(segment);            // Carrega dados (Opcional: filtrar no backend se tivesse muitos dados)
+  };
+
+  // --- 4. CARREGAMENTO DE DADOS ---
+  const loadData = async (segmentContext = globalUnitFilter) => {
     if (!user) return;
     try {
+        // Se quisesse otimizar, poderia filtrar no Firestore usando 'segmentContext'
+        // Por enquanto carregamos tudo e filtramos em memória, conforme lógica anterior
         const txs = await dbService.getAll(user, 'transactions');
         const segs = await dbService.getAll(user, 'segments');
         setTransactions(txs);
         setSegments(segs);
         setSelectedIds([]);
-    } catch (e) { showToast("Erro ao carregar dados.", 'error'); }
+    } catch (e) { 
+        showToast("Erro ao carregar dados.", 'error'); 
+    }
   };
 
-  const handleLogout = async () => { window.location.reload(); };
-
-  const handleImport = async (data) => {
-    setIsProcessing(true);
-    try { 
-        await dbService.addBulk(user, 'transactions', data); 
-        await loadData(); showToast(`${data.length} importados!`, 'success'); 
-    } catch(e) { showToast("Erro ao importar.", 'error'); } 
-    finally { setIsProcessing(false); }
-  };
+  // ... (funções auxiliares existentes: handleImport, handleBatchDelete, filteredData, kpis, etc.) ...
+  // MANTENHA O RESTO DAS FUNÇÕES DE CÁLCULO E ESTADOS AQUI DENTRO IGUAIS AO QUE ESTAVA
+  // (Ex: filteredData, kpis, totalProduction, etc.)
   
-  const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
-
-  const handleSelectAll = (e) => { if (e.target.checked) { setSelectedIds(filteredData.map(t => t.id)); } else { setSelectedIds([]); } };
-  const handleSelectOne = (id) => { setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); };
-  const handleBatchDelete = async () => { if (!confirm(`Tem certeza que deseja excluir ${selectedIds.length} lançamentos?`)) return; try { await dbService.deleteBulk(user, 'transactions', selectedIds); await loadData(); showToast(`${selectedIds.length} itens excluídos.`, 'success'); } catch (e) { showToast("Erro ao excluir.", 'error'); } };
-
-const filteredData = useMemo(() => {
-      return transactions.filter(t => {
-          let y, m;
-          if (typeof t.date === 'string' && t.date.length >= 10) {
-              y = parseInt(t.date.substring(0, 4));
-              m = parseInt(t.date.substring(5, 7)) - 1; 
-          } else {
-              const d = new Date(t.date);
-              y = d.getFullYear();
-              m = d.getMonth();
-          }
-          
-          const dateMatch = (() => {
-              // REMOVIDA A LINHA: if (activeTab === 'lancamentos') return true; 
-              // Agora o filtro global aplica-se a todas as abas, inclusive lançamentos
-              if (y !== filter.year) return false;
-              if (filter.type === 'month' && m !== filter.month) return false;
-              if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
-              if (filter.type === 'semester' && (m < 6 ? 1 : 2) !== filter.semester) return false;
-              return true;
-          })();
-
-          if (!dateMatch) return false;
-          
-          if (globalUnitFilter !== 'ALL') {
-              if (BUSINESS_HIERARCHY[globalUnitFilter]) {
-                 const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                 const isInSegment = BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
-                 return isInSegment;
-              } else {
-                  const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                  const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
-                  return txUnit === filterUnit;
-              }
-          }
-          return true;
-      });
-  }, [transactions, filter, globalUnitFilter, activeTab]);
-
-  // 2. NOVO DADO APENAS PARA O ESTOQUE (Carrega o ano todo para cálculo de saldo)
-const stockDataRaw = useMemo(() => {
-    return transactions.filter(t => {
-        let y;
-        if (typeof t.date === 'string' && t.date.length >= 10) {
-            y = parseInt(t.date.substring(0, 4));
-        } else {
-            y = new Date(t.date).getFullYear();
-        }
-        
-        // APENAS FILTRO DE ANO E UNIDADE (Ignora mês)
-        if (y !== filter.year) return false;
-
-        if (globalUnitFilter !== 'ALL') {
-            if (BUSINESS_HIERARCHY[globalUnitFilter]) {
-                const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
+  // Cópia das dependências necessárias para filteredData funcionar:
+  const filteredData = useMemo(() => {
+        return transactions.filter(t => {
+            let y, m;
+            if (typeof t.date === 'string' && t.date.length >= 10) {
+                y = parseInt(t.date.substring(0, 4));
+                m = parseInt(t.date.substring(5, 7)) - 1; 
             } else {
-                const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
-                return txUnit === filterUnit;
+                const d = new Date(t.date); y = d.getFullYear(); m = d.getMonth();
             }
-        }
-        return true;
-    });
-}, [transactions, filter.year, globalUnitFilter]);
+            if (y !== filter.year) return false;
+            if (filter.type === 'month' && m !== filter.month) return false;
+            if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
+            if (filter.type === 'semester' && (m < 6 ? 1 : 2) !== filter.semester) return false;
 
+            // Filtro Global Aplicado aqui
+            if (globalUnitFilter !== 'ALL') {
+                if (BUSINESS_HIERARCHY[globalUnitFilter]) {
+                    const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                    return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
+                } else {
+                    const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                    const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
+                    return txUnit === filterUnit;
+                }
+            }
+            return true;
+        });
+  }, [transactions, filter, globalUnitFilter]);
+
+  // Cálculos KPIs (mantidos)
+  const totalProduction = useMemo(() => filteredData.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0), [filteredData]);
+  const totalSales = useMemo(() => filteredData.filter(t => t.type === 'metric' && t.metricType === 'vendas').reduce((acc, t) => acc + t.value, 0), [filteredData]);
   const kpis = useMemo(() => {
       const rev = filteredData.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
       const exp = filteredData.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
       return { revenue: rev, expense: exp, balance: rev - exp };
   }, [filteredData]);
-
   const currentMeasureUnit = getMeasureUnit(globalUnitFilter);
-  
-// --- CÁLCULOS GERAIS PARA O DASHBOARD ---
-  const totalProduction = useMemo(() => {
-      return filteredData
-        .filter(t => t.type === 'metric' && t.metricType === 'producao')
-        .reduce((acc, t) => acc + t.value, 0);
-  }, [filteredData]);
-
-  // CÁLCULO DE ESTOQUE TOTAL PARA O DASHBOARD
-  const totalStockPeriod = useMemo(() => {
-      return filteredData
-        .filter(t => t.type === 'metric' && t.metricType === 'estoque')
-        .reduce((acc, t) => acc + t.value, 0);
-  }, [filteredData]);
-
-  const totalSales = useMemo(() => {
-      return filteredData
-        .filter(t => t.type === 'metric' && t.metricType === 'vendas')
-        .reduce((acc, t) => acc + t.value, 0);
-  }, [filteredData]);
-
   const costPerUnit = totalProduction > 0 ? kpis.expense / totalProduction : 0;
-  
-  // Novos KPIs
-  const resultMargin = kpis.revenue > 0 ? (kpis.balance / kpis.revenue) * 100 : 0;
-  const resultPerSalesUnit = totalSales > 0 ? kpis.balance / totalSales : 0;
+  // Fim cálculos
 
-  if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
+  // --- RENDERIZAÇÃO CONDICIONAL DO FLUXO ---
 
-  // --- CÁLCULOS DE VARIAÇÃO (MÊS ANTERIOR) ---
-  const variations = useMemo(() => {
-      // 1. Determinar qual é o "mês passado" com base no filtro atual
-      let prevMonth = filter.month - 1;
-      let prevYear = filter.year;
-      
-      if (prevMonth < 0) {
-          prevMonth = 11; // Dezembro
-          prevYear -= 1;
-      }
+  if (loadingAuth) return <div className="min-h-screen bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
 
-      // 2. Filtrar transações do período anterior (respeitando o filtro de unidade global)
-      const prevData = transactions.filter(t => {
-          let y, m;
-          // Parse seguro de data igual ao filteredData
-          if (typeof t.date === 'string' && t.date.length >= 10) {
-              y = parseInt(t.date.substring(0, 4));
-              m = parseInt(t.date.substring(5, 7)) - 1; 
-          } else {
-              const d = new Date(t.date);
-              y = d.getFullYear();
-              m = d.getMonth();
-          }
+  if (appStage === 'login') {
+      return <LoginScreen onLogin={handleLogin} loading={loadingAuth} />;
+  }
 
-          // Filtro de Data Anterior
-          const isDateMatch = (filter.type === 'month') 
-            ? (y === prevYear && m === prevMonth)
-            : false; // Se não for filtro mensal, não calcula variação por enquanto
+  if (appStage === 'selection') {
+      return <ContextSelectorScreen onSelect={handleContextSelect} userRole={userRole} onLogout={handleLogout} />;
+  }
 
-          // Filtro de Unidade (O mesmo do filtro principal)
-          if (!isDateMatch) return false;
-
-          if (globalUnitFilter !== 'ALL') {
-              if (BUSINESS_HIERARCHY[globalUnitFilter]) {
-                 const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                 return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
-              } else {
-                  const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                  const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
-                  return txUnit === filterUnit;
-              }
-          }
-          return true;
-      });
-
-      // 3. Calcular Totais do Mês Anterior
-      const prevRevenue = prevData.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
-      const prevExpense = prevData.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
-      const prevBalance = prevRevenue - prevExpense;
-      const prevProduction = prevData.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
-      const prevCostPerUnit = prevProduction > 0 ? prevExpense / prevProduction : 0;
-
-      // 4. Função auxiliar para calcular % de variação
-      const calcVar = (curr, prev) => {
-          if (!prev || prev === 0) return 0;
-          return ((curr - prev) / prev) * 100;
-      };
-
-      return {
-          revenue: calcVar(kpis.revenue, prevRevenue),
-          expense: calcVar(kpis.expense, prevExpense),
-          balance: calcVar(kpis.balance, prevBalance),
-          costPerUnit: calcVar(costPerUnit, prevCostPerUnit)
-      };
-  }, [transactions, filter, globalUnitFilter, kpis, costPerUnit]);
-  
- return (
+  // --- RENDERIZAÇÃO DO DASHBOARD (Layout Antigo Envolvido aqui) ---
+  return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
       {toast && <div className={`fixed top-4 right-4 z-50 p-4 rounded shadow-xl flex gap-2 ${toast.type==='success'?'bg-emerald-500 text-white':'bg-rose-500 text-white'}`}>{toast.type==='success'?<CheckCircle/>:<AlertTriangle/>}{toast.message}</div>}
       
-      {/* SUBSTITUA O ASIDE INTEIRO POR ESTE BLOCO */}
-<aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 dark:bg-slate-950 text-white flex flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800 transition-all duration-300`}>
-    
-    {/* LOGO E TOGGLE */}
-    <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-        <div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}>
-            <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shrink-0">
-                <Building2 size={18} />
+      {/* ASIDE (Menu Lateral) */}
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 dark:bg-slate-950 text-white flex flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800 transition-all duration-300`}>
+           {/* ... Mantenha o conteúdo do ASIDE igual ao anterior ... */}
+           {/* DICA: No botão de logout do aside, chame handleLogout */}
+            <div className={`p-4 border-t border-slate-800 flex ${sidebarOpen ? 'flex-row justify-around' : 'flex-col gap-4 items-center'}`}>
+                {/* ... outros botões ... */}
+                <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-800 rounded-lg transition-colors" title="Sair">
+                    <LogOut size={20} />
+                </button>
             </div>
-            {sidebarOpen && <span className="text-xl font-bold whitespace-nowrap overflow-hidden">Custos</span>}
-        </div>
-        {/* Botão de Minimizar (Só aparece se aberto, ou ajuste conforme preferência) */}
-        {sidebarOpen && (
-            <button onClick={() => setSidebarOpen(false)} className="text-slate-400 hover:text-white">
-                <ChevronLeft size={20} />
-            </button>
-        )}
-    </div>
-
-    {/* Se estiver fechado, botão para abrir fica no topo da lista ou centralizado */}
-    {!sidebarOpen && (
-        <div className="flex justify-center py-2">
-            <button onClick={() => setSidebarOpen(true)} className="text-slate-400 hover:text-white">
-                <ChevronRight size={20} />
-            </button>
-        </div>
-    )}
-
-    {/* NAVEGAÇÃO */}
-    <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
-        {[
-            { id: 'dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
-            { id: 'lancamentos', icon: List, label: 'Lançamentos' },
-            { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
-            { id: 'rateios', icon: Share2, label: 'Rateios' },
-            { id: 'estoque', icon: Package, label: 'Estoque' },
-            { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
-            { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
-            { id: 'investimentos_report', icon: TrendingUp, label: 'Investimentos' },
-            { id: 'global', icon: Globe, label: 'Global' },
-            { id: 'ingestion', icon: UploadCloud, label: 'Importar TXT' },
-        ].map((item) => (
-            <button 
-                key={item.id}
-                onClick={() => setActiveTab(item.id)} 
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${!sidebarOpen ? 'justify-center' : ''} ${activeTab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-                title={!sidebarOpen ? item.label : ''}
-            >
-                <item.icon size={20} className="shrink-0" />
-                {sidebarOpen && <span className="whitespace-nowrap overflow-hidden">{item.label}</span>}
-            </button>
-        ))}
-    </nav>
-
-    {/* --- NOVOS BOTÕES MOVIDOS (IA, TEMA, LOGOUT) --- */}
-    <div className={`p-4 border-t border-slate-800 flex ${sidebarOpen ? 'flex-row justify-around' : 'flex-col gap-4 items-center'}`}>
-        <button onClick={() => setShowAIModal(true)} className="p-2 text-purple-400 hover:bg-slate-800 rounded-lg transition-colors" title="IA Analysis">
-            <Sparkles size={20} />
-        </button>
-        <button onClick={toggleTheme} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg transition-colors" title="Mudar Tema">
-            {theme === 'dark' ? <Sun size={20}/> : <Moon size={20}/>}
-        </button>
-        <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-800 rounded-lg transition-colors" title="Sair">
-            <LogOut size={20} />
-        </button>
-    </div>
-
-    {/* PERFIL DO USUÁRIO */}
-    <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-        <div className={`flex items-center gap-3 ${!sidebarOpen ? 'justify-center' : ''}`}>
-            <div className="p-1 bg-slate-800 rounded shrink-0">
-                <UserCircle size={20} className="text-slate-400"/>
-            </div>
-            {sidebarOpen && (
-                <div className="flex-1 min-w-0">
-                    <p className="truncate font-bold text-sm text-white">{user.email.split('@')[0]}</p>
-                    <p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p>
-                </div>
-            )}
-        </div>
-    </div>
-</aside>
+           {/* ... Resto do Aside ... */}
+      </aside>
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-<header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-    
-    {/* LÓGICA DE FILTROS (MANTENHA COMO ESTÁ) */}
-    {!['global', 'rateios'].includes(activeTab) ? (
-    <div className="flex gap-2 w-full md:w-auto items-center">
-        <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
-        <HierarchicalSelect value={globalUnitFilter} onChange={setGlobalUnitFilter} options={segments} isFilter={true} placeholder="Selecione Unidade ou Segmento" />
-    </div>
-    ) : (
-    <div></div>
-    )}
-
-    {/* --- O BLOCO DOS BOTÕES FOI REMOVIDO DAQUI --- */}
-
-</header>
-        
-{activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
-{activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
-{activeTab === 'dashboard' && (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            {/* LINHA 1: FINANCEIRO PRINCIPAL + CUSTO P/ TON COM VARIAÇÃO */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <KpiCard 
-                title="Receita Bruta" 
-                value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
-                icon={TrendingUp} 
-                color="emerald" 
-                trend={variations.revenue} 
-              />
-              <KpiCard 
-                title="Despesas Totais" 
-                value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
-                icon={TrendingDown} 
-                color="rose" 
-                trend={variations.expense} 
-                reverseColor={true} 
-              />
-              <KpiCard 
-                title="Resultado Líquido" 
-                value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
-                icon={DollarSign} 
-                color={kpis.balance >= 0 ? 'indigo' : 'rose'} 
-                trend={variations.balance} 
-              />
-              
-              <KpiCard 
-                title={`Custo / ${currentMeasureUnit}`}
-                value={costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                icon={Factory}
-                color="rose" 
-                trend={variations.costPerUnit}
-                reverseColor={true} 
-              />
-            </div>
-
-            {/* LINHA 2: OPERACIONAL E MARGENS */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Margem */}
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center">
-                 <p className="text-xs font-bold text-slate-500 uppercase mb-1">Margem Líquida</p>
-                 <div className="flex items-end gap-2">
-                    <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
-                 </div>
-              </div>
-
-              {/* Produção */}
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
-                  <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase">Produção Total</p>
-                        <h3 className="text-2xl font-bold dark:text-white mt-2">{totalProduction.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3>
-                    </div>
-                    <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600"><Factory size={20}/></div>
-                  </div>
-              </div>
-
-              {/* Vendas */}
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
-                  <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase">Vendas Totais</p>
-                        <h3 className="text-2xl font-bold dark:text-white mt-2">{totalSales.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3>
-                    </div>
-                    <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600"><ShoppingCart size={20}/></div>
-                  </div>
-              </div>
-
-              {/* Estoque */}
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
-                  <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase">Estoque (Fechamento)</p>
-                        <h3 className="text-2xl font-bold dark:text-white mt-2">{totalStockPeriod.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3>
-                    </div>
-                    <div className="p-2 bg-amber-100 rounded-lg text-amber-600"><Package size={20}/></div>
-                  </div>
-              </div>
-            </div>
-
-            {/* GRÁFICO */}
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm h-96 border dark:border-slate-700">
-              <h3 className="mb-6 font-bold text-lg dark:text-white flex items-center gap-2"><BarChartIcon size={20}/> Performance Financeira do Período</h3>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={[{ name: 'Performance', Receitas: kpis.revenue, Despesas: kpis.expense, Resultado: kpis.balance }]} barSize={80}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                    <XAxis dataKey="name" tick={false} />
-                    <YAxis tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} />
-                    <Tooltip 
-                        cursor={{fill: 'transparent'}}
-                        contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff' }} 
-                        formatter={(val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    />
-                    <Legend wrapperStyle={{paddingTop: '20px'}}/>
-                    <Bar name="Receitas" dataKey="Receitas" fill="#10b981" radius={[6, 6, 0, 0]} />
-                    <Bar name="Despesas" dataKey="Despesas" fill="#f43f5e" radius={[6, 6, 0, 0]} />
-                    <Bar name="Resultado" dataKey="Resultado" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-
-      {activeTab === 'lancamentos' && (
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border dark:border-slate-700">
-             <div className="p-6 border-b dark:border-slate-700 flex flex-col gap-4">
-                 
-                 {/* CABEÇALHO */}
-                 <div className="flex justify-between items-center">
-                    <div className="flex gap-4 items-center">
-                        <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
-                        {selectedIds.length > 0 && userRole === 'admin' && (
-                            <button onClick={handleBatchDelete} className="bg-rose-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-rose-700 transition-colors">
-                                Excluir ({selectedIds.length})
-                            </button>
-                        )}
-                    </div>
-                    {['admin', 'editor'].includes(userRole) && <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>}
-                 </div>
-
-                 {/* APENAS BARRA DE PESQUISA (Data agora é no topo da página) */}
-                 <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border dark:border-slate-700">
-                    <div className="relative w-full">
-                        <Search className="absolute left-3 top-3 text-slate-400" size={16}/>
-                        <input 
-                            type="text" 
-                            placeholder="Pesquisar neste período (Descrição, Conta ou Valor)..." 
-                            className="w-full pl-10 pr-4 py-2 rounded-lg border dark:border-slate-600 dark:bg-slate-800 dark:text-white text-sm outline-none focus:ring-2 ring-indigo-500"
-                            value={lancamentosSearch}
-                            onChange={(e) => setLancamentosSearch(e.target.value)}
-                        />
-                    </div>
-                 </div>
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+             {/* HEADER SIMPLIFICADO: Mostra onde estamos, botão para trocar contexto */}
+             <div className="flex items-center gap-4">
+                <div className="flex flex-col">
+                    <h2 className="text-2xl font-bold dark:text-white flex items-center gap-2">
+                        {globalUnitFilter === 'ALL' ? <Globe className="text-indigo-500"/> : <Building2 className="text-indigo-500"/>}
+                        {globalUnitFilter === 'ALL' ? 'Visão Global' : globalUnitFilter}
+                    </h2>
+                    <button onClick={() => setAppStage('selection')} className="text-xs text-slate-500 hover:text-indigo-500 hover:underline text-left">
+                        Trocar Segmento/Unidade
+                    </button>
+                </div>
              </div>
 
-             <div className="overflow-x-auto">
-                 <table className="w-full text-left text-sm">
-                     <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400">
-                          <tr>
-                             <th className="p-4 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length === filteredData.length && filteredData.length > 0} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></th>
-                             <th className="p-4">Data</th>
-                             <th className="p-4">Descrição</th>
-                             <th className="p-4">Unidade</th>
-                             <th className="p-4">Conta/Tipo</th>
-                             <th className="p-4 text-right">Valor</th>
-                             <th className="p-4">Ações</th>
-                         </tr>
-                     </thead>
-                     <tbody className="divide-y dark:divide-slate-700">
-                         {filteredData.filter(t => {
-    // Lógica de filtro (MANTIDA)
-    const searchLower = lancamentosSearch.toLowerCase();
-    const matchesSearch = !lancamentosSearch || 
-        t.description.toLowerCase().includes(searchLower) ||
-        (t.accountPlan && t.accountPlan.toLowerCase().includes(searchLower)) || // Proteção extra aqui
-        t.value.toString().includes(searchLower);
-    
-    return matchesSearch;
-}).map(t => (
-    <tr key={t.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${selectedIds.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
-        
-        {/* 1. CHECKBOX */}
-        <td className="p-4"><input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></td>
-        
-        {/* 2. DATA */}
-        <td className="p-4 dark:text-white">{formatDate(t.date)}</td>
-        
-        {/* 3. DESCRIÇÃO */}
-        <td className="p-4 dark:text-white">
-            {t.description}
-            {t.materialDescription && <span className="block text-[10px] text-slate-500 italic">{t.materialDescription}</span>}
-        </td>
-        
-        {/* 4. UNIDADE */}
-        <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
-        
-        {/* 5. CONTA/TIPO (NOVO ESTILO) */}
-        <td className="p-4">
-            {(() => {
-                const baseStyle = "px-2 py-1 rounded border font-bold text-[10px] uppercase inline-block max-w-[200px] truncate";
+             {/* FILTRO DE DATA (Só se não for global/rateios) */}
+             {!['global', 'rateios'].includes(activeTab) && (
+                <div className="flex gap-2 w-full md:w-auto items-center">
+                    <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
+                    {/* Removemos o seletor de unidade daqui, pois agora é na tela inicial */}
+                </div>
+             )}
+        </header>
 
-                if (t.type === 'metric') {
-                    return (
-                        <span className={`${baseStyle} bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:border-indigo-700`}>
-                            {t.metricType}
-                        </span>
-                    );
-                }
-
-                const label = t.planDescription || t.accountPlan;
-                const colorStyle = t.type === 'revenue' 
-                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800' 
-                    : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600';
-
-                return (
-                    <span className={`${baseStyle} ${colorStyle}`} title={label}>
-                        {label}
-                    </span>
-                );
-            })()}
-        </td>
-
-        {/* 6. VALOR (O que estava faltando) */}
-        <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>
-            {t.value.toLocaleString()}
-        </td>
-
-        {/* 7. AÇÕES (O que estava faltando) */}
-        <td className="p-4 flex gap-2">
-            {['admin', 'editor'].includes(userRole) && (
-                <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500 hover:text-blue-700 transition-colors">
-                    <Edit2 size={16}/>
-                </button>
-            )}
-        </td>
-    </tr>
-))}
-                      </tbody>
-                 </table>
+        {/* ... CONTEÚDO DAS ABAS (Mantido igual) ... */}
+        {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
+        {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} segmentsList={segments} />}
+        {activeTab === 'dashboard' && (
+             // ... Seus componentes do dashboard ...
+             // DICA: Certifique-se de que os KpiCards usem as variáveis kpis, variations, etc. calculadas acima
+             <div className="space-y-6 animate-in fade-in duration-500">
+                {/* ... KPI Cards e Gráficos ... */}
+                {/* Para poupar espaço aqui, mantenha o código interno da tab dashboard que você já tinha */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" trend={0} />
+                    <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" trend={0} reverseColor={true} />
+                    {/* ... etc ... */}
+                </div>
+                {/* ... */}
              </div>
-          </div>
         )}
-        {activeTab === 'custos' && (
-    <CustosComponent 
-        transactions={filteredData} 
-        allTransactions={transactions} // <--- NOVO: Passa tudo para calculos globais
-        filter={filter}                // <--- NOVO: Para saber o mês do rateio salvo
-        selectedUnit={globalUnitFilter}// <--- NOVO: Para filtrar os rateios gerados
-        showToast={showToast} 
-        measureUnit={currentMeasureUnit} 
-        totalProduction={totalProduction} 
-    />
-)}
-       {activeTab === 'fechamento' && (
-            // Lógica para detectar se é Construtora
+        
+        {/* Adicione as outras abas (lancamentos, custos, fechamento, etc.) igual estava antes */}
+        {activeTab === 'lancamentos' && (
+             // ... Lógica da aba lançamentos (Mantenha o código da tabela) ...
+             // Nota: Lembre de passar filteredData para a tabela
+             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm ...">
+                 {/* ... Tabela ... */}
+             </div>
+        )}
+
+        {/* ... Resto das abas ... */}
+        {activeTab === 'fechamento' && (
             (globalUnitFilter === 'Construtora' || globalUnitFilter === 'Noromix Construtora') 
-            ? (
-                <ConstrutoraFechamento 
-                    transactions={filteredData} 
-                    filter={filter}
-                    user={user}         // <--- Importante passar o user
-                    showToast={showToast} // <--- Importante para feedbacks
-                />
-            ) 
-            : (
-                <FechamentoComponent 
-                    transactions={filteredData} 
-                    totalSales={totalSales} 
-                    totalProduction={totalProduction} 
-                    measureUnit={currentMeasureUnit} 
-                    filter={filter} 
-                    selectedUnit={globalUnitFilter} 
-                />
-            )
+            ? <ConstrutoraFechamento transactions={filteredData} filter={filter} user={user} showToast={showToast} />
+            : <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />
         )}
-        {/* Passando globalCostPerUnit para o componente de estoque */}
-        {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} />}
-        {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
-        {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
-        {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
-        {activeTab === 'investimentos_report' && (<InvestimentosReportComponent transactions={filteredData} filter={filter} selectedUnit={globalUnitFilter} />)}
         
-      </main>
+        {/* Aba Users atualizada */}
+        {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
 
-      {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
-      {showAIModal && user && <AIReportModal onClose={() => setShowAIModal(false)} transactions={filteredData} period={`${filter.month+1}/${filter.year}`} />}
+      </main>
+      
+      {/* Modais mantidos */}
+      {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={() => loadData()} user={user} initialData={editingTx} showToast={showToast} />}
+      {/* ... */}
     </div>
   );
 }
