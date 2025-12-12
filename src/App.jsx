@@ -199,29 +199,65 @@ const COST_CENTER_RULES = {
 };
 
 // --- SERVIÇOS (SEM AUTH) ---
+// --- SERVIÇOS DO BANCO DE DADOS ---
 const dbService = {
+  // Referência para coleções de dados da empresa (Transações, Segmentos)
   getCollRef: (user, colName) => {
-    // Ignora validação de usuário, usa pasta pública da empresa
     return collection(db, 'artifacts', appId, 'shared_container', 'DADOS_EMPRESA', colName);
   },
-  syncSystem: async (user) => {
-      return 'admin'; // Sempre admin
-  },
+
+  // --- GERENCIAMENTO DE USUÁRIOS (ADICIONADO) ---
   getAllUsers: async () => { 
-      // Retorna lista vazia ou mockada, já que login foi removido
-      return []; 
+      // Busca na coleção de usuários na raiz do artefato
+      const snapshot = await getDocs(collection(db, 'artifacts', appId, 'users')); 
+      return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })); 
   },
-  updateUserRole: async () => {}, 
-  deleteUserAccess: async () => {}, 
+
+  updateUserRole: async (uid, role) => {
+      // Atualiza o cargo do usuário
+      const docRef = doc(db, 'artifacts', appId, 'users', uid);
+      await updateDoc(docRef, { role });
+  }, 
+
+  deleteUserAccess: async (uid) => { 
+      // Remove o registro do usuário do banco (não deleta do Auth, apenas revoga acesso ao app)
+      const docRef = doc(db, 'artifacts', appId, 'users', uid);
+      await deleteDoc(docRef);
+  }, 
+  // ----------------------------------------------
+
+  // Métodos Genéricos (CRUD)
   add: async (user, col, item) => addDoc(dbService.getCollRef(user, col), item),
   update: async (user, col, id, data) => updateDoc(doc(dbService.getCollRef(user, col), id), data),
   del: async (user, col, id) => deleteDoc(doc(dbService.getCollRef(user, col), id)),
-  deleteBulk: async (user, col, ids) => { const batch = writeBatch(db); ids.forEach(id => { const docRef = doc(dbService.getCollRef(user, col), id); batch.delete(docRef); }); await batch.commit(); },
+  
+  deleteBulk: async (user, col, ids) => { 
+      const batch = writeBatch(db); 
+      ids.forEach(id => { 
+          const docRef = doc(dbService.getCollRef(user, col), id); 
+          batch.delete(docRef); 
+      }); 
+      await batch.commit(); 
+  },
+  
   getAll: async (user, col) => { 
       const snapshot = await getDocs(dbService.getCollRef(user, col)); 
       return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })); 
   },
-  addBulk: async (user, col, items) => { const chunkSize = 400; for (let i = 0; i < items.length; i += chunkSize) { const chunk = items.slice(i, i + chunkSize); const batch = writeBatch(db); const colRef = dbService.getCollRef(user, col); chunk.forEach(item => { const docRef = doc(colRef); batch.set(docRef, item); }); await batch.commit(); } }
+  
+  addBulk: async (user, col, items) => { 
+      const chunkSize = 400; 
+      for (let i = 0; i < items.length; i += chunkSize) { 
+          const chunk = items.slice(i, i + chunkSize); 
+          const batch = writeBatch(db); 
+          const colRef = dbService.getCollRef(user, col); 
+          chunk.forEach(item => { 
+              const docRef = doc(colRef); 
+              batch.set(docRef, item); 
+          }); 
+          await batch.commit(); 
+      } 
+  }
 };
 
 const aiService = { analyze: async () => "IA Placeholder" };
