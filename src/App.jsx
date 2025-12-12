@@ -222,6 +222,281 @@ const dbService = {
 
 const aiService = { analyze: async () => "IA Placeholder" };
 
+// --- COMPONENTE INTELIGENTE: CONSTRUTORA ---
+const ConstrutoraFechamento = ({ transactions, filter, user, showToast }) => {
+    const [viewMode, setViewMode] = useState('RESUMO'); // 'RESUMO' ou 'DETALHADA'
+    const [statusFilter, setStatusFilter] = useState('ANDAMENTO');
+    
+    // Estado para armazenar o status das obras (vindo do banco)
+    // Estrutura: { '40001': { status: 'FINALIZADA', nome: 'Edifício X' } }
+    const [worksMeta, setWorksMeta] = useState({});
+    const [loadingMeta, setLoadingMeta] = useState(true);
+
+    // 1. Carregar status salvos do Firebase
+    useEffect(() => {
+        const loadWorksMeta = async () => {
+            try {
+                // Usa a coleção 'construction_works' para salvar o status de cada obra
+                const colRef = collection(db, 'artifacts', appId, 'construction_works');
+                const snap = await getDocs(colRef);
+                const map = {};
+                snap.forEach(doc => {
+                    map[doc.id] = doc.data();
+                });
+                setWorksMeta(map);
+            } catch (e) {
+                console.error("Erro ao carregar obras:", e);
+            } finally {
+                setLoadingMeta(false);
+            }
+        };
+        loadWorksMeta();
+    }, []);
+
+    // 2. Função para alternar status (Salva no Banco)
+    const toggleWorkStatus = async (ccCode, currentStatus, workName) => {
+        const newStatus = currentStatus === 'ANDAMENTO' ? 'FINALIZADA' : 'ANDAMENTO';
+        const docId = String(ccCode);
+        
+        // Atualiza estado local imediatamente (UI otimista)
+        setWorksMeta(prev => ({
+            ...prev,
+            [docId]: { status: newStatus, nome: workName }
+        }));
+
+        try {
+            // Salva no Firestore
+            const docRef = doc(db, 'artifacts', appId, 'construction_works', docId);
+            await setDoc(docRef, { 
+                status: newStatus, 
+                nome: workName,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            
+            if (showToast) showToast(`Obra movida para ${newStatus}`, 'success');
+        } catch (e) {
+            console.error("Erro ao salvar status:", e);
+            if (showToast) showToast("Erro ao salvar alteração.", 'error');
+        }
+    };
+
+    // 3. Processamento dos Dados (Cruza Transações com Status Salvo)
+    const data = useMemo(() => {
+        const obras = {};
+        let totalReceitas = 0;
+        let totalDespesas = 0;
+
+        transactions.forEach(t => {
+            const ccCode = parseInt(t.costCenter.split(' ')[0]);
+            
+            // Filtro de Range da Construtora (Ajuste conforme seus códigos reais)
+            // Exemplo: CCs acima de 40000 geralmente são obras
+            if (ccCode < 40000 || ccCode > 99999) return; 
+
+            // IDENTIFICAÇÃO AUTOMÁTICA:
+            // Se já tem no banco, usa o status do banco.
+            // Se não tem, assume 'ANDAMENTO' (Padrão para novas importações).
+            const savedMeta = worksMeta[ccCode];
+            const status = savedMeta ? savedMeta.status : 'ANDAMENTO';
+            const nomeObra = savedMeta?.nome || t.segment || `Obra CC ${ccCode}`;
+
+            if (!obras[ccCode]) {
+                obras[ccCode] = {
+                    id: ccCode,
+                    nome: nomeObra,
+                    status: status,
+                    receita: 0,
+                    despesa: 0,
+                    materiais: 0,
+                    maoDeObra: 0,
+                    servicosTerceiros: 0,
+                    administrativo: 0,
+                    outros: 0
+                };
+            }
+
+            const val = t.value;
+
+            if (t.type === 'revenue') {
+                obras[ccCode].receita += val;
+                totalReceitas += val;
+            } else if (t.type === 'expense') {
+                obras[ccCode].despesa += val;
+                totalDespesas += val;
+
+                const plan = t.accountPlan || '';
+                const desc = t.description ? t.description.toLowerCase() : '';
+                
+                // Categorização Simplificada
+                if (plan.startsWith('03.02')) obras[ccCode].materiais += val;
+                else if (plan.startsWith('03.01')) obras[ccCode].maoDeObra += val;
+                else if (plan.startsWith('03.03') || desc.includes('terceiro')) obras[ccCode].servicosTerceiros += val;
+                else if (plan.startsWith('04')) obras[ccCode].administrativo += val;
+                else obras[ccCode].outros += val;
+            }
+        });
+
+        // Transforma em array e ordena por Receita
+        const listaObras = Object.values(obras).sort((a, b) => b.receita - a.receita);
+
+        return {
+            resumo: {
+                receita: totalReceitas,
+                despesa: totalDespesas,
+                resultado: totalReceitas - totalDespesas,
+                margem: totalReceitas > 0 ? ((totalReceitas - totalDespesas) / totalReceitas) * 100 : 0
+            },
+            obras: listaObras
+        };
+    }, [transactions, worksMeta]);
+
+    // Renderização da Linha da Obra
+    const ObraRow = ({ obra }) => {
+        const resultado = obra.receita - obra.despesa;
+        const margem = obra.receita > 0 ? (resultado / obra.receita) * 100 : 0;
+        
+        return (
+            <tr className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 group transition-colors">
+                <td className="p-3">
+                    <div className="flex items-center gap-2">
+                        {/* Botão para Trocar Status */}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); toggleWorkStatus(obra.id, obra.status, obra.nome); }}
+                            className={`p-1 rounded-full border transition-all ${obra.status === 'ANDAMENTO' ? 'border-emerald-200 hover:bg-emerald-100 text-emerald-300 hover:text-emerald-600' : 'border-slate-300 hover:bg-slate-200 text-slate-300 hover:text-slate-600'}`}
+                            title={obra.status === 'ANDAMENTO' ? "Clique para Finalizar/Arquivar" : "Clique para Reabrir"}
+                        >
+                            {obra.status === 'ANDAMENTO' ? <CheckCircle size={14} /> : <Archive size={14} />}
+                        </button>
+                        
+                        <div>
+                            <div className="font-bold text-slate-700 dark:text-slate-200 text-sm">{obra.nome}</div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                                CC: {obra.id} 
+                                {loadingMeta && <Loader2 size={8} className="animate-spin"/>}
+                            </div>
+                        </div>
+                    </div>
+                </td>
+                <td className="p-3 text-right text-emerald-600 font-bold">{obra.receita.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                <td className="p-3 text-right text-slate-500 dark:text-slate-400">{obra.materiais.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                <td className="p-3 text-right text-slate-500 dark:text-slate-400">{obra.maoDeObra.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                <td className="p-3 text-right text-rose-500 font-bold">{obra.despesa.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                <td className={`p-3 text-right font-bold ${resultado >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                    {resultado.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                </td>
+                <td className="p-3 text-right text-xs font-mono">{margem.toFixed(1)}%</td>
+            </tr>
+        );
+    };
+
+    // Importar o ícone Archive do lucide-react se não estiver importado no topo do App.jsx
+    const Archive = ({size}) => (
+       <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+    );
+
+    return (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 animate-in fade-in">
+            {/* CABEÇALHO */}
+            <div className="p-4 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-center bg-slate-50 dark:bg-slate-900 rounded-t-xl gap-4">
+                <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
+                    <Building2 className="text-orange-500" /> Painel Construtora
+                </h3>
+                
+                <div className="flex gap-4">
+                     {/* Toggle Visualização */}
+                    <div className="flex bg-white dark:bg-slate-800 rounded-lg p-1 border dark:border-slate-700 shadow-sm">
+                        <button onClick={() => setViewMode('RESUMO')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${viewMode === 'RESUMO' ? 'bg-orange-100 text-orange-700 shadow' : 'text-slate-500 hover:bg-slate-100'}`}>Resumo</button>
+                        <button onClick={() => setViewMode('DETALHADA')} className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${viewMode === 'DETALHADA' ? 'bg-orange-100 text-orange-700 shadow' : 'text-slate-500 hover:bg-slate-100'}`}>Obras</button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="p-6">
+                {/* 1. VISÃO RESUMO */}
+                {viewMode === 'RESUMO' && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="p-6 rounded-xl bg-emerald-50 border border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-800">
+                            <p className="text-emerald-600 text-xs font-bold uppercase mb-2">Faturamento (Obras Ativas)</p>
+                            <h3 className="text-3xl font-bold text-emerald-700 dark:text-emerald-400">
+                                {data.obras.filter(o => o.status === 'ANDAMENTO').reduce((acc, o) => acc + o.receita, 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                            </h3>
+                        </div>
+                        <div className="p-6 rounded-xl bg-rose-50 border border-rose-100 dark:bg-rose-900/20 dark:border-rose-800">
+                            <p className="text-rose-600 text-xs font-bold uppercase mb-2">Custos (Obras Ativas)</p>
+                            <h3 className="text-3xl font-bold text-rose-700 dark:text-rose-400">
+                                {data.obras.filter(o => o.status === 'ANDAMENTO').reduce((acc, o) => acc + o.despesa, 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                            </h3>
+                        </div>
+                        <div className="p-6 rounded-xl bg-blue-50 border border-blue-100 dark:bg-blue-900/20 dark:border-blue-800">
+                            <p className="text-blue-600 text-xs font-bold uppercase mb-2">Resultado Operacional</p>
+                            <h3 className="text-3xl font-bold text-blue-700 dark:text-blue-400">
+                                {data.obras.filter(o => o.status === 'ANDAMENTO').reduce((acc, o) => acc + (o.receita - o.despesa), 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
+                            </h3>
+                        </div>
+                    </div>
+                )}
+
+                {/* 2. VISÃO DETALHADA */}
+                {viewMode === 'DETALHADA' && (
+                    <>
+                        {/* Filtro de Status */}
+                        <div className="flex gap-4 mb-6 border-b dark:border-slate-700 pb-0">
+                            <button 
+                                onClick={() => setStatusFilter('ANDAMENTO')} 
+                                className={`pb-3 px-2 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${statusFilter === 'ANDAMENTO' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                            >
+                                <Zap size={16}/> Em Andamento
+                                <span className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 rounded-full text-xs">
+                                    {data.obras.filter(o => o.status === 'ANDAMENTO').length}
+                                </span>
+                            </button>
+                            <button 
+                                onClick={() => setStatusFilter('FINALIZADA')} 
+                                className={`pb-3 px-2 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${statusFilter === 'FINALIZADA' ? 'border-slate-500 text-slate-600 dark:text-slate-300' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                            >
+                                <Archive size={16}/> Finalizadas / Arquivo
+                                <span className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 rounded-full text-xs">
+                                    {data.obras.filter(o => o.status === 'FINALIZADA').length}
+                                </span>
+                            </button>
+                        </div>
+
+                        {/* Tabela */}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 text-xs uppercase font-bold">
+                                    <tr>
+                                        <th className="p-3 rounded-l-lg">Obra</th>
+                                        <th className="p-3 text-right">Faturamento</th>
+                                        <th className="p-3 text-right">Mat. Aplicado</th>
+                                        <th className="p-3 text-right">Mão de Obra</th>
+                                        <th className="p-3 text-right">Total Desp.</th>
+                                        <th className="p-3 text-right">Resultado</th>
+                                        <th className="p-3 text-right rounded-r-lg">Margem</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y dark:divide-slate-700">
+                                    {data.obras.filter(o => o.status === statusFilter).map(obra => (
+                                        <ObraRow key={obra.id} obra={obra} />
+                                    ))}
+                                    {data.obras.filter(o => o.status === statusFilter).length === 0 && (
+                                        <tr>
+                                            <td colSpan={7} className="p-10 text-center text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg mt-2">
+                                                <p className="font-bold">Nenhuma obra encontrada nesta categoria.</p>
+                                                {statusFilter === 'ANDAMENTO' && <p className="text-xs mt-1">Importe um arquivo com Centros de Custo novos para que apareçam aqui automaticamente.</p>}
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+};
+
 /**
  * ------------------------------------------------------------------
  * 2. COMPONENTES UI
@@ -4085,7 +4360,28 @@ const stockDataRaw = useMemo(() => {
         totalProduction={totalProduction} 
     />
 )}
-        {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
+       {activeTab === 'fechamento' && (
+            // Lógica para detectar se é Construtora
+            (globalUnitFilter === 'Construtora' || globalUnitFilter === 'Noromix Construtora') 
+            ? (
+                <ConstrutoraFechamento 
+                    transactions={filteredData} 
+                    filter={filter}
+                    user={user}         // <--- Importante passar o user
+                    showToast={showToast} // <--- Importante para feedbacks
+                />
+            ) 
+            : (
+                <FechamentoComponent 
+                    transactions={filteredData} 
+                    totalSales={totalSales} 
+                    totalProduction={totalProduction} 
+                    measureUnit={currentMeasureUnit} 
+                    filter={filter} 
+                    selectedUnit={globalUnitFilter} 
+                />
+            )
+        )}
         {/* Passando globalCostPerUnit para o componente de estoque */}
         {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} />}
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
