@@ -4184,28 +4184,31 @@ export default function App() {
     }
   };
 
-  // ... (funções auxiliares existentes: handleImport, handleBatchDelete, filteredData, kpis, etc.) ...
-  // MANTENHA O RESTO DAS FUNÇÕES DE CÁLCULO E ESTADOS AQUI DENTRO IGUAIS AO QUE ESTAVA
-  // (Ex: filteredData, kpis, totalProduction, etc.)
-  
-  // Cópia das dependências necessárias para filteredData funcionar:
+// --- CÁLCULOS E FILTROS (Restaurando lógica perdida) ---
+
+  // 1. DADOS FILTRADOS (Com proteção contra nulos)
   const filteredData = useMemo(() => {
         return transactions.filter(t => {
+            if (!t || !t.date) return false;
+
             let y, m;
-            if (typeof t.date === 'string' && t.date.length >= 10) {
-                y = parseInt(t.date.substring(0, 4));
-                m = parseInt(t.date.substring(5, 7)) - 1; 
-            } else {
-                const d = new Date(t.date); y = d.getFullYear(); m = d.getMonth();
-            }
+            try {
+                if (typeof t.date === 'string' && t.date.length >= 10) {
+                    y = parseInt(t.date.substring(0, 4));
+                    m = parseInt(t.date.substring(5, 7)) - 1; 
+                } else {
+                    const d = new Date(t.date); y = d.getFullYear(); m = d.getMonth();
+                }
+            } catch (e) { return false; }
+            
             if (y !== filter.year) return false;
             if (filter.type === 'month' && m !== filter.month) return false;
             if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
             if (filter.type === 'semester' && (m < 6 ? 1 : 2) !== filter.semester) return false;
 
-            // Filtro Global Aplicado aqui
             if (globalUnitFilter !== 'ALL') {
-                if (BUSINESS_HIERARCHY[globalUnitFilter]) {
+                if (!t.segment) return false;
+                if (typeof BUSINESS_HIERARCHY !== 'undefined' && BUSINESS_HIERARCHY[globalUnitFilter]) {
                     const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
                     return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
                 } else {
@@ -4218,20 +4221,73 @@ export default function App() {
         });
   }, [transactions, filter, globalUnitFilter]);
 
-  // Cálculos KPIs (mantidos)
+  // 2. TOTAIS SIMPLES
   const totalProduction = useMemo(() => filteredData.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0), [filteredData]);
   const totalSales = useMemo(() => filteredData.filter(t => t.type === 'metric' && t.metricType === 'vendas').reduce((acc, t) => acc + t.value, 0), [filteredData]);
+  
+  // 3. KPIS FINANCEIROS
   const kpis = useMemo(() => {
       const rev = filteredData.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
       const exp = filteredData.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
       return { revenue: rev, expense: exp, balance: rev - exp };
   }, [filteredData]);
+
   const currentMeasureUnit = getMeasureUnit(globalUnitFilter);
   const costPerUnit = totalProduction > 0 ? kpis.expense / totalProduction : 0;
-  // Fim cálculos
+  
+  // 4. VARIAÇÕES (Mês Anterior) - Onde estava o erro da tela branca
+  const variations = useMemo(() => {
+      let prevMonth = filter.month - 1;
+      let prevYear = filter.year;
+      
+      if (prevMonth < 0) { prevMonth = 11; prevYear -= 1; }
 
-  // ... (Mantenha toda a lógica de estados e useEffects que já fizemos acima) ...
+      const prevData = transactions.filter(t => {
+          if (!t || !t.date) return false;
+          let y, m;
+          try {
+            if (typeof t.date === 'string' && t.date.length >= 10) {
+                y = parseInt(t.date.substring(0, 4));
+                m = parseInt(t.date.substring(5, 7)) - 1; 
+            } else {
+                const d = new Date(t.date); y = d.getFullYear(); m = d.getMonth();
+            }
+          } catch(e) { return false; }
 
+          const isDateMatch = (filter.type === 'month') ? (y === prevYear && m === prevMonth) : false;
+          if (!isDateMatch) return false;
+
+          if (globalUnitFilter !== 'ALL') {
+              if (!t.segment) return false;
+              if (typeof BUSINESS_HIERARCHY !== 'undefined' && BUSINESS_HIERARCHY[globalUnitFilter]) {
+                 const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                 return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
+              } else {
+                  const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                  const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
+                  return txUnit === filterUnit;
+              }
+          }
+          return true;
+      });
+
+      const prevRevenue = prevData.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
+      const prevExpense = prevData.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
+      const prevBalance = prevRevenue - prevExpense;
+      const prevProduction = prevData.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
+      const prevCostPerUnit = prevProduction > 0 ? prevExpense / prevProduction : 0;
+
+      const calcVar = (curr, prev) => { if (!prev || prev === 0) return 0; return ((curr - prev) / prev) * 100; };
+
+      return {
+          revenue: calcVar(kpis.revenue, prevRevenue),
+          expense: calcVar(kpis.expense, prevExpense),
+          balance: calcVar(kpis.balance, prevBalance),
+          costPerUnit: calcVar(costPerUnit, prevCostPerUnit)
+      };
+  }, [transactions, filter, globalUnitFilter, kpis, costPerUnit]);
+
+  // ---------------------------------------------------------
   // --- RENDERIZAÇÃO CONDICIONAL DO FLUXO (Login -> Seleção -> App) ---
 
   if (loadingAuth) {
