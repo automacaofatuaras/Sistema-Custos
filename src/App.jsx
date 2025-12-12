@@ -4230,9 +4230,17 @@ export default function App() {
   const costPerUnit = totalProduction > 0 ? kpis.expense / totalProduction : 0;
   // Fim cálculos
 
-  // --- RENDERIZAÇÃO CONDICIONAL DO FLUXO ---
+  // ... (Mantenha toda a lógica de estados e useEffects que já fizemos acima) ...
 
-  if (loadingAuth) return <div className="min-h-screen bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
+  // --- RENDERIZAÇÃO CONDICIONAL DO FLUXO (Login -> Seleção -> App) ---
+
+  if (loadingAuth) {
+      return (
+          <div className="min-h-screen bg-slate-900 flex justify-center items-center">
+              <Loader2 className="animate-spin text-indigo-600" size={48}/>
+          </div>
+      );
+  }
 
   if (appStage === 'login') {
       return <LoginScreen onLogin={handleLogin} loading={loadingAuth} />;
@@ -4242,27 +4250,72 @@ export default function App() {
       return <ContextSelectorScreen onSelect={handleContextSelect} userRole={userRole} onLogout={handleLogout} />;
   }
 
-  // --- RENDERIZAÇÃO DO DASHBOARD (Layout Antigo Envolvido aqui) ---
+  // --- APLICAÇÃO PRINCIPAL (DASHBOARD) ---
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
       {toast && <div className={`fixed top-4 right-4 z-50 p-4 rounded shadow-xl flex gap-2 ${toast.type==='success'?'bg-emerald-500 text-white':'bg-rose-500 text-white'}`}>{toast.type==='success'?<CheckCircle/>:<AlertTriangle/>}{toast.message}</div>}
       
-      {/* ASIDE (Menu Lateral) */}
+      {/* MENU LATERAL (ASIDE) */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 dark:bg-slate-950 text-white flex flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800 transition-all duration-300`}>
-           {/* ... Mantenha o conteúdo do ASIDE igual ao anterior ... */}
-           {/* DICA: No botão de logout do aside, chame handleLogout */}
-            <div className={`p-4 border-t border-slate-800 flex ${sidebarOpen ? 'flex-row justify-around' : 'flex-col gap-4 items-center'}`}>
-                {/* ... outros botões ... */}
-                <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-800 rounded-lg transition-colors" title="Sair">
-                    <LogOut size={20} />
-                </button>
+        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+            <div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}>
+                <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shrink-0">
+                    <Building2 size={18} />
+                </div>
+                {sidebarOpen && <span className="text-xl font-bold whitespace-nowrap overflow-hidden">Custos</span>}
             </div>
-           {/* ... Resto do Aside ... */}
+            {sidebarOpen && <button onClick={() => setSidebarOpen(false)} className="text-slate-400 hover:text-white"><ChevronLeft size={20} /></button>}
+        </div>
+
+        {!sidebarOpen && <div className="flex justify-center py-2"><button onClick={() => setSidebarOpen(true)} className="text-slate-400 hover:text-white"><ChevronRight size={20} /></button></div>}
+
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
+            {[
+                { id: 'dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
+                { id: 'lancamentos', icon: List, label: 'Lançamentos' },
+                { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
+                { id: 'rateios', icon: Share2, label: 'Rateios' },
+                { id: 'estoque', icon: Package, label: 'Estoque' },
+                { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
+                { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
+                { id: 'investimentos_report', icon: TrendingUp, label: 'Investimentos' },
+                { id: 'global', icon: Globe, label: 'Global' },
+                { id: 'ingestion', icon: UploadCloud, label: 'Importar TXT' },
+                { id: 'users', icon: Users, label: 'Gestão de Usuários' },
+            ].map((item) => (
+                <button 
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)} 
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${!sidebarOpen ? 'justify-center' : ''} ${activeTab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                    title={!sidebarOpen ? item.label : ''}
+                >
+                    <item.icon size={20} className="shrink-0" />
+                    {sidebarOpen && <span className="whitespace-nowrap overflow-hidden">{item.label}</span>}
+                </button>
+            ))}
+        </nav>
+
+        <div className={`p-4 border-t border-slate-800 flex ${sidebarOpen ? 'flex-row justify-around' : 'flex-col gap-4 items-center'}`}>
+            <button onClick={() => setShowAIModal(true)} className="p-2 text-purple-400 hover:bg-slate-800 rounded-lg transition-colors" title="IA Analysis"><Sparkles size={20} /></button>
+            <button onClick={toggleTheme} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg transition-colors" title="Mudar Tema">{theme === 'dark' ? <Sun size={20}/> : <Moon size={20}/>}</button>
+            <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-800 rounded-lg transition-colors" title="Sair"><LogOut size={20} /></button>
+        </div>
+
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+            <div className={`flex items-center gap-3 ${!sidebarOpen ? 'justify-center' : ''}`}>
+                <div className="p-1 bg-slate-800 rounded shrink-0"><UserCircle size={20} className="text-slate-400"/></div>
+                {sidebarOpen && user && (
+                    <div className="flex-1 min-w-0">
+                        <p className="truncate font-bold text-sm text-white">{user.email ? user.email.split('@')[0] : 'Usuário'}</p>
+                        <p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p>
+                    </div>
+                )}
+            </div>
+        </div>
       </aside>
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-             {/* HEADER SIMPLIFICADO: Mostra onde estamos, botão para trocar contexto */}
              <div className="flex items-center gap-4">
                 <div className="flex flex-col">
                     <h2 className="text-2xl font-bold dark:text-white flex items-center gap-2">
@@ -4275,57 +4328,163 @@ export default function App() {
                 </div>
              </div>
 
-             {/* FILTRO DE DATA (Só se não for global/rateios) */}
              {!['global', 'rateios'].includes(activeTab) && (
                 <div className="flex gap-2 w-full md:w-auto items-center">
                     <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
-                    {/* Removemos o seletor de unidade daqui, pois agora é na tela inicial */}
                 </div>
              )}
         </header>
 
-        {/* ... CONTEÚDO DAS ABAS (Mantido igual) ... */}
+        {/* --- CONTEÚDO DAS ABAS (TODAS RESTAURADAS) --- */}
+
+        {/* 1. VISÃO GLOBAL */}
         {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
-        {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} segmentsList={segments} />}
-        {activeTab === 'dashboard' && (
-             // ... Seus componentes do dashboard ...
-             // DICA: Certifique-se de que os KpiCards usem as variáveis kpis, variations, etc. calculadas acima
-             <div className="space-y-6 animate-in fade-in duration-500">
-                {/* ... KPI Cards e Gráficos ... */}
-                {/* Para poupar espaço aqui, mantenha o código interno da tab dashboard que você já tinha */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" trend={0} />
-                    <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" trend={0} reverseColor={true} />
-                    {/* ... etc ... */}
-                </div>
-                {/* ... */}
-             </div>
-        )}
         
-        {/* Adicione as outras abas (lancamentos, custos, fechamento, etc.) igual estava antes */}
-        {activeTab === 'lancamentos' && (
-             // ... Lógica da aba lançamentos (Mantenha o código da tabela) ...
-             // Nota: Lembre de passar filteredData para a tabela
-             <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm ...">
-                 {/* ... Tabela ... */}
-             </div>
+        {/* 2. RATEIOS */}
+        {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} segmentsList={segments} />}
+        
+        {/* 3. DASHBOARD (Visão Geral) */}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" trend={0} />
+              <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" trend={0} reverseColor={true} />
+              <KpiCard title="Resultado Líquido" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} trend={0} />
+              <KpiCard title={`Custo / ${currentMeasureUnit}`} value={costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} icon={Factory} color="rose" trend={0} reverseColor={true} />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center">
+                 <p className="text-xs font-bold text-slate-500 uppercase mb-1">Margem Líquida</p>
+                 <div className="flex items-end gap-2"><h3 className={`text-3xl font-bold ${kpis.balance >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{(kpis.revenue > 0 ? (kpis.balance / kpis.revenue) * 100 : 0).toFixed(1)}%</h3></div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-500 uppercase">Produção Total</p><h3 className="text-2xl font-bold dark:text-white mt-2">{totalProduction.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3></div><div className="p-2 bg-indigo-100 rounded-lg text-indigo-600"><Factory size={20}/></div></div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-500 uppercase">Vendas Totais</p><h3 className="text-2xl font-bold dark:text-white mt-2">{totalSales.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3></div><div className="p-2 bg-emerald-100 rounded-lg text-emerald-600"><ShoppingCart size={20}/></div></div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex justify-between items-start"><div><p className="text-xs font-bold text-slate-500 uppercase">Estoque (Fechamento)</p><h3 className="text-2xl font-bold dark:text-white mt-2">{stockDataRaw.reduce((acc, t) => acc + (t.metricType === 'estoque' ? t.value : 0), 0).toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3></div><div className="p-2 bg-amber-100 rounded-lg text-amber-600"><Package size={20}/></div></div>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm h-96 border dark:border-slate-700">
+              <h3 className="mb-6 font-bold text-lg dark:text-white flex items-center gap-2"><BarChartIcon size={20}/> Performance Financeira do Período</h3>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[{ name: 'Performance', Receitas: kpis.revenue, Despesas: kpis.expense, Resultado: kpis.balance }]} barSize={80}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
+                    <XAxis dataKey="name" tick={false} />
+                    <YAxis tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} />
+                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff' }} formatter={(val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
+                    <Legend wrapperStyle={{paddingTop: '20px'}}/>
+                    <Bar name="Receitas" dataKey="Receitas" fill="#10b981" radius={[6, 6, 0, 0]} />
+                    <Bar name="Despesas" dataKey="Despesas" fill="#f43f5e" radius={[6, 6, 0, 0]} />
+                    <Bar name="Resultado" dataKey="Resultado" fill="#6366f1" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         )}
 
-        {/* ... Resto das abas ... */}
+        {/* 4. LANÇAMENTOS */}
+        {activeTab === 'lancamentos' && (
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border dark:border-slate-700 animate-in fade-in">
+             <div className="p-6 border-b dark:border-slate-700 flex flex-col gap-4">
+                 <div className="flex justify-between items-center">
+                    <div className="flex gap-4 items-center">
+                        <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
+                        {selectedIds.length > 0 && userRole === 'admin' && (
+                            <button onClick={handleBatchDelete} className="bg-rose-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-rose-700 transition-colors">Excluir ({selectedIds.length})</button>
+                        )}
+                    </div>
+                    {['admin', 'editor'].includes(userRole) && <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>}
+                 </div>
+                 <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border dark:border-slate-700">
+                    <div className="relative w-full">
+                        <Search className="absolute left-3 top-3 text-slate-400" size={16}/>
+                        <input type="text" placeholder="Pesquisar neste período..." className="w-full pl-10 pr-4 py-2 rounded-lg border dark:border-slate-600 dark:bg-slate-800 dark:text-white text-sm outline-none focus:ring-2 ring-indigo-500" value={lancamentosSearch} onChange={(e) => setLancamentosSearch(e.target.value)}/>
+                    </div>
+                 </div>
+             </div>
+
+             <div className="overflow-x-auto">
+                 <table className="w-full text-left text-sm">
+                     <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400">
+                          <tr>
+                             <th className="p-4 w-10"><input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length === filteredData.length && filteredData.length > 0} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></th>
+                             <th className="p-4">Data</th>
+                             <th className="p-4">Descrição</th>
+                             <th className="p-4">Unidade</th>
+                             <th className="p-4">Conta/Tipo</th>
+                             <th className="p-4 text-right">Valor</th>
+                             <th className="p-4">Ações</th>
+                         </tr>
+                     </thead>
+                     <tbody className="divide-y dark:divide-slate-700">
+                         {filteredData.filter(t => !lancamentosSearch || t.description.toLowerCase().includes(lancamentosSearch.toLowerCase()) || (t.accountPlan && t.accountPlan.toLowerCase().includes(lancamentosSearch.toLowerCase())) || t.value.toString().includes(lancamentosSearch)).map(t => (
+                            <tr key={t.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${selectedIds.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
+                                <td className="p-4"><input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></td>
+                                <td className="p-4 dark:text-white">{formatDate(t.date)}</td>
+                                <td className="p-4 dark:text-white">{t.description}{t.materialDescription && <span className="block text-[10px] text-slate-500 italic">{t.materialDescription}</span>}</td>
+                                <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
+                                <td className="p-4">
+                                    {t.type === 'metric' 
+                                        ? <span className="px-2 py-1 rounded border font-bold text-[10px] uppercase inline-block max-w-[200px] truncate bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:border-indigo-700">{t.metricType}</span>
+                                        : <span className={`px-2 py-1 rounded border font-bold text-[10px] uppercase inline-block max-w-[200px] truncate ${t.type === 'revenue' ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'}`} title={t.planDescription || t.accountPlan}>{t.planDescription || t.accountPlan}</span>
+                                    }
+                                </td>
+                                <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>{t.value.toLocaleString()}</td>
+                                <td className="p-4 flex gap-2">
+                                    {['admin', 'editor'].includes(userRole) && <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500 hover:text-blue-700 transition-colors"><Edit2 size={16}/></button>}
+                                </td>
+                            </tr>
+                        ))}
+                      </tbody>
+                 </table>
+             </div>
+          </div>
+        )}
+
+        {/* 5. CUSTOS */}
+        {activeTab === 'custos' && (
+            <CustosComponent 
+                transactions={filteredData} 
+                allTransactions={transactions}
+                filter={filter}
+                selectedUnit={globalUnitFilter}
+                showToast={showToast} 
+                measureUnit={currentMeasureUnit} 
+                totalProduction={totalProduction} 
+            />
+        )}
+        
+        {/* 6. FECHAMENTO (COM LÓGICA DA CONSTRUTORA) */}
         {activeTab === 'fechamento' && (
             (globalUnitFilter === 'Construtora' || globalUnitFilter === 'Noromix Construtora') 
             ? <ConstrutoraFechamento transactions={filteredData} filter={filter} user={user} showToast={showToast} />
             : <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />
         )}
-        
-        {/* Aba Users atualizada */}
-        {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
 
+        {/* 7. ESTOQUE */}
+        {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} />}
+
+        {/* 8. PRODUÇÃO */}
+        {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
+
+        {/* 9. INVESTIMENTOS */}
+        {activeTab === 'investimentos_report' && <InvestimentosReportComponent transactions={filteredData} filter={filter} selectedUnit={globalUnitFilter} />}
+        
+        {/* 10. IMPORTAÇÃO */}
+        {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
+        
+        {/* 11. USUÁRIOS */}
+        {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
       </main>
       
-      {/* Modais mantidos */}
+      {/* MODAIS GLOBAIS */}
       {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={() => loadData()} user={user} initialData={editingTx} showToast={showToast} />}
-      {/* ... */}
+      {showAIModal && user && <AIReportModal onClose={() => setShowAIModal(false)} transactions={filteredData} period={`${filter.month+1}/${filter.year}`} />}
     </div>
   );
 }
