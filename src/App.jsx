@@ -40,7 +40,7 @@ const firebaseConfig = {
 };
 
 // ⚠️ 2. COLE SUA CHAVE DO GEMINI AQUI ⚠️
-const GEMINI_API_KEY = "SUA_KEY_GEMINI"; 
+const GEMINI_API_KEY = "AIzaSyA6feDMeD7YNNQf40q2ALOvwPnfCDa7Pw4"; 
 
 // Inicialização do Firebase
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
