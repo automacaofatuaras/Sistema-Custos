@@ -3758,8 +3758,6 @@ const filteredData = useMemo(() => {
           }
           
           const dateMatch = (() => {
-              // REMOVIDA A LINHA: if (activeTab === 'lancamentos') return true; 
-              // Agora o filtro global aplica-se a todas as abas, inclusive lançamentos
               if (y !== filter.year) return false;
               if (filter.type === 'month' && m !== filter.month) return false;
               if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
@@ -3769,11 +3767,15 @@ const filteredData = useMemo(() => {
 
           if (!dateMatch) return false;
           
+          // --- PROTEÇÃO NOVA AQUI ---
+          // Se não houver unidade selecionada (null), não filtra por unidade (evita o erro .includes)
+          if (!globalUnitFilter) return true; 
+
           if (globalUnitFilter !== 'ALL') {
               if (BUSINESS_HIERARCHY[globalUnitFilter]) {
                  const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                 const isInSegment = BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
-                 return isInSegment;
+                 // Uso seguro do includes pois sabemos que globalUnitFilter não é null aqui
+                 return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
               } else {
                   const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
                   const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
@@ -3794,8 +3796,10 @@ const stockDataRaw = useMemo(() => {
             y = new Date(t.date).getFullYear();
         }
         
-        // APENAS FILTRO DE ANO E UNIDADE (Ignora mês)
         if (y !== filter.year) return false;
+
+        // --- PROTEÇÃO NOVA AQUI ---
+        if (!globalUnitFilter) return true;
 
         if (globalUnitFilter !== 'ALL') {
             if (BUSINESS_HIERARCHY[globalUnitFilter]) {
@@ -3803,6 +3807,7 @@ const stockDataRaw = useMemo(() => {
                 return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
             } else {
                 const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                // Proteção extra aqui também, caso globalUnitFilter seja string
                 const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
                 return txUnit === filterUnit;
             }
@@ -4010,19 +4015,22 @@ const stockDataRaw = useMemo(() => {
             {/* Seletor de Período Mantido */}
             <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
             
-            {/* Display da Unidade Atual + Botão de Trocar */}
-            <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border dark:border-slate-700 p-1 pl-3 rounded-lg shadow-sm">
-                <span className="text-sm font-bold truncate max-w-[200px]" title={globalUnitFilter}>
-                    {globalUnitFilter.includes('-') ? globalUnitFilter.split('-')[1].trim() : globalUnitFilter}
-                </span>
-                <button 
-                    onClick={() => setGlobalUnitFilter(null)} // Isto faz voltar ao menu inicial
-                    className="p-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-md transition-colors text-slate-500 dark:text-slate-300"
-                    title="Trocar Unidade"
-                >
-                    <FolderOpen size={16} />
-                </button>
-            </div>
+           {/* Display da Unidade Atual + Botão de Trocar */}
+<div className="flex items-center gap-2 bg-white dark:bg-slate-800 border dark:border-slate-700 p-1 pl-3 rounded-lg shadow-sm">
+    <span className="text-sm font-bold truncate max-w-[200px]" title={globalUnitFilter || 'Selecionar'}>
+        {/* PROTEÇÃO ADICIONADA: Só executa se globalUnitFilter não for nulo */}
+        {globalUnitFilter ? (
+            globalUnitFilter.includes('-') ? globalUnitFilter.split('-')[1].trim() : globalUnitFilter
+        ) : 'Selecionar Unidade'}
+    </span>
+    <button 
+        onClick={() => setGlobalUnitFilter(null)} 
+        className="p-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-md transition-colors text-slate-500 dark:text-slate-300"
+        title="Trocar Unidade"
+    >
+        <FolderOpen size={16} />
+    </button>
+</div>
         </div>
     ) : <div></div>}
 </header>
