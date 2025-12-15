@@ -57,7 +57,34 @@ const BUSINESS_HIERARCHY = {
     "Construtora": ["Noromix Construtora"]
 };
 
-const SEED_UNITS = Object.values(BUSINESS_HIERARCHY).flat();
+// Caso tenha apagado sem querer, adicione isto antes do componente App:
+const SEED_UNITS = [
+    "Porto de Areia Saara - Mira Estrela",
+    "Porto Agua Amarela - Riolândia",
+    "Noromix Concreto S/A - Fernandópolis",
+    "Noromix Concreto S/A - Ilha Solteira",
+    "Noromix Concreto S/A - Jales",
+    "Noromix Concreto S/A - Ouroeste",
+    "Noromix Concreto S/A - Paranaíba",
+    "Noromix Concreto S/A - Monções",
+    "Noromix Concreto S/A - Pereira Barreto",
+    "Noromix Concreto S/A - Três Fronteiras",
+    "Noromix Concreto S/A - Votuporanga",
+    "Noromix Concreto S/A - Votuporanga (Fábrica)",
+    "Mineração Grandes Lagos - Icém",
+    "Mineração Grandes Lagos - Itapura",
+    "Mineração Grandes Lagos - Riolândia",
+    "Mineração Grandes Lagos - Três Fronteiras",
+    "Noromix Concreto S/A - Rinópolis",
+    "Mineração Noroeste Paulista - Monções",
+    "Noromix Concreto S/A - Assis",
+    "Noromix Concreto S/A - Monções (Usina)",
+    "Noromix Concreto S/A - Itapura (Usina)",
+    "Noromix Concreto S/A - Rinópolis (Usina)",
+    "Demop Participações LTDA - Três Fronteiras",
+    "Mineração Grandes Lagos - Icém (Usina)",
+    "Noromix Construtora"
+];
 
 const SEGMENT_CONFIG = {
     "Construtora": "ton", "Fábrica de Tubos": "m³", "Noromix Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "ton", "Usinas de Asfalto": "ton"
