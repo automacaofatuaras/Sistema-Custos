@@ -4026,13 +4026,26 @@ const stockDataRaw = useMemo(() => {
             globalUnitFilter.includes('-') ? globalUnitFilter.split('-')[1].trim() : globalUnitFilter
         ) : 'Selecionar Unidade'}
     </span>
-    <button 
-        onClick={() => setGlobalUnitFilter(null)} 
-        className="p-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-md transition-colors text-slate-500 dark:text-slate-300"
-        title="Trocar Unidade"
-    >
-        <FolderOpen size={16} />
-    </button>
+    {/* ... dentro do <header> ... */}
+
+{/* SUBSTITUA A CAIXA DE SELEÇÃO POR ISTO: */}
+<button 
+    onClick={() => setGlobalUnitFilter(null)} 
+    className="group flex items-center gap-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-2 pl-4 rounded-xl shadow-sm hover:border-indigo-500 hover:ring-2 hover:ring-indigo-100 transition-all cursor-pointer"
+    title="Clique para trocar de unidade"
+>
+    <div className="text-left">
+        <p className="text-[10px] uppercase font-bold text-slate-400 group-hover:text-indigo-500">Unidade Selecionada</p>
+        <p className="text-sm font-bold text-slate-700 dark:text-white group-hover:text-indigo-700 truncate max-w-[250px]">
+            {globalUnitFilter ? (globalUnitFilter.includes('-') ? globalUnitFilter.split('-')[1].trim() : globalUnitFilter) : 'Selecionar...'}
+        </p>
+    </div>
+    <div className="bg-slate-100 dark:bg-slate-700 p-2 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+        <FolderOpen size={18} />
+    </div>
+</button>
+
+{/* ... */}
 </div>
         </div>
     ) : <div></div>}
