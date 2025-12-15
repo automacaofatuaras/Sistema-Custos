@@ -23,6 +23,105 @@ import {
   doc, updateDoc, writeBatch, setDoc, getDoc, query, where
 } from 'firebase/firestore';
 
+
+// --- DADOS DE INICIALIZAÇÃO FIXOS ---
+const BUSINESS_HIERARCHY = {
+    "Portos de Areia": ["Porto de Areia Saara - Mira Estrela", "Porto Agua Amarela - Riolândia"],
+    "Noromix Concreteiras": ["Noromix Concreto S/A - Fernandópolis", "Noromix Concreto S/A - Ilha Solteira", "Noromix Concreto S/A - Jales", "Noromix Concreto S/A - Ouroeste", "Noromix Concreto S/A - Paranaíba", "Noromix Concreto S/A - Monções", "Noromix Concreto S/A - Pereira Barreto", "Noromix Concreto S/A - Três Fronteiras", "Noromix Concreto S/A - Votuporanga"],
+    "Fábrica de Tubos": ["Noromix Concreto S/A - Votuporanga (Fábrica)"],
+    "Pedreiras": ["Mineração Grandes Lagos - Icém", "Mineração Grandes Lagos - Itapura", "Mineração Grandes Lagos - Riolândia", "Mineração Grandes Lagos - Três Fronteiras", "Noromix Concreto S/A - Rinópolis", "Mineração Noroeste Paulista - Monções"],
+    "Usinas de Asfalto": ["Noromix Concreto S/A - Assis", "Noromix Concreto S/A - Monções (Usina)", "Noromix Concreto S/A - Itapura (Usina)", "Noromix Concreto S/A - Rinópolis (Usina)", "Demop Participações LTDA - Três Fronteiras", "Mineração Grandes Lagos - Icém (Usina)"],
+    "Construtora": ["Noromix Construtora"]
+};
+
+// Cria a lista plana de unidades automaticamente
+const SEED_UNITS = Object.values(BUSINESS_HIERARCHY).flat();
+
+const InitialSelectionScreen = ({ onSelect, onLogout }) => {
+    const [selectedSegment, setSelectedSegment] = useState(null);
+
+    return (
+        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 animate-in fade-in duration-500">
+            <div className="w-full max-w-4xl">
+                
+                {/* Cabeçalho */}
+                <div className="text-center mb-10">
+                    <div className="inline-flex p-4 bg-indigo-600 rounded-2xl mb-4 shadow-lg shadow-indigo-500/30">
+                        <Building2 size={40} className="text-white" />
+                    </div>
+                    <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">Bem-vindo ao Sistema de Custos</h1>
+                    <p className="text-slate-400">Selecione o local de operação para acessar o painel</p>
+                </div>
+
+                {/* PASSO 1: SELECIONAR SEGMENTO */}
+                {!selectedSegment ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {Object.keys(BUSINESS_HIERARCHY).map((segment) => (
+                            <button
+                                key={segment}
+                                onClick={() => setSelectedSegment(segment)}
+                                className="group relative p-6 bg-slate-800 hover:bg-indigo-600 border border-slate-700 hover:border-indigo-500 rounded-xl transition-all duration-300 text-left shadow-lg hover:-translate-y-1"
+                            >
+                                <div className="flex items-center justify-between mb-2">
+                                    <FolderOpen size={24} className="text-indigo-400 group-hover:text-white transition-colors" />
+                                    <ChevronRight size={20} className="text-slate-600 group-hover:text-white opacity-0 group-hover:opacity-100 transition-all" />
+                                </div>
+                                <h3 className="text-lg font-bold text-white">{segment}</h3>
+                                <p className="text-xs text-slate-500 group-hover:text-indigo-200 mt-1">
+                                    {BUSINESS_HIERARCHY[segment].length} Unidades disponíveis
+                                </p>
+                            </button>
+                        ))}
+                    </div>
+                ) : (
+                    /* PASSO 2: SELECIONAR UNIDADE */
+                    <div className="animate-in slide-in-from-right-8 duration-300">
+                        <div className="flex items-center gap-4 mb-6">
+                            <button 
+                                onClick={() => setSelectedSegment(null)}
+                                className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+                            >
+                                <ChevronLeft size={20} /> Voltar aos Segmentos
+                            </button>
+                            <span className="text-slate-600">/</span>
+                            <span className="text-indigo-400 font-bold">{selectedSegment}</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {BUSINESS_HIERARCHY[selectedSegment].map((unit) => (
+                                <button
+                                    key={unit}
+                                    onClick={() => onSelect(unit)}
+                                    className="p-5 bg-slate-800 hover:bg-white border border-slate-700 hover:border-slate-200 rounded-xl transition-all duration-200 text-left group flex items-center gap-4"
+                                >
+                                    <div className="p-3 bg-slate-900 group-hover:bg-indigo-50 rounded-lg group-hover:text-indigo-600 text-slate-400 transition-colors">
+                                        <Factory size={24} />
+                                    </div>
+                                    <div>
+                                        <h4 className="font-bold text-slate-200 group-hover:text-slate-900 text-sm md:text-base">
+                                            {unit.includes('-') ? unit.split('-')[1].trim() : unit}
+                                        </h4>
+                                        <p className="text-xs text-slate-500 group-hover:text-slate-500 truncate max-w-[200px]" title={unit}>
+                                            {unit}
+                                        </p>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Rodapé */}
+                <div className="mt-12 text-center">
+                    <button onClick={onLogout} className="text-rose-500 hover:text-rose-400 text-sm flex items-center gap-2 mx-auto">
+                        <LogOut size={16} /> Sair do Sistema
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 /**
  * ------------------------------------------------------------------
  * 0. CONFIGURAÇÕES
@@ -47,18 +146,6 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
 
-// --- DADOS DE INICIALIZAÇÃO FIXOS ---
-const BUSINESS_HIERARCHY = {
-    "Portos de Areia": ["Porto de Areia Saara - Mira Estrela", "Porto Agua Amarela - Riolândia"],
-    "Noromix Concreteiras": ["Noromix Concreto S/A - Fernandópolis", "Noromix Concreto S/A - Ilha Solteira", "Noromix Concreto S/A - Jales", "Noromix Concreto S/A - Ouroeste", "Noromix Concreto S/A - Paranaíba", "Noromix Concreto S/A - Monções", "Noromix Concreto S/A - Pereira Barreto", "Noromix Concreto S/A - Três Fronteiras", "Noromix Concreto S/A - Votuporanga"],
-    "Fábrica de Tubos": ["Noromix Concreto S/A - Votuporanga (Fábrica)"],
-    "Pedreiras": ["Mineração Grandes Lagos - Icém", "Mineração Grandes Lagos - Itapura", "Mineração Grandes Lagos - Riolândia", "Mineração Grandes Lagos - Três Fronteiras", "Noromix Concreto S/A - Rinópolis", "Mineração Noroeste Paulista - Monções"],
-    "Usinas de Asfalto": ["Noromix Concreto S/A - Assis", "Noromix Concreto S/A - Monções (Usina)", "Noromix Concreto S/A - Itapura (Usina)", "Noromix Concreto S/A - Rinópolis (Usina)", "Demop Participações LTDA - Três Fronteiras", "Mineração Grandes Lagos - Icém (Usina)"],
-    "Construtora": ["Noromix Construtora"]
-};
-
-// Cria a lista plana de unidades automaticamente
-const SEED_UNITS = Object.values(BUSINESS_HIERARCHY).flat();
 
 const SEGMENT_CONFIG = {
     "Construtora": "ton", "Fábrica de Tubos": "m³", "Noromix Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "ton", "Usinas de Asfalto": "ton"
@@ -3517,90 +3604,7 @@ const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList
         </div>
     );
 };
-const InitialSelectionScreen = ({ onSelect, onLogout }) => {
-    const [selectedSegment, setSelectedSegment] = useState(null);
 
-    return (
-        <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 animate-in fade-in duration-500">
-            <div className="w-full max-w-4xl">
-                
-                {/* Cabeçalho */}
-                <div className="text-center mb-10">
-                    <div className="inline-flex p-4 bg-indigo-600 rounded-2xl mb-4 shadow-lg shadow-indigo-500/30">
-                        <Building2 size={40} className="text-white" />
-                    </div>
-                    <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">Bem-vindo ao Sistema de Custos</h1>
-                    <p className="text-slate-400">Selecione o local de operação para acessar o painel</p>
-                </div>
-
-                {/* PASSO 1: SELECIONAR SEGMENTO */}
-                {!selectedSegment ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {Object.keys(BUSINESS_HIERARCHY).map((segment) => (
-                            <button
-                                key={segment}
-                                onClick={() => setSelectedSegment(segment)}
-                                className="group relative p-6 bg-slate-800 hover:bg-indigo-600 border border-slate-700 hover:border-indigo-500 rounded-xl transition-all duration-300 text-left shadow-lg hover:-translate-y-1"
-                            >
-                                <div className="flex items-center justify-between mb-2">
-                                    <FolderOpen size={24} className="text-indigo-400 group-hover:text-white transition-colors" />
-                                    <ChevronRight size={20} className="text-slate-600 group-hover:text-white opacity-0 group-hover:opacity-100 transition-all" />
-                                </div>
-                                <h3 className="text-lg font-bold text-white">{segment}</h3>
-                                <p className="text-xs text-slate-500 group-hover:text-indigo-200 mt-1">
-                                    {BUSINESS_HIERARCHY[segment].length} Unidades disponíveis
-                                </p>
-                            </button>
-                        ))}
-                    </div>
-                ) : (
-                    /* PASSO 2: SELECIONAR UNIDADE */
-                    <div className="animate-in slide-in-from-right-8 duration-300">
-                        <div className="flex items-center gap-4 mb-6">
-                            <button 
-                                onClick={() => setSelectedSegment(null)}
-                                className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
-                            >
-                                <ChevronLeft size={20} /> Voltar aos Segmentos
-                            </button>
-                            <span className="text-slate-600">/</span>
-                            <span className="text-indigo-400 font-bold">{selectedSegment}</span>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {BUSINESS_HIERARCHY[selectedSegment].map((unit) => (
-                                <button
-                                    key={unit}
-                                    onClick={() => onSelect(unit)}
-                                    className="p-5 bg-slate-800 hover:bg-white border border-slate-700 hover:border-slate-200 rounded-xl transition-all duration-200 text-left group flex items-center gap-4"
-                                >
-                                    <div className="p-3 bg-slate-900 group-hover:bg-indigo-50 rounded-lg group-hover:text-indigo-600 text-slate-400 transition-colors">
-                                        <Factory size={24} />
-                                    </div>
-                                    <div>
-                                        <h4 className="font-bold text-slate-200 group-hover:text-slate-900 text-sm md:text-base">
-                                            {unit.includes('-') ? unit.split('-')[1].trim() : unit}
-                                        </h4>
-                                        <p className="text-xs text-slate-500 group-hover:text-slate-500 truncate max-w-[200px]" title={unit}>
-                                            {unit}
-                                        </p>
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Rodapé */}
-                <div className="mt-12 text-center">
-                    <button onClick={onLogout} className="text-rose-500 hover:text-rose-400 text-sm flex items-center gap-2 mx-auto">
-                        <LogOut size={16} /> Sair do Sistema
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
 export default function App() {
   const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
   const [userRole, setUserRole] = useState('admin');
