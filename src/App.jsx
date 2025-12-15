@@ -47,7 +47,7 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
 
-// --- DADOS DE INICIALIZAÇÃO ---
+// --- DADOS DE INICIALIZAÇÃO (Cole isto antes da função App) ---
 const BUSINESS_HIERARCHY = {
     "Portos de Areia": ["Porto de Areia Saara - Mira Estrela", "Porto Agua Amarela - Riolândia"],
     "Noromix Concreteiras": ["Noromix Concreto S/A - Fernandópolis", "Noromix Concreto S/A - Ilha Solteira", "Noromix Concreto S/A - Jales", "Noromix Concreto S/A - Ouroeste", "Noromix Concreto S/A - Paranaíba", "Noromix Concreto S/A - Monções", "Noromix Concreto S/A - Pereira Barreto", "Noromix Concreto S/A - Três Fronteiras", "Noromix Concreto S/A - Votuporanga"],
@@ -57,34 +57,7 @@ const BUSINESS_HIERARCHY = {
     "Construtora": ["Noromix Construtora"]
 };
 
-// Caso tenha apagado sem querer, adicione isto antes do componente App:
-const SEED_UNITS = [
-    "Porto de Areia Saara - Mira Estrela",
-    "Porto Agua Amarela - Riolândia",
-    "Noromix Concreto S/A - Fernandópolis",
-    "Noromix Concreto S/A - Ilha Solteira",
-    "Noromix Concreto S/A - Jales",
-    "Noromix Concreto S/A - Ouroeste",
-    "Noromix Concreto S/A - Paranaíba",
-    "Noromix Concreto S/A - Monções",
-    "Noromix Concreto S/A - Pereira Barreto",
-    "Noromix Concreto S/A - Três Fronteiras",
-    "Noromix Concreto S/A - Votuporanga",
-    "Noromix Concreto S/A - Votuporanga (Fábrica)",
-    "Mineração Grandes Lagos - Icém",
-    "Mineração Grandes Lagos - Itapura",
-    "Mineração Grandes Lagos - Riolândia",
-    "Mineração Grandes Lagos - Três Fronteiras",
-    "Noromix Concreto S/A - Rinópolis",
-    "Mineração Noroeste Paulista - Monções",
-    "Noromix Concreto S/A - Assis",
-    "Noromix Concreto S/A - Monções (Usina)",
-    "Noromix Concreto S/A - Itapura (Usina)",
-    "Noromix Concreto S/A - Rinópolis (Usina)",
-    "Demop Participações LTDA - Três Fronteiras",
-    "Mineração Grandes Lagos - Icém (Usina)",
-    "Noromix Construtora"
-];
+const SEED_UNITS = Object.values(BUSINESS_HIERARCHY).flat();
 
 const SEGMENT_CONFIG = {
     "Construtora": "ton", "Fábrica de Tubos": "m³", "Noromix Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "ton", "Usinas de Asfalto": "ton"
@@ -3576,34 +3549,47 @@ const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', 
       init();
   }, []);
 
-  const loadData = async () => {
+ const loadData = async () => {
     if (!user) return;
     try {
+        console.log("Iniciando carregamento de dados...");
+
         // 1. Carrega Transações
         const txs = await dbService.getAll(user, 'transactions');
         setTransactions(txs);
         
-        // 2. Tenta carregar Unidades do Banco
+        // 2. Carrega Unidades (Segmentos)
         let segs = [];
         try {
             const rawSegs = await dbService.getAll(user, 'segments');
-            segs = rawSegs.filter(item => item && item.name); // Filtra itens válidos
+            segs = rawSegs.filter(item => item && item.name); 
+            console.log("Unidades lidas do Firebase:", segs.length);
         } catch (err) {
-            console.warn("Banco vazio ou erro, usando local.");
+            console.warn("Erro ao ler do Firebase:", err);
         }
 
-        // 3. O PULO DO GATO: Se o banco estiver vazio, usa a memória local (SEED_UNITS)
+        // 3. Lógica de Garantia (Fallback)
+        // Se o Firebase retornou 0 unidades, OU se por acaso falhou,
+        // usamos OBRIGATORIAMENTE a lista local SEED_UNITS.
         if (segs.length === 0) {
-            console.log("Banco vazio. Usando lista de backup local.");
-            // Transforma a lista de strings num formato que o menu entende ({name: '...'})
-            setSegments(SEED_UNITS.map(u => ({ name: u })));
+            console.log("Usando lista local (SEED_UNITS) porque o banco está vazio ou falhou.");
+            
+            // Verifica se SEED_UNITS existe
+            if (typeof SEED_UNITS !== 'undefined' && Array.isArray(SEED_UNITS)) {
+                const localSegments = SEED_UNITS.map(u => ({ name: u }));
+                setSegments(localSegments);
+                console.log("Unidades definidas via local:", localSegments.length);
+            } else {
+                console.error("ERRO CRÍTICO: SEED_UNITS não está definida no código!");
+                showToast("Erro interno: Definições de Unidade perdidas.", 'error');
+            }
         } else {
             setSegments(segs);
         }
         
         setSelectedIds([]);
     } catch (e) { 
-        console.error(e);
+        console.error("Erro geral no loadData:", e);
         showToast("Erro ao carregar dados.", 'error'); 
     }
   };
