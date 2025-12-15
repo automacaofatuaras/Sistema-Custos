@@ -3552,20 +3552,26 @@ const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', 
   const loadData = async () => {
     if (!user) return;
     try {
-        // Carrega transações
+        // 1. Carrega Transações
         const txs = await dbService.getAll(user, 'transactions');
         setTransactions(txs);
         
-        // Carrega Segmentos (Unidades) do Banco
-        const segs = await dbService.getAll(user, 'segments');
-        
-        if (segs.length > 0) {
-            // Se existirem no banco, usa do banco
-            setSegments(segs);
+        // 2. Tenta carregar Unidades do Banco
+        let segs = [];
+        try {
+            const rawSegs = await dbService.getAll(user, 'segments');
+            segs = rawSegs.filter(item => item && item.name); // Filtra itens válidos
+        } catch (err) {
+            console.warn("Banco vazio ou erro, usando local.");
+        }
+
+        // 3. O PULO DO GATO: Se o banco estiver vazio, usa a memória local (SEED_UNITS)
+        if (segs.length === 0) {
+            console.log("Banco vazio. Usando lista de backup local.");
+            // Transforma a lista de strings num formato que o menu entende ({name: '...'})
+            setSegments(SEED_UNITS.map(u => ({ name: u })));
         } else {
-            // Se o banco estiver vazio (seu caso atual), usa a lista fixa temporariamente
-            // Isso ajuda os menus a aparecerem mesmo antes de clicar em "Restaurar"
-            setSegments(SEED_UNITS.map(u => ({ name: u }))); 
+            setSegments(segs);
         }
         
         setSelectedIds([]);
