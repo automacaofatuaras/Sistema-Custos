@@ -5,7 +5,7 @@ import {
   Save, X, Calendar, Loader2, List, FileUp, LogOut, UserCircle, 
   Users, Sun, Moon, Lock, Sparkles, FileText, Download, Globe, 
   AlertTriangle, CheckCircle, Zap, Calculator, Percent, Share2, ChevronRight, ChevronDown, ChevronLeft, Printer,
-  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search
+  BarChart3 as BarChartIcon, Folder, FolderOpen, Package, Factory, ShoppingCart, Search,Database,
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area
@@ -3552,15 +3552,66 @@ const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', 
   const loadData = async () => {
     if (!user) return;
     try {
+        // Carrega transações
         const txs = await dbService.getAll(user, 'transactions');
-        const segs = await dbService.getAll(user, 'segments');
         setTransactions(txs);
-        setSegments(segs);
+        
+        // Carrega Segmentos (Unidades) do Banco
+        const segs = await dbService.getAll(user, 'segments');
+        
+        if (segs.length > 0) {
+            // Se existirem no banco, usa do banco
+            setSegments(segs);
+        } else {
+            // Se o banco estiver vazio (seu caso atual), usa a lista fixa temporariamente
+            // Isso ajuda os menus a aparecerem mesmo antes de clicar em "Restaurar"
+            setSegments(SEED_UNITS.map(u => ({ name: u }))); 
+        }
+        
         setSelectedIds([]);
-    } catch (e) { showToast("Erro ao carregar dados.", 'error'); }
+    } catch (e) { 
+        console.error(e);
+        showToast("Erro ao carregar dados.", 'error'); 
+    }
   };
 
-  const handleLogout = async () => { window.location.reload(); };
+  // Função de Emergência para Repopular o Banco
+  const handleSystemRestore = async () => {
+      if (!confirm("Isso vai recriar todas as Unidades e Segmentos no banco de dados. Confirmar?")) return;
+      
+      setIsProcessing(true);
+      try {
+          // 1. Recriar Unidades (Segments)
+          // SEED_UNITS vem da configuração lá em cima do arquivo
+          const segmentsBatch = SEED_UNITS.map(unitName => ({
+              name: unitName,
+              createdAt: new Date().toISOString(),
+              source: 'system_restore'
+          }));
+
+          await dbService.addBulk(user, 'segments', segmentsBatch);
+          
+          showToast("Unidades restauradas com sucesso!", 'success');
+          await loadData(); // Recarrega a tela
+      } catch (e) {
+          console.error(e);
+          showToast("Erro ao restaurar: " + e.message, 'error');
+      } finally {
+          setIsProcessing(false);
+      }
+  };
+
+  const handleLogout = async () => { 
+      try {
+          await signOut(auth); // Desconecta do Firebase
+          setUser(null);       // Limpa estado local
+          setUserRole(null);
+          showToast("Sessão encerrada com sucesso.", 'success');
+      } catch (error) {
+          console.error(error);
+          showToast("Erro ao sair.", 'error');
+      }
+  };
 
   const handleImport = async (data) => {
     setIsProcessing(true);
@@ -3805,16 +3856,19 @@ const stockDataRaw = useMemo(() => {
 
     {/* --- NOVOS BOTÕES MOVIDOS (IA, TEMA, LOGOUT) --- */}
     <div className={`p-4 border-t border-slate-800 flex ${sidebarOpen ? 'flex-row justify-around' : 'flex-col gap-4 items-center'}`}>
-        <button onClick={() => setShowAIModal(true)} className="p-2 text-purple-400 hover:bg-slate-800 rounded-lg transition-colors" title="IA Analysis">
-            <Sparkles size={20} />
-        </button>
-        <button onClick={toggleTheme} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg transition-colors" title="Mudar Tema">
-            {theme === 'dark' ? <Sun size={20}/> : <Moon size={20}/>}
-        </button>
-        <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-800 rounded-lg transition-colors" title="Sair">
-            <LogOut size={20} />
-        </button>
-    </div>
+            <button onClick={() => setShowAIModal(true)} className="p-2 text-purple-400 hover:bg-slate-800 rounded-lg transition-colors" title="IA Analysis"><Sparkles size={20} /></button>
+            
+            {/* NOVO BOTÃO DE RESTAURO (Apenas para Admin) */}
+            {userRole === 'admin' && (
+                <button onClick={handleSystemRestore} className="p-2 text-amber-400 hover:bg-slate-800 rounded-lg transition-colors" title="Restaurar Banco de Dados">
+                    <Database size={20} /> 
+                    {/* Nota: Se der erro no icone Database, use outro como RefreshCw ou importe Database de lucide-react */}
+                </button>
+            )}
+
+            <button onClick={toggleTheme} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg transition-colors" title="Mudar Tema">{theme === 'dark' ? <Sun size={20}/> : <Moon size={20}/>}</button>
+            <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-800 rounded-lg transition-colors" title="Sair"><LogOut size={20} /></button>
+        </div>
 
     {/* PERFIL DO USUÁRIO */}
     <div className="p-4 border-t border-slate-800 bg-slate-900/50">
