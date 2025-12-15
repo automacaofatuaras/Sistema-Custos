@@ -47,7 +47,7 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 const appId = 'financial-saas-production';
 
-// --- DADOS DE INICIALIZAÇÃO (Cole isto antes da função App) ---
+// --- DADOS DE INICIALIZAÇÃO FIXOS ---
 const BUSINESS_HIERARCHY = {
     "Portos de Areia": ["Porto de Areia Saara - Mira Estrela", "Porto Agua Amarela - Riolândia"],
     "Noromix Concreteiras": ["Noromix Concreto S/A - Fernandópolis", "Noromix Concreto S/A - Ilha Solteira", "Noromix Concreto S/A - Jales", "Noromix Concreto S/A - Ouroeste", "Noromix Concreto S/A - Paranaíba", "Noromix Concreto S/A - Monções", "Noromix Concreto S/A - Pereira Barreto", "Noromix Concreto S/A - Três Fronteiras", "Noromix Concreto S/A - Votuporanga"],
@@ -57,6 +57,7 @@ const BUSINESS_HIERARCHY = {
     "Construtora": ["Noromix Construtora"]
 };
 
+// Cria a lista plana de unidades automaticamente
 const SEED_UNITS = Object.values(BUSINESS_HIERARCHY).flat();
 
 const SEGMENT_CONFIG = {
@@ -3526,7 +3527,8 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [transactions, setTransactions] = useState([]);
-  const [segments, setSegments] = useState([]);
+  // Inicia JÁ com as unidades carregadas da memória local
+const [segments, setSegments] = useState(SEED_UNITS.map(u => ({ name: u })));
   
   const [filter, setFilter] = useState({ type: 'month', month: new Date().getMonth(), year: new Date().getFullYear(), quarter: 1, semester: 1 });
   const [globalUnitFilter, setGlobalUnitFilter] = useState('Portos de Areia');
@@ -3552,41 +3554,31 @@ const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', 
  const loadData = async () => {
     if (!user) return;
     try {
-        console.log("Iniciando carregamento de dados...");
+        console.log("A atualizar dados...");
 
         // 1. Carrega Transações
         const txs = await dbService.getAll(user, 'transactions');
         setTransactions(txs);
         
-        // 2. Carrega Unidades (Segmentos)
-        let segs = [];
+        // 2. Carrega Segmentos (Unidades) com PROTEÇÃO
         try {
             const rawSegs = await dbService.getAll(user, 'segments');
-            segs = rawSegs.filter(item => item && item.name); 
-            console.log("Unidades lidas do Firebase:", segs.length);
+            
+            // Só atualiza o estado SE o banco devolver dados válidos (mais de 0)
+            if (rawSegs && rawSegs.length > 0) {
+                const validSegs = rawSegs.filter(item => item && item.name);
+                if (validSegs.length > 0) {
+                    setSegments(validSegs);
+                    console.log("Unidades atualizadas via Firebase:", validSegs.length);
+                }
+            } else {
+                console.log("Banco retornou vazio. Mantendo lista local de segurança.");
+                // Não fazemos setSegments([]), mantendo o valor inicial do Passo 2
+            }
         } catch (err) {
-            console.warn("Erro ao ler do Firebase:", err);
+            console.warn("Erro ao ler segmentos do banco. Mantendo local.", err);
         }
 
-        // 3. Lógica de Garantia (Fallback)
-        // Se o Firebase retornou 0 unidades, OU se por acaso falhou,
-        // usamos OBRIGATORIAMENTE a lista local SEED_UNITS.
-        if (segs.length === 0) {
-            console.log("Usando lista local (SEED_UNITS) porque o banco está vazio ou falhou.");
-            
-            // Verifica se SEED_UNITS existe
-            if (typeof SEED_UNITS !== 'undefined' && Array.isArray(SEED_UNITS)) {
-                const localSegments = SEED_UNITS.map(u => ({ name: u }));
-                setSegments(localSegments);
-                console.log("Unidades definidas via local:", localSegments.length);
-            } else {
-                console.error("ERRO CRÍTICO: SEED_UNITS não está definida no código!");
-                showToast("Erro interno: Definições de Unidade perdidas.", 'error');
-            }
-        } else {
-            setSegments(segs);
-        }
-        
         setSelectedIds([]);
     } catch (e) { 
         console.error("Erro geral no loadData:", e);
