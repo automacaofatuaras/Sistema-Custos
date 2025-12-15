@@ -3642,22 +3642,25 @@ const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', 
  const loadData = async () => {
     if (!user) 
       // 1. Carregando
-  if (loadingAuth) return <div className="...">...</div>;
+  if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center flex-col gap-4"><Loader2 className="animate-spin text-indigo-600" size={48}/><p className="text-slate-500 font-bold animate-pulse">Carregando Sistema...</p></div>;
 
-  // 2. Não Logado -> Tela de Login
+  // 2. Não Logado
   if (!user) return (
       <>
-        {/* ... código do login ... */}
+        {toast && <div className={`fixed top-4 right-4 z-50 p-4 rounded shadow-xl flex gap-2 ${toast.type==='success'?'bg-emerald-500 text-white':'bg-rose-500 text-white'}`}>{toast.type==='success'?<CheckCircle/>:<AlertTriangle/>}{toast.message}</div>}
         <LoginScreen onLogin={handleLogin} loading={loadingAuth} />
       </>
   );
 
-  // 3. Logado -> App Principal  <--- ESTA É A PARTE QUE JÁ EXISTE
-  return (
-    <div className="min-h-screen ...">
-       {/* ... resto da aplicação ... */}
-    </div>
-  );
+ // --- 3. MENU INICIAL (ISTO TEM DE ESTAR ANTES DO RETURN PRINCIPAL) ---
+  if (!globalUnitFilter && activeTab !== 'global' && activeTab !== 'users' && activeTab !== 'ingestion') {
+      return (
+          <InitialSelectionScreen 
+               onSelect={(unit) => setGlobalUnitFilter(unit)} 
+               onLogout={handleLogout} 
+          />
+      );
+  }
       return;
     try {
         console.log("A atualizar dados...");
