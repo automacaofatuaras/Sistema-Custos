@@ -804,53 +804,120 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
     const [isOpen, setIsOpen] = useState(false);
     const [expanded, setExpanded] = useState({});
     const ref = useRef(null);
+
+    // Processa a hierarquia baseada nas opções recebidas
     const hierarchy = useMemo(() => {
         const map = {};
+        if (!options || options.length === 0) return {};
+        
         options.forEach(opt => {
             const parts = opt.name.split(':');
-            const segment = parts.length > 1 ? parts[0].trim() : 'Geral';
+            const segment = parts.length > 1 ? parts[0].trim() : 'Outros';
             const unitName = parts.length > 1 ? parts[1].trim() : opt.name;
+            
             if (!map[segment]) map[segment] = [];
             map[segment].push({ fullValue: opt.name, label: unitName });
         });
-        return Object.keys(map).filter(key => key !== 'Geral').sort().reduce((obj, key) => { obj[key] = map[key]; return obj; }, {});
+        
+        // Ordena segmentos e unidades
+        return Object.keys(map).sort().reduce((obj, key) => { 
+            obj[key] = map[key].sort((a,b) => a.label.localeCompare(b.label)); 
+            return obj; 
+        }, {});
     }, [options]);
+
+    // Fecha ao clicar fora
     useEffect(() => {
         const clickOut = (e) => { if (ref.current && !ref.current.contains(e.target)) setIsOpen(false); };
         document.addEventListener("mousedown", clickOut);
         return () => document.removeEventListener("mousedown", clickOut);
     }, []);
-    const toggleFolder = (seg, e) => { if(e) e.stopPropagation(); setExpanded(prev => ({...prev, [seg]: !prev[seg]})); };
-    const handleSelect = (val) => { onChange(val); setIsOpen(false); };
+
+    const toggleFolder = (seg, e) => { 
+        if(e) e.stopPropagation(); 
+        setExpanded(prev => ({...prev, [seg]: !prev[seg]})); 
+    };
+
+    const handleSelect = (val) => { 
+        onChange(val); 
+        setIsOpen(false); 
+    };
+
+    // Texto de exibição no botão
     let displayText = placeholder;
-    if (value) {
-        if (BUSINESS_HIERARCHY[value]) displayText = `📁 ${value}`;
-        else if (value.includes(':')) displayText = value.split(':')[1].trim();
-        else displayText = value;
-    }
+    if (value && value !== 'ALL') {
+        if (value.includes(':')) displayText = value.split(':')[1].trim();
+        else displayText = value; // Caso selecione o segmento inteiro
+    };
+  
+const hierarchyOptions = useMemo(() => {
+      const opts = [];
+      Object.entries(BUSINESS_HIERARCHY).forEach(([segment, units]) => {
+          units.forEach(u => {
+              // Formato esperado: "Segmento: Unidade"
+              opts.push({ name: `${segment}: ${u}` });
+          });
+      });
+      return opts;
+  }, []);
+  
     return (
-        <div className="relative w-full md:w-auto" ref={ref}>
-            <button onClick={() => setIsOpen(!isOpen)} className={`flex items-center justify-between w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 min-w-[280px] ${isOpen ? 'ring-2 ring-indigo-500' : ''}`} type="button">
+        <div className="relative w-full md:w-auto z-[50]" ref={ref}>
+            <button 
+                onClick={() => setIsOpen(!isOpen)} 
+                className={`flex items-center justify-between w-full md:w-64 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 transition-all ${isOpen ? 'ring-2 ring-indigo-500 border-transparent' : 'hover:bg-slate-50 dark:hover:bg-slate-700'}`} 
+                type="button"
+            >
                 <span className="truncate font-medium">{displayText}</span>
-                <ChevronDown size={16} className="text-slate-500"/>
+                <ChevronDown size={16} className={`text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}/>
             </button>
+            
             {isOpen && (
-                <div className="absolute top-full left-0 mt-1 w-[300px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg shadow-xl z-50">
+                <div className="absolute top-full left-0 mt-2 w-[300px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl shadow-2xl z-[100] animate-in fade-in zoom-in-95 duration-100">
+                    
+                    {/* Opção para limpar filtro (apenas se for filtro) */}
+                    {isFilter && (
+                         <div onClick={() => handleSelect('ALL')} className="p-3 border-b dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 text-xs font-bold uppercase tracking-wider text-center">
+                            Mostrar Tudo
+                        </div>
+                    )}
+
                     {Object.entries(hierarchy).map(([segment, units]) => (
                         <div key={segment}>
-                            <div onClick={(e) => isFilter ? handleSelect(segment) : toggleFolder(segment, e)} className={`flex items-center gap-2 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-semibold border-b dark:border-slate-700 ${value === segment ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>
-                                <div onClick={(e) => toggleFolder(segment, e)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded">{expanded[segment] ? <FolderOpen size={16} className="text-amber-500"/> : <Folder size={16} className="text-amber-500"/>}</div>
+                            {/* Cabeçalho do Segmento (Pasta) */}
+                            <div 
+                                onClick={(e) => isFilter ? handleSelect(segment) : toggleFolder(segment, e)} 
+                                className={`flex items-center gap-2 p-2 px-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-bold border-b dark:border-slate-700 transition-colors ${value === segment ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-200'}`}
+                            >
+                                <div onClick={(e) => toggleFolder(segment, e)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded">
+                                    {/* Se for filtro, sempre expande ao clicar, senão respeita o state */}
+                                    {expanded[segment] || isFilter ? <FolderOpen size={16} className="text-amber-500"/> : <Folder size={16} className="text-amber-500"/>}
+                                </div>
                                 <span className="flex-1">{segment}</span>
+                                {isFilter && <span className="text-[10px] bg-slate-100 dark:bg-slate-600 px-1.5 rounded text-slate-500">Grupo</span>}
                             </div>
-                            {expanded[segment] && (
-                                <div className="bg-slate-50 dark:bg-slate-900/30 border-l-2 border-slate-200 dark:border-slate-700 ml-3">
+
+                            {/* Lista de Unidades (Itens) - Mostra se expandido ou se for modo filtro (para ver tudo) */}
+                            {(expanded[segment] || isFilter) && (
+                                <div className="bg-slate-50 dark:bg-slate-900/30 border-l-2 border-slate-200 dark:border-slate-700 ml-4 my-1">
                                     {units.map(u => (
-                                        <div key={u.fullValue} onClick={() => handleSelect(u.fullValue)} className={`p-2 pl-8 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 ${value === u.fullValue ? 'bg-indigo-50 dark:bg-indigo-900/20 font-bold text-indigo-600' : ''}`}>{u.label}</div>
+                                        <div 
+                                            key={u.fullValue} 
+                                            onClick={() => handleSelect(u.fullValue)} 
+                                            className={`py-2 px-3 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 transition-colors flex items-center gap-2 ${value === u.fullValue ? 'font-bold text-indigo-600 bg-indigo-50 dark:text-indigo-300' : ''}`}
+                                        >
+                                            <div className={`w-1.5 h-1.5 rounded-full ${value === u.fullValue ? 'bg-indigo-500' : 'bg-slate-300'}`}></div>
+                                            {u.label}
+                                        </div>
                                     ))}
                                 </div>
                             )}
                         </div>
                     ))}
+
+                    {Object.keys(hierarchy).length === 0 && (
+                        <div className="p-4 text-center text-slate-400 text-sm">Nenhuma opção disponível</div>
+                    )}
                 </div>
             )}
         </div>
@@ -3361,17 +3428,25 @@ const stockDataRaw = useMemo(() => {
 </aside>
 
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-<header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-    
-    {/* LÓGICA DE FILTROS (MANTENHA COMO ESTÁ) */}
-    {!['global', 'rateios'].includes(activeTab) ? (
-    <div className="flex gap-2 w-full md:w-auto items-center">
-        <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
-        <HierarchicalSelect value={globalUnitFilter} onChange={setGlobalUnitFilter} options={segments} isFilter={true} placeholder="Selecione Unidade ou Segmento" />
-    </div>
-    ) : (
-    <div></div>
-    )}
+<header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 sticky top-0 z-40 bg-slate-100 dark:bg-slate-900 py-2">
+            
+            {/* Esconde filtros nas abas Global e Rateios */}
+            {!['global', 'rateios'].includes(activeTab) ? (
+            <div className="flex gap-2 w-full md:w-auto items-center flex-wrap">
+                <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
+                
+                {/* AQUI ESTÁ O FILTRO HIERÁRQUICO CORRIGIDO */}
+                <HierarchicalSelect 
+                    value={globalUnitFilter} 
+                    onChange={setGlobalUnitFilter} 
+                    options={hierarchyOptions} 
+                    isFilter={true} 
+                    placeholder="Todas as Unidades" 
+                />
+            </div>
+            ) : (
+            <div></div>
+            )}
 
     {/* --- O BLOCO DOS BOTÕES FOI REMOVIDO DAQUI --- */}
 
