@@ -805,24 +805,29 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
     const [expanded, setExpanded] = useState({});
     const ref = useRef(null);
 
-    // Processa a hierarquia baseada nas opções recebidas
+    // Organiza as opções em Segmento -> Unidades com segurança
     const hierarchy = useMemo(() => {
         const map = {};
-        if (!options || options.length === 0) return {};
-        
+        // Proteção contra dados nulos ou indefinidos
+        if (!options || !Array.isArray(options) || options.length === 0) return {};
+
         options.forEach(opt => {
-            const parts = opt.name.split(':');
-            const segment = parts.length > 1 ? parts[0].trim() : 'Outros';
-            const unitName = parts.length > 1 ? parts[1].trim() : opt.name;
+            if (!opt || !opt.name) return;
             
+            const parts = opt.name.split(':');
+            // Se tiver ":" usa a parte antes como Grupo, senão usa 'Geral'
+            const segment = parts.length > 1 ? parts[0].trim() : 'Geral';
+            // O nome da unidade é a parte depois do ":" ou o nome completo
+            const unitName = parts.length > 1 ? parts[1].trim() : opt.name;
+
             if (!map[segment]) map[segment] = [];
             map[segment].push({ fullValue: opt.name, label: unitName });
         });
-        
-        // Ordena segmentos e unidades
-        return Object.keys(map).sort().reduce((obj, key) => { 
-            obj[key] = map[key].sort((a,b) => a.label.localeCompare(b.label)); 
-            return obj; 
+
+        // Retorna ordenado alfabeticamente
+        return Object.keys(map).sort().reduce((obj, key) => {
+            obj[key] = map[key].sort((a, b) => a.label.localeCompare(b.label));
+            return obj;
         }, {});
     }, [options]);
 
@@ -833,77 +838,65 @@ const HierarchicalSelect = ({ value, onChange, options, placeholder = "Selecione
         return () => document.removeEventListener("mousedown", clickOut);
     }, []);
 
-    const toggleFolder = (seg, e) => { 
-        if(e) e.stopPropagation(); 
-        setExpanded(prev => ({...prev, [seg]: !prev[seg]})); 
+    const toggleFolder = (seg, e) => {
+        if (e) e.stopPropagation();
+        setExpanded(prev => ({ ...prev, [seg]: !prev[seg] }));
     };
 
-    const handleSelect = (val) => { 
-        onChange(val); 
-        setIsOpen(false); 
+    const handleSelect = (val) => {
+        onChange(val);
+        setIsOpen(false);
     };
 
-    // Texto de exibição no botão
+    // Texto do botão
     let displayText = placeholder;
     if (value && value !== 'ALL') {
         if (value.includes(':')) displayText = value.split(':')[1].trim();
-        else displayText = value; // Caso selecione o segmento inteiro
-    };
-  
-const hierarchyOptions = useMemo(() => {
-      const opts = [];
-      Object.entries(BUSINESS_HIERARCHY).forEach(([segment, units]) => {
-          units.forEach(u => {
-              // Formato esperado: "Segmento: Unidade"
-              opts.push({ name: `${segment}: ${u}` });
-          });
-      });
-      return opts;
-  }, []);
-  
+        else displayText = value;
+    }
+
     return (
         <div className="relative w-full md:w-auto z-[50]" ref={ref}>
-            <button 
-                onClick={() => setIsOpen(!isOpen)} 
-                className={`flex items-center justify-between w-full md:w-64 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 transition-all ${isOpen ? 'ring-2 ring-indigo-500 border-transparent' : 'hover:bg-slate-50 dark:hover:bg-slate-700'}`} 
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className={`flex items-center justify-between w-full md:w-64 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-white text-sm rounded-lg p-2.5 transition-all ${isOpen ? 'ring-2 ring-indigo-500 border-transparent' : 'hover:bg-slate-50 dark:hover:bg-slate-700'}`}
                 type="button"
             >
                 <span className="truncate font-medium">{displayText}</span>
-                <ChevronDown size={16} className={`text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`}/>
+                <ChevronDown size={16} className={`text-slate-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
-            
+
             {isOpen && (
                 <div className="absolute top-full left-0 mt-2 w-[300px] max-h-[400px] overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl shadow-2xl z-[100] animate-in fade-in zoom-in-95 duration-100">
                     
-                    {/* Opção para limpar filtro (apenas se for filtro) */}
+                    {/* Botão Mostrar Tudo (Apenas Filtro) */}
                     {isFilter && (
-                         <div onClick={() => handleSelect('ALL')} className="p-3 border-b dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 text-xs font-bold uppercase tracking-wider text-center">
+                        <div onClick={() => handleSelect('ALL')} className="p-3 border-b dark:border-slate-700 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-500 text-xs font-bold uppercase tracking-wider text-center">
                             Mostrar Tudo
                         </div>
                     )}
 
                     {Object.entries(hierarchy).map(([segment, units]) => (
                         <div key={segment}>
-                            {/* Cabeçalho do Segmento (Pasta) */}
-                            <div 
-                                onClick={(e) => isFilter ? handleSelect(segment) : toggleFolder(segment, e)} 
+                            {/* Nome do Grupo (Pasta) */}
+                            <div
+                                onClick={(e) => isFilter ? handleSelect(segment) : toggleFolder(segment, e)}
                                 className={`flex items-center gap-2 p-2 px-3 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm font-bold border-b dark:border-slate-700 transition-colors ${value === segment ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-200'}`}
                             >
                                 <div onClick={(e) => toggleFolder(segment, e)} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-600 rounded">
-                                    {/* Se for filtro, sempre expande ao clicar, senão respeita o state */}
-                                    {expanded[segment] || isFilter ? <FolderOpen size={16} className="text-amber-500"/> : <Folder size={16} className="text-amber-500"/>}
+                                    {/* Se for filtro ou estiver expandido, mostra pasta aberta */}
+                                    {expanded[segment] || isFilter ? <FolderOpen size={16} className="text-amber-500" /> : <Folder size={16} className="text-amber-500" />}
                                 </div>
                                 <span className="flex-1">{segment}</span>
-                                {isFilter && <span className="text-[10px] bg-slate-100 dark:bg-slate-600 px-1.5 rounded text-slate-500">Grupo</span>}
                             </div>
 
-                            {/* Lista de Unidades (Itens) - Mostra se expandido ou se for modo filtro (para ver tudo) */}
+                            {/* Lista de Unidades */}
                             {(expanded[segment] || isFilter) && (
                                 <div className="bg-slate-50 dark:bg-slate-900/30 border-l-2 border-slate-200 dark:border-slate-700 ml-4 my-1">
                                     {units.map(u => (
-                                        <div 
-                                            key={u.fullValue} 
-                                            onClick={() => handleSelect(u.fullValue)} 
+                                        <div
+                                            key={u.fullValue}
+                                            onClick={() => handleSelect(u.fullValue)}
                                             className={`py-2 px-3 text-xs cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-slate-600 dark:text-slate-400 transition-colors flex items-center gap-2 ${value === u.fullValue ? 'font-bold text-indigo-600 bg-indigo-50 dark:text-indigo-300' : ''}`}
                                         >
                                             <div className={`w-1.5 h-1.5 rounded-full ${value === u.fullValue ? 'bg-indigo-500' : 'bg-slate-300'}`}></div>
@@ -914,9 +907,10 @@ const hierarchyOptions = useMemo(() => {
                             )}
                         </div>
                     ))}
-
+                    
+                    {/* Caso hierarchy esteja vazio */}
                     {Object.keys(hierarchy).length === 0 && (
-                        <div className="p-4 text-center text-slate-400 text-sm">Nenhuma opção disponível</div>
+                         <div className="p-4 text-center text-slate-400 text-sm">Nenhuma opção disponível</div>
                     )}
                 </div>
             )}
@@ -3108,21 +3102,19 @@ export default function App() {
   const [segments, setSegments] = useState([]);
   
   const [filter, setFilter] = useState({ type: 'month', month: new Date().getMonth(), year: new Date().getFullYear(), quarter: 1, semester: 1 });
-  const [globalUnitFilter, setGlobalUnitFilter] = useState('Portos de Areia');
+  const [globalUnitFilter, setGlobalUnitFilter] = useState('ALL'); // Inicializar como ALL evita erros
 
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
+  
   // NOVOS ESTADOS PARA A ABA LANÇAMENTOS
-const [lancamentosSearch, setLancamentosSearch] = useState('');
-const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', end: '' });
-
+  const [lancamentosSearch, setLancamentosSearch] = useState('');
+  
   const [importText, setImportText] = useState('');
-  const [importSegment, setImportSegment] = useState(''); 
   const [isProcessing, setIsProcessing] = useState(false);
-  const fileInputRef = useRef(null);
-
+  
   useEffect(() => {
       const init = async () => { await loadData(); };
       init();
@@ -3150,16 +3142,30 @@ const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', 
     finally { setIsProcessing(false); }
   };
   
-  const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
-
   const handleSelectAll = (e) => { if (e.target.checked) { setSelectedIds(filteredData.map(t => t.id)); } else { setSelectedIds([]); } };
   const handleSelectOne = (id) => { setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); };
   const handleBatchDelete = async () => { if (!confirm(`Tem certeza que deseja excluir ${selectedIds.length} lançamentos?`)) return; try { await dbService.deleteBulk(user, 'transactions', selectedIds); await loadData(); showToast(`${selectedIds.length} itens excluídos.`, 'success'); } catch (e) { showToast("Erro ao excluir.", 'error'); } };
 
-const filteredData = useMemo(() => {
+  // --- HIERARQUIA DE OPÇÕES PARA O SELECT (ESSENCIAL PARA O HEADER) ---
+  const hierarchyOptions = useMemo(() => {
+      const opts = [];
+      if (typeof BUSINESS_HIERARCHY !== 'undefined') {
+          Object.entries(BUSINESS_HIERARCHY).forEach(([segment, units]) => {
+              units.forEach(u => {
+                  opts.push({ name: `${segment}: ${u}` });
+              });
+          });
+      }
+      return opts;
+  }, []);
+
+  // --- DADOS FILTRADOS (Lógica Corrigida e Segura) ---
+  const filteredData = useMemo(() => {
       return transactions.filter(t => {
           // 1. FILTRO DE DATA
           let y, m;
+          if (!t.date) return false;
+
           if (typeof t.date === 'string' && t.date.length >= 10) {
               y = parseInt(t.date.substring(0, 4));
               m = parseInt(t.date.substring(5, 7)) - 1; 
@@ -3179,31 +3185,24 @@ const filteredData = useMemo(() => {
 
           if (!dateMatch) return false;
           
-          // 2. FILTRO DE UNIDADE/SEGMENTO (CORRIGIDO)
+          // 2. FILTRO DE UNIDADE/SEGMENTO
           if (globalUnitFilter && globalUnitFilter !== 'ALL') {
-              // Função auxiliar para limpar strings (minúsculas + sem espaços extras)
               const cleanStr = (str) => str ? str.toLowerCase().trim() : '';
-
-              // Pega o nome limpo da unidade na transação (remove prefixo "Segmento:" se houver)
-              const txUnitRaw = t.segment && t.segment.includes(':') ? t.segment.split(':')[1] : t.segment;
+              
+              // Proteção se t.segment for undefined
+              const txUnitRaw = (t.segment && t.segment.includes(':')) ? t.segment.split(':')[1] : (t.segment || '');
               const txUnitClean = cleanStr(txUnitRaw);
 
-              // Verifica se o filtro selecionado é um GRUPO (ex: "Portos de Areia")
-              if (BUSINESS_HIERARCHY[globalUnitFilter]) {
+              if (typeof BUSINESS_HIERARCHY !== 'undefined' && BUSINESS_HIERARCHY[globalUnitFilter]) {
                   const groupUnits = BUSINESS_HIERARCHY[globalUnitFilter].map(u => cleanStr(u));
-                  
-                  // Verifica se a unidade da transação está dentro da lista deste grupo
-                  // Usa 'includes' para ser flexível caso o nome não seja 100% idêntico
                   return groupUnits.some(groupUnit => 
                       txUnitClean === groupUnit || 
                       txUnitClean.includes(groupUnit) || 
                       groupUnit.includes(txUnitClean)
                   );
               } else {
-                  // O filtro selecionado é uma UNIDADE ESPECÍFICA
                   const filterRaw = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1] : globalUnitFilter;
                   const filterClean = cleanStr(filterRaw);
-
                   return txUnitClean === filterClean || txUnitClean.includes(filterClean);
               }
           }
@@ -3211,33 +3210,7 @@ const filteredData = useMemo(() => {
       });
   }, [transactions, filter, globalUnitFilter]);
 
-  // 2. NOVO DADO APENAS PARA O ESTOQUE (Carrega o ano todo para cálculo de saldo)
-const stockDataRaw = useMemo(() => {
-    return transactions.filter(t => {
-        let y;
-        if (typeof t.date === 'string' && t.date.length >= 10) {
-            y = parseInt(t.date.substring(0, 4));
-        } else {
-            y = new Date(t.date).getFullYear();
-        }
-        
-        // APENAS FILTRO DE ANO E UNIDADE (Ignora mês)
-        if (y !== filter.year) return false;
-
-        if (globalUnitFilter !== 'ALL') {
-            if (BUSINESS_HIERARCHY[globalUnitFilter]) {
-                const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
-            } else {
-                const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
-                return txUnit === filterUnit;
-            }
-        }
-        return true;
-    });
-}, [transactions, filter.year, globalUnitFilter]);
-
+  // KPIS
   const kpis = useMemo(() => {
       const rev = filteredData.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
       const exp = filteredData.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
@@ -3246,14 +3219,12 @@ const stockDataRaw = useMemo(() => {
 
   const currentMeasureUnit = getMeasureUnit(globalUnitFilter);
   
-// --- CÁLCULOS GERAIS PARA O DASHBOARD ---
   const totalProduction = useMemo(() => {
       return filteredData
         .filter(t => t.type === 'metric' && t.metricType === 'producao')
         .reduce((acc, t) => acc + t.value, 0);
   }, [filteredData]);
 
-  // CÁLCULO DE ESTOQUE TOTAL PARA O DASHBOARD
   const totalStockPeriod = useMemo(() => {
       return filteredData
         .filter(t => t.type === 'metric' && t.metricType === 'estoque')
@@ -3267,83 +3238,63 @@ const stockDataRaw = useMemo(() => {
   }, [filteredData]);
 
   const costPerUnit = totalProduction > 0 ? kpis.expense / totalProduction : 0;
-  
-  // Novos KPIs
   const resultMargin = kpis.revenue > 0 ? (kpis.balance / kpis.revenue) * 100 : 0;
-  const resultPerSalesUnit = totalSales > 0 ? kpis.balance / totalSales : 0;
 
-  if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
-
-  // --- CÁLCULOS DE VARIAÇÃO (MÊS ANTERIOR) ---
+  // VARIAÇÕES
   const variations = useMemo(() => {
-      // 1. Determinar qual é o "mês passado" com base no filtro atual
       let prevMonth = filter.month - 1;
       let prevYear = filter.year;
-      
-      if (prevMonth < 0) {
-          prevMonth = 11; // Dezembro
-          prevYear -= 1;
-      }
+      if (prevMonth < 0) { prevMonth = 11; prevYear -= 1; }
 
-      // 2. Filtrar transações do período anterior (respeitando o filtro de unidade global)
       const prevData = transactions.filter(t => {
+          if (!t.date) return false;
           let y, m;
-          // Parse seguro de data igual ao filteredData
           if (typeof t.date === 'string' && t.date.length >= 10) {
               y = parseInt(t.date.substring(0, 4));
               m = parseInt(t.date.substring(5, 7)) - 1; 
-          } else {
-              const d = new Date(t.date);
-              y = d.getFullYear();
-              m = d.getMonth();
-          }
+          } else { const d = new Date(t.date); y = d.getFullYear(); m = d.getMonth(); }
 
-          // Filtro de Data Anterior
-          const isDateMatch = (filter.type === 'month') 
-            ? (y === prevYear && m === prevMonth)
-            : false; // Se não for filtro mensal, não calcula variação por enquanto
-
-          // Filtro de Unidade (O mesmo do filtro principal)
+          const isDateMatch = (filter.type === 'month') ? (y === prevYear && m === prevMonth) : false;
           if (!isDateMatch) return false;
 
-          if (globalUnitFilter !== 'ALL') {
-              if (BUSINESS_HIERARCHY[globalUnitFilter]) {
-                 const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                 return BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
-              } else {
-                  const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                  const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
-                  return txUnit === filterUnit;
-              }
+          if (globalUnitFilter && globalUnitFilter !== 'ALL') {
+             // Mesma lógica de filtro do filteredData para consistência
+             const cleanStr = (str) => str ? str.toLowerCase().trim() : '';
+             const txUnitRaw = (t.segment && t.segment.includes(':')) ? t.segment.split(':')[1] : (t.segment || '');
+             const txUnitClean = cleanStr(txUnitRaw);
+
+             if (typeof BUSINESS_HIERARCHY !== 'undefined' && BUSINESS_HIERARCHY[globalUnitFilter]) {
+                  const groupUnits = BUSINESS_HIERARCHY[globalUnitFilter].map(u => cleanStr(u));
+                  return groupUnits.some(g => txUnitClean.includes(g) || g.includes(txUnitClean));
+             } else {
+                  const filterRaw = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1] : globalUnitFilter;
+                  return txUnitClean.includes(cleanStr(filterRaw));
+             }
           }
           return true;
       });
 
-      // 3. Calcular Totais do Mês Anterior
       const prevRevenue = prevData.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
       const prevExpense = prevData.filter(t => t.type === 'expense').reduce((acc, t) => acc + t.value, 0);
       const prevBalance = prevRevenue - prevExpense;
-      const prevProduction = prevData.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
-      const prevCostPerUnit = prevProduction > 0 ? prevExpense / prevProduction : 0;
+      const prevProd = prevData.filter(t => t.type === 'metric' && t.metricType === 'producao').reduce((acc, t) => acc + t.value, 0);
+      const prevCostUnit = prevProd > 0 ? prevExpense / prevProd : 0;
 
-      // 4. Função auxiliar para calcular % de variação
-      const calcVar = (curr, prev) => {
-          if (!prev || prev === 0) return 0;
-          return ((curr - prev) / prev) * 100;
-      };
+      const calcVar = (curr, prev) => (!prev || prev === 0) ? 0 : ((curr - prev) / prev) * 100;
 
       return {
           revenue: calcVar(kpis.revenue, prevRevenue),
           expense: calcVar(kpis.expense, prevExpense),
           balance: calcVar(kpis.balance, prevBalance),
-          costPerUnit: calcVar(costPerUnit, prevCostPerUnit)
+          costPerUnit: calcVar(costPerUnit, prevCostUnit)
       };
   }, [transactions, filter, globalUnitFilter, kpis, costPerUnit]);
-  
-return (
+
+  if (loadingAuth) return <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex justify-center items-center"><Loader2 className="animate-spin text-indigo-600" size={48}/></div>;
+
+  return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
       
-      {/* TOAST DE NOTIFICAÇÃO */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[200] p-4 rounded shadow-xl flex gap-2 ${toast.type==='success'?'bg-emerald-500 text-white':'bg-rose-500 text-white'}`}>
           {toast.type==='success'?<CheckCircle/>:<AlertTriangle/>}
@@ -3351,9 +3302,7 @@ return (
         </div>
       )}
       
-      {/* SIDEBAR (MENU LATERAL) */}
       <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 dark:bg-slate-950 text-white flex flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800 transition-all duration-300 z-50`}>
-        {/* LOGO E TOGGLE */}
         <div className="p-6 border-b border-slate-800 flex items-center justify-between">
             <div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}>
                 <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shrink-0">
@@ -3376,7 +3325,6 @@ return (
             </div>
         )}
 
-        {/* NAVEGAÇÃO */}
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
             {[
                 { id: 'dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
@@ -3403,7 +3351,6 @@ return (
             ))}
         </nav>
 
-        {/* BOTÕES DE RODAPÉ (IA, TEMA, LOGOUT) */}
         <div className={`p-4 border-t border-slate-800 flex ${sidebarOpen ? 'flex-row justify-around' : 'flex-col gap-4 items-center'}`}>
             <button onClick={() => setShowAIModal(true)} className="p-2 text-purple-400 hover:bg-slate-800 rounded-lg transition-colors" title="IA Analysis">
                 <Sparkles size={20} />
@@ -3416,7 +3363,6 @@ return (
             </button>
         </div>
 
-        {/* PERFIL DO USUÁRIO */}
         <div className="p-4 border-t border-slate-800 bg-slate-900/50">
             <div className={`flex items-center gap-3 ${!sidebarOpen ? 'justify-center' : ''}`}>
                 <div className="p-1 bg-slate-800 rounded shrink-0">
@@ -3432,18 +3378,12 @@ return (
         </div>
       </aside>
 
-      {/* ÁREA PRINCIPAL */}
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
         
-        {/* --- HEADER PRINCIPAL (COM A CORREÇÃO DO FILTRO) --- */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 sticky top-0 z-40 bg-slate-100 dark:bg-slate-900 py-2">
-            
-            {/* Esconde filtros nas abas Global e Rateios */}
             {!['global', 'rateios'].includes(activeTab) ? (
             <div className="flex gap-2 w-full md:w-auto items-center flex-wrap">
                 <PeriodSelector filter={filter} setFilter={setFilter} years={[2024, 2025]} />
-                
-                {/* AQUI ESTÁ O FILTRO HIERÁRQUICO CORRIGIDO */}
                 <HierarchicalSelect 
                     value={globalUnitFilter} 
                     onChange={setGlobalUnitFilter} 
@@ -3455,90 +3395,44 @@ return (
             ) : (
             <div></div>
             )}
-
-            <div className="flex gap-2 self-end md:self-auto">
-                {/* Espaço para botões extras se necessário */}
-            </div>
+            <div className="flex gap-2 self-end md:self-auto"></div>
         </header>
         
-        {/* RENDERIZAÇÃO DAS TELAS (TABS) */}
         {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
         {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} segmentsList={segments} />}
         
         {activeTab === 'dashboard' && (
           <div className="space-y-6 animate-in fade-in duration-500">
-            {/* CARDS DE KPI */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <KpiCard 
-                title="Receita Bruta" 
-                value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
-                icon={TrendingUp} 
-                color="emerald" 
-                trend={variations.revenue} 
-              />
-              <KpiCard 
-                title="Despesas Totais" 
-                value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
-                icon={TrendingDown} 
-                color="rose" 
-                trend={variations.expense} 
-                reverseColor={true} 
-              />
-              <KpiCard 
-                title="Resultado Líquido" 
-                value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} 
-                icon={DollarSign} 
-                color={kpis.balance >= 0 ? 'indigo' : 'rose'} 
-                trend={variations.balance} 
-              />
-              <KpiCard 
-                title={`Custo / ${currentMeasureUnit}`}
-                value={costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
-                icon={Factory}
-                color="rose" 
-                trend={variations.costPerUnit}
-                reverseColor={true} 
-              />
+              <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" trend={variations.revenue} />
+              <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" trend={variations.expense} reverseColor={true} />
+              <KpiCard title="Resultado Líquido" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} trend={variations.balance} />
+              <KpiCard title={`Custo / ${currentMeasureUnit}`} value={costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})} icon={Factory} color="rose" trend={variations.costPerUnit} reverseColor={true} />
             </div>
-
-            {/* LINHA 2: OPERACIONAL E MARGENS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center">
                  <p className="text-xs font-bold text-slate-500 uppercase mb-1">Margem Líquida</p>
-                 <div className="flex items-end gap-2">
-                    <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
-                 </div>
+                 <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase">Produção Total</p>
-                        <h3 className="text-2xl font-bold dark:text-white mt-2">{totalProduction.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3>
-                    </div>
+                    <div><p className="text-xs font-bold text-slate-500 uppercase">Produção Total</p><h3 className="text-2xl font-bold dark:text-white mt-2">{totalProduction.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3></div>
                     <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600"><Factory size={20}/></div>
                   </div>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase">Vendas Totais</p>
-                        <h3 className="text-2xl font-bold dark:text-white mt-2">{totalSales.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3>
-                    </div>
+                    <div><p className="text-xs font-bold text-slate-500 uppercase">Vendas Totais</p><h3 className="text-2xl font-bold dark:text-white mt-2">{totalSales.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3></div>
                     <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600"><ShoppingCart size={20}/></div>
                   </div>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="flex justify-between items-start">
-                    <div>
-                        <p className="text-xs font-bold text-slate-500 uppercase">Estoque (Fechamento)</p>
-                        <h3 className="text-2xl font-bold dark:text-white mt-2">{totalStockPeriod.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3>
-                    </div>
+                    <div><p className="text-xs font-bold text-slate-500 uppercase">Estoque (Fechamento)</p><h3 className="text-2xl font-bold dark:text-white mt-2">{totalStockPeriod.toLocaleString()} <span className="text-sm font-normal text-slate-400">{currentMeasureUnit}</span></h3></div>
                     <div className="p-2 bg-amber-100 rounded-lg text-amber-600"><Package size={20}/></div>
                   </div>
               </div>
             </div>
-
-            {/* GRÁFICO */}
             <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm h-96 border dark:border-slate-700">
               <h3 className="mb-6 font-bold text-lg dark:text-white flex items-center gap-2"><BarChartIcon size={20}/> Performance Financeira do Período</h3>
               <ResponsiveContainer width="100%" height="100%">
@@ -3546,11 +3440,7 @@ return (
                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
                     <XAxis dataKey="name" tick={false} />
                     <YAxis tickFormatter={(val) => `R$ ${(val/1000).toFixed(0)}k`} />
-                    <Tooltip 
-                        cursor={{fill: 'transparent'}}
-                        contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff' }} 
-                        formatter={(val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    />
+                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff' }} formatter={(val) => val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
                     <Legend wrapperStyle={{paddingTop: '20px'}}/>
                     <Bar name="Receitas" dataKey="Receitas" fill="#10b981" radius={[6, 6, 0, 0]} />
                     <Bar name="Despesas" dataKey="Despesas" fill="#f43f5e" radius={[6, 6, 0, 0]} />
@@ -3561,7 +3451,6 @@ return (
           </div>
         )}
 
-        {/* ABA DE LANÇAMENTOS */}
         {activeTab === 'lancamentos' && (
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border dark:border-slate-700">
              <div className="p-6 border-b dark:border-slate-700 flex flex-col gap-4">
@@ -3645,7 +3534,6 @@ return (
           </div>
         )}
 
-        {/* OUTRAS TABS */}
         {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
         {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
         {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} />}
@@ -3656,7 +3544,6 @@ return (
         
       </main>
 
-      {/* MODAIS GLOBAIS */}
       {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
       {showAIModal && user && <AIReportModal onClose={() => setShowAIModal(false)} transactions={filteredData} period={`${filter.month+1}/${filter.year}`} />}
     </div>
