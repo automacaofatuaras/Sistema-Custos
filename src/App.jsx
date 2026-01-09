@@ -3340,95 +3340,103 @@ const stockDataRaw = useMemo(() => {
       };
   }, [transactions, filter, globalUnitFilter, kpis, costPerUnit]);
   
- return (
+return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex font-sans text-slate-900 dark:text-slate-100 transition-colors">
-      {toast && <div className={`fixed top-4 right-4 z-50 p-4 rounded shadow-xl flex gap-2 ${toast.type==='success'?'bg-emerald-500 text-white':'bg-rose-500 text-white'}`}>{toast.type==='success'?<CheckCircle/>:<AlertTriangle/>}{toast.message}</div>}
       
-      {/* SUBSTITUA O ASIDE INTEIRO POR ESTE BLOCO */}
-<aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 dark:bg-slate-950 text-white flex flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800 transition-all duration-300`}>
-    
-    {/* LOGO E TOGGLE */}
-    <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-        <div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}>
-            <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shrink-0">
-                <Building2 size={18} />
-            </div>
-            {sidebarOpen && <span className="text-xl font-bold whitespace-nowrap overflow-hidden">Custos</span>}
+      {/* TOAST DE NOTIFICAÇÃO */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-[200] p-4 rounded shadow-xl flex gap-2 ${toast.type==='success'?'bg-emerald-500 text-white':'bg-rose-500 text-white'}`}>
+          {toast.type==='success'?<CheckCircle/>:<AlertTriangle/>}
+          {toast.message}
         </div>
-        {/* Botão de Minimizar (Só aparece se aberto, ou ajuste conforme preferência) */}
-        {sidebarOpen && (
-            <button onClick={() => setSidebarOpen(false)} className="text-slate-400 hover:text-white">
-                <ChevronLeft size={20} />
-            </button>
-        )}
-    </div>
-
-    {/* Se estiver fechado, botão para abrir fica no topo da lista ou centralizado */}
-    {!sidebarOpen && (
-        <div className="flex justify-center py-2">
-            <button onClick={() => setSidebarOpen(true)} className="text-slate-400 hover:text-white">
-                <ChevronRight size={20} />
-            </button>
-        </div>
-    )}
-
-    {/* NAVEGAÇÃO */}
-    <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
-        {[
-            { id: 'dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
-            { id: 'lancamentos', icon: List, label: 'Lançamentos' },
-            { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
-            { id: 'rateios', icon: Share2, label: 'Rateios' },
-            { id: 'estoque', icon: Package, label: 'Estoque' },
-            { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
-            { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
-            { id: 'investimentos_report', icon: TrendingUp, label: 'Investimentos' },
-            { id: 'global', icon: Globe, label: 'Global' },
-            { id: 'ingestion', icon: UploadCloud, label: 'Importar TXT' },
-        ].map((item) => (
-            <button 
-                key={item.id}
-                onClick={() => setActiveTab(item.id)} 
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${!sidebarOpen ? 'justify-center' : ''} ${activeTab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-                title={!sidebarOpen ? item.label : ''}
-            >
-                <item.icon size={20} className="shrink-0" />
-                {sidebarOpen && <span className="whitespace-nowrap overflow-hidden">{item.label}</span>}
-            </button>
-        ))}
-    </nav>
-
-    {/* --- NOVOS BOTÕES MOVIDOS (IA, TEMA, LOGOUT) --- */}
-    <div className={`p-4 border-t border-slate-800 flex ${sidebarOpen ? 'flex-row justify-around' : 'flex-col gap-4 items-center'}`}>
-        <button onClick={() => setShowAIModal(true)} className="p-2 text-purple-400 hover:bg-slate-800 rounded-lg transition-colors" title="IA Analysis">
-            <Sparkles size={20} />
-        </button>
-        <button onClick={toggleTheme} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg transition-colors" title="Mudar Tema">
-            {theme === 'dark' ? <Sun size={20}/> : <Moon size={20}/>}
-        </button>
-        <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-800 rounded-lg transition-colors" title="Sair">
-            <LogOut size={20} />
-        </button>
-    </div>
-
-    {/* PERFIL DO USUÁRIO */}
-    <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-        <div className={`flex items-center gap-3 ${!sidebarOpen ? 'justify-center' : ''}`}>
-            <div className="p-1 bg-slate-800 rounded shrink-0">
-                <UserCircle size={20} className="text-slate-400"/>
+      )}
+      
+      {/* SIDEBAR (MENU LATERAL) */}
+      <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 dark:bg-slate-950 text-white flex flex-col sticky top-0 h-screen hidden md:flex border-r border-slate-800 transition-all duration-300 z-50`}>
+        {/* LOGO E TOGGLE */}
+        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+            <div className={`flex items-center gap-3 ${!sidebarOpen && 'justify-center w-full'}`}>
+                <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center shrink-0">
+                    <Building2 size={18} />
+                </div>
+                {sidebarOpen && <span className="text-xl font-bold whitespace-nowrap overflow-hidden">Custos</span>}
             </div>
             {sidebarOpen && (
-                <div className="flex-1 min-w-0">
-                    <p className="truncate font-bold text-sm text-white">{user.email.split('@')[0]}</p>
-                    <p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p>
-                </div>
+                <button onClick={() => setSidebarOpen(false)} className="text-slate-400 hover:text-white">
+                    <ChevronLeft size={20} />
+                </button>
             )}
         </div>
-    </div>
-</aside>
 
+        {!sidebarOpen && (
+            <div className="flex justify-center py-2">
+                <button onClick={() => setSidebarOpen(true)} className="text-slate-400 hover:text-white">
+                    <ChevronRight size={20} />
+                </button>
+            </div>
+        )}
+
+        {/* NAVEGAÇÃO */}
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
+            {[
+                { id: 'dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
+                { id: 'lancamentos', icon: List, label: 'Lançamentos' },
+                { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
+                { id: 'rateios', icon: Share2, label: 'Rateios' },
+                { id: 'estoque', icon: Package, label: 'Estoque' },
+                { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
+                { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
+                { id: 'investimentos_report', icon: TrendingUp, label: 'Investimentos' },
+                { id: 'global', icon: Globe, label: 'Global' },
+                { id: 'ingestion', icon: UploadCloud, label: 'Importar TXT' },
+                { id: 'users', icon: Users, label: 'Usuários' },
+            ].map((item) => (
+                <button 
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)} 
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${!sidebarOpen ? 'justify-center' : ''} ${activeTab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                    title={!sidebarOpen ? item.label : ''}
+                >
+                    <item.icon size={20} className="shrink-0" />
+                    {sidebarOpen && <span className="whitespace-nowrap overflow-hidden">{item.label}</span>}
+                </button>
+            ))}
+        </nav>
+
+        {/* BOTÕES DE RODAPÉ (IA, TEMA, LOGOUT) */}
+        <div className={`p-4 border-t border-slate-800 flex ${sidebarOpen ? 'flex-row justify-around' : 'flex-col gap-4 items-center'}`}>
+            <button onClick={() => setShowAIModal(true)} className="p-2 text-purple-400 hover:bg-slate-800 rounded-lg transition-colors" title="IA Analysis">
+                <Sparkles size={20} />
+            </button>
+            <button onClick={toggleTheme} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg transition-colors" title="Mudar Tema">
+                {theme === 'dark' ? <Sun size={20}/> : <Moon size={20}/>}
+            </button>
+            <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-800 rounded-lg transition-colors" title="Sair">
+                <LogOut size={20} />
+            </button>
+        </div>
+
+        {/* PERFIL DO USUÁRIO */}
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+            <div className={`flex items-center gap-3 ${!sidebarOpen ? 'justify-center' : ''}`}>
+                <div className="p-1 bg-slate-800 rounded shrink-0">
+                    <UserCircle size={20} className="text-slate-400"/>
+                </div>
+                {sidebarOpen && (
+                    <div className="flex-1 min-w-0">
+                        <p className="truncate font-bold text-sm text-white">{user.email.split('@')[0]}</p>
+                        <p className="text-xs uppercase tracking-wider text-indigo-400">{userRole}</p>
+                    </div>
+                )}
+            </div>
+        </div>
+      </aside>
+
+      {/* ÁREA PRINCIPAL */}
       <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-<header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 sticky top-0 z-40 bg-slate-100 dark:bg-slate-900 py-2">
+        
+        {/* --- HEADER PRINCIPAL (COM A CORREÇÃO DO FILTRO) --- */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 sticky top-0 z-40 bg-slate-100 dark:bg-slate-900 py-2">
             
             {/* Esconde filtros nas abas Global e Rateios */}
             {!['global', 'rateios'].includes(activeTab) ? (
@@ -3448,15 +3456,18 @@ const stockDataRaw = useMemo(() => {
             <div></div>
             )}
 
-    {/* --- O BLOCO DOS BOTÕES FOI REMOVIDO DAQUI --- */}
-
-</header>
+            <div className="flex gap-2 self-end md:self-auto">
+                {/* Espaço para botões extras se necessário */}
+            </div>
+        </header>
         
-{activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
-{activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
-{activeTab === 'dashboard' && (
+        {/* RENDERIZAÇÃO DAS TELAS (TABS) */}
+        {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} />}
+        {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2024, 2025]} segmentsList={segments} />}
+        
+        {activeTab === 'dashboard' && (
           <div className="space-y-6 animate-in fade-in duration-500">
-            {/* LINHA 1: FINANCEIRO PRINCIPAL + CUSTO P/ TON COM VARIAÇÃO */}
+            {/* CARDS DE KPI */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <KpiCard 
                 title="Receita Bruta" 
@@ -3480,7 +3491,6 @@ const stockDataRaw = useMemo(() => {
                 color={kpis.balance >= 0 ? 'indigo' : 'rose'} 
                 trend={variations.balance} 
               />
-              
               <KpiCard 
                 title={`Custo / ${currentMeasureUnit}`}
                 value={costPerUnit.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}
@@ -3493,15 +3503,12 @@ const stockDataRaw = useMemo(() => {
 
             {/* LINHA 2: OPERACIONAL E MARGENS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Margem */}
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col justify-center">
                  <p className="text-xs font-bold text-slate-500 uppercase mb-1">Margem Líquida</p>
                  <div className="flex items-end gap-2">
                     <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
                  </div>
               </div>
-
-              {/* Produção */}
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="flex justify-between items-start">
                     <div>
@@ -3511,8 +3518,6 @@ const stockDataRaw = useMemo(() => {
                     <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600"><Factory size={20}/></div>
                   </div>
               </div>
-
-              {/* Vendas */}
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="flex justify-between items-start">
                     <div>
@@ -3522,8 +3527,6 @@ const stockDataRaw = useMemo(() => {
                     <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600"><ShoppingCart size={20}/></div>
                   </div>
               </div>
-
-              {/* Estoque */}
               <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border border-slate-200 dark:border-slate-700">
                   <div className="flex justify-between items-start">
                     <div>
@@ -3558,11 +3561,10 @@ const stockDataRaw = useMemo(() => {
           </div>
         )}
 
-      {activeTab === 'lancamentos' && (
+        {/* ABA DE LANÇAMENTOS */}
+        {activeTab === 'lancamentos' && (
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border dark:border-slate-700">
              <div className="p-6 border-b dark:border-slate-700 flex flex-col gap-4">
-                 
-                 {/* CABEÇALHO */}
                  <div className="flex justify-between items-center">
                     <div className="flex gap-4 items-center">
                         <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
@@ -3574,8 +3576,6 @@ const stockDataRaw = useMemo(() => {
                     </div>
                     {['admin', 'editor'].includes(userRole) && <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>}
                  </div>
-
-                 {/* APENAS BARRA DE PESQUISA (Data agora é no topo da página) */}
                  <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border dark:border-slate-700">
                     <div className="relative w-full">
                         <Search className="absolute left-3 top-3 text-slate-400" size={16}/>
@@ -3589,7 +3589,6 @@ const stockDataRaw = useMemo(() => {
                     </div>
                  </div>
              </div>
-
              <div className="overflow-x-auto">
                  <table className="w-full text-left text-sm">
                      <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400">
@@ -3605,81 +3604,50 @@ const stockDataRaw = useMemo(() => {
                      </thead>
                      <tbody className="divide-y dark:divide-slate-700">
                          {filteredData.filter(t => {
-    // Lógica de filtro (MANTIDA)
-    const searchLower = lancamentosSearch.toLowerCase();
-    const matchesSearch = !lancamentosSearch || 
-        t.description.toLowerCase().includes(searchLower) ||
-        (t.accountPlan && t.accountPlan.toLowerCase().includes(searchLower)) || // Proteção extra aqui
-        t.value.toString().includes(searchLower);
-    
-    return matchesSearch;
-}).map(t => (
-    <tr key={t.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${selectedIds.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
-        
-        {/* 1. CHECKBOX */}
-        <td className="p-4"><input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></td>
-        
-        {/* 2. DATA */}
-        <td className="p-4 dark:text-white">{formatDate(t.date)}</td>
-        
-        {/* 3. DESCRIÇÃO */}
-        <td className="p-4 dark:text-white">
-            {t.description}
-            {t.materialDescription && <span className="block text-[10px] text-slate-500 italic">{t.materialDescription}</span>}
-        </td>
-        
-        {/* 4. UNIDADE */}
-        <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
-        
-        {/* 5. CONTA/TIPO (NOVO ESTILO) */}
-        <td className="p-4">
-            {(() => {
-                const baseStyle = "px-2 py-1 rounded border font-bold text-[10px] uppercase inline-block max-w-[200px] truncate";
-
-                if (t.type === 'metric') {
-                    return (
-                        <span className={`${baseStyle} bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:border-indigo-700`}>
-                            {t.metricType}
-                        </span>
-                    );
-                }
-
-                const label = t.planDescription || t.accountPlan;
-                const colorStyle = t.type === 'revenue' 
-                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800' 
-                    : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600';
-
-                return (
-                    <span className={`${baseStyle} ${colorStyle}`} title={label}>
-                        {label}
-                    </span>
-                );
-            })()}
-        </td>
-
-        {/* 6. VALOR (O que estava faltando) */}
-        <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>
-            {t.value.toLocaleString()}
-        </td>
-
-        {/* 7. AÇÕES (O que estava faltando) */}
-        <td className="p-4 flex gap-2">
-            {['admin', 'editor'].includes(userRole) && (
-                <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500 hover:text-blue-700 transition-colors">
-                    <Edit2 size={16}/>
-                </button>
-            )}
-        </td>
-    </tr>
-))}
+                            const searchLower = lancamentosSearch.toLowerCase();
+                            return !lancamentosSearch || 
+                                t.description.toLowerCase().includes(searchLower) ||
+                                (t.accountPlan && t.accountPlan.toLowerCase().includes(searchLower)) ||
+                                t.value.toString().includes(searchLower);
+                        }).map(t => (
+                            <tr key={t.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 ${selectedIds.includes(t.id) ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
+                                <td className="p-4"><input type="checkbox" checked={selectedIds.includes(t.id)} onChange={() => handleSelectOne(t.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" /></td>
+                                <td className="p-4 dark:text-white">{formatDate(t.date)}</td>
+                                <td className="p-4 dark:text-white">
+                                    {t.description}
+                                    {t.materialDescription && <span className="block text-[10px] text-slate-500 italic">{t.materialDescription}</span>}
+                                </td>
+                                <td className="p-4 text-xs dark:text-slate-300">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</td>
+                                <td className="p-4">
+                                    {(() => {
+                                        const baseStyle = "px-2 py-1 rounded border font-bold text-[10px] uppercase inline-block max-w-[200px] truncate";
+                                        if (t.type === 'metric') return <span className={`${baseStyle} bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:border-indigo-700`}>{t.metricType}</span>;
+                                        const label = t.planDescription || t.accountPlan;
+                                        const colorStyle = t.type === 'revenue' ? 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600';
+                                        return <span className={`${baseStyle} ${colorStyle}`} title={label}>{label}</span>;
+                                    })()}
+                                </td>
+                                <td className={`p-4 text-right font-bold ${t.type==='revenue'?'text-emerald-500':(t.type==='expense'?'text-rose-500':'text-indigo-500')}`}>
+                                    {t.value.toLocaleString()}
+                                </td>
+                                <td className="p-4 flex gap-2">
+                                    {['admin', 'editor'].includes(userRole) && (
+                                        <button onClick={()=>{setEditingTx(t); setShowEntryModal(true);}} className="text-blue-500 hover:text-blue-700 transition-colors">
+                                            <Edit2 size={16}/>
+                                        </button>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
                       </tbody>
                  </table>
              </div>
           </div>
         )}
+
+        {/* OUTRAS TABS */}
         {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
         {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
-        {/* Passando globalCostPerUnit para o componente de estoque */}
         {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} />}
         {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
@@ -3688,6 +3656,7 @@ const stockDataRaw = useMemo(() => {
         
       </main>
 
+      {/* MODAIS GLOBAIS */}
       {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
       {showAIModal && user && <AIReportModal onClose={() => setShowAIModal(false)} transactions={filteredData} period={`${filter.month+1}/${filter.year}`} />}
     </div>
