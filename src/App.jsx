@@ -3091,6 +3091,7 @@ const [lancamentosDateFilter, setLancamentosDateFilter] = useState({ start: '', 
 
 const filteredData = useMemo(() => {
       return transactions.filter(t => {
+          // 1. FILTRO DE DATA
           let y, m;
           if (typeof t.date === 'string' && t.date.length >= 10) {
               y = parseInt(t.date.substring(0, 4));
@@ -3102,8 +3103,6 @@ const filteredData = useMemo(() => {
           }
           
           const dateMatch = (() => {
-              // REMOVIDA A LINHA: if (activeTab === 'lancamentos') return true; 
-              // Agora o filtro global aplica-se a todas as abas, inclusive lançamentos
               if (y !== filter.year) return false;
               if (filter.type === 'month' && m !== filter.month) return false;
               if (filter.type === 'quarter' && (Math.floor(m / 3) + 1) !== filter.quarter) return false;
@@ -3113,20 +3112,37 @@ const filteredData = useMemo(() => {
 
           if (!dateMatch) return false;
           
-          if (globalUnitFilter !== 'ALL') {
+          // 2. FILTRO DE UNIDADE/SEGMENTO (CORRIGIDO)
+          if (globalUnitFilter && globalUnitFilter !== 'ALL') {
+              // Função auxiliar para limpar strings (minúsculas + sem espaços extras)
+              const cleanStr = (str) => str ? str.toLowerCase().trim() : '';
+
+              // Pega o nome limpo da unidade na transação (remove prefixo "Segmento:" se houver)
+              const txUnitRaw = t.segment && t.segment.includes(':') ? t.segment.split(':')[1] : t.segment;
+              const txUnitClean = cleanStr(txUnitRaw);
+
+              // Verifica se o filtro selecionado é um GRUPO (ex: "Portos de Areia")
               if (BUSINESS_HIERARCHY[globalUnitFilter]) {
-                 const cleanSegmentName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                 const isInSegment = BUSINESS_HIERARCHY[globalUnitFilter].some(u => u.includes(cleanSegmentName));
-                 return isInSegment;
+                  const groupUnits = BUSINESS_HIERARCHY[globalUnitFilter].map(u => cleanStr(u));
+                  
+                  // Verifica se a unidade da transação está dentro da lista deste grupo
+                  // Usa 'includes' para ser flexível caso o nome não seja 100% idêntico
+                  return groupUnits.some(groupUnit => 
+                      txUnitClean === groupUnit || 
+                      txUnitClean.includes(groupUnit) || 
+                      groupUnit.includes(txUnitClean)
+                  );
               } else {
-                  const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                  const filterUnit = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
-                  return txUnit === filterUnit;
+                  // O filtro selecionado é uma UNIDADE ESPECÍFICA
+                  const filterRaw = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1] : globalUnitFilter;
+                  const filterClean = cleanStr(filterRaw);
+
+                  return txUnitClean === filterClean || txUnitClean.includes(filterClean);
               }
           }
           return true;
       });
-  }, [transactions, filter, globalUnitFilter, activeTab]);
+  }, [transactions, filter, globalUnitFilter]);
 
   // 2. NOVO DADO APENAS PARA O ESTOQUE (Carrega o ano todo para cálculo de saldo)
 const stockDataRaw = useMemo(() => {
