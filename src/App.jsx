@@ -3712,37 +3712,40 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'lancamentos' && (
+{activeTab === 'lancamentos' && (
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border dark:border-slate-700">
              <div className="p-6 border-b dark:border-slate-700 flex flex-col gap-4">
+                 
+                 {/* CABEÇALHO DA ABA: TÍTULO E BOTÕES */}
                  <div className="flex justify-between items-center flex-wrap gap-4">
-                <div className="flex gap-4 items-center">
-                    <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
-                    {selectedIds.length > 0 && userRole === 'admin' && (
-                        <button onClick={handleBatchDelete} className="bg-rose-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-rose-700 transition-colors">
-                            Excluir ({selectedIds.length})
+                    {/* LADO ESQUERDO: Título e Botão de Excluir em Massa */}
+                    <div className="flex gap-4 items-center">
+                        <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
+                        {selectedIds.length > 0 && userRole === 'admin' && (
+                            <button onClick={handleBatchDelete} className="bg-rose-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-rose-700 transition-colors">
+                                Excluir ({selectedIds.length})
+                            </button>
+                        )}
+                    </div>
+                    
+                    {/* LADO DIREITO: Botões de Ação (Relatório e Novo) */}
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => setShowCCReportModal(true)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors"
+                        >
+                            <FileText size={18} /> Relatório CC
                         </button>
-                    )}
-                </div>
 
-                <div className="flex gap-2">
-                    {/* NOVO BOTÃO DE RELATÓRIO CC */}
-                    <button 
-                        onClick={() => setShowCCReportModal(true)}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors"
-                    >
-                        <FileText size={18} /> Relatório CC
-                    </button>
-
-                    {['admin', 'editor'].includes(userRole) && (
-                        <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors">
-                            <PlusCircle size={18} /> Novo Lançamento
-                        </button>
-                    )}
-                </div>
-             </div>
-                    {['admin', 'editor'].includes(userRole) && <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>}
+                        {['admin', 'editor'].includes(userRole) && (
+                            <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors">
+                                <PlusCircle size={18} /> Novo Lançamento
+                            </button>
+                        )}
+                    </div>
                  </div>
+
+                 {/* BARRA DE PESQUISA */}
                  <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border dark:border-slate-700">
                     <div className="relative w-full">
                         <Search className="absolute left-3 top-3 text-slate-400" size={16}/>
@@ -3755,6 +3758,9 @@ export default function App() {
                         />
                     </div>
                  </div>
+             </div>
+
+             {/* TABELA DE DADOS */}
              <div className="overflow-x-auto">
                  <table className="w-full text-left text-sm">
                      <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400">
