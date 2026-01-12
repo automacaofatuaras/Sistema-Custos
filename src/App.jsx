@@ -271,7 +271,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
     // --- REGRAS DE INCONSISTÊNCIA ---
     const analyzeConsistency = (row) => {
-        // NOVA REGRA: Ignora validações de classe para Movimentação de Estoque
+        // Ignora validações para Movimentação de Estoque
         if (row.accountPlan === 'MOV.EST') return [];
 
         const issues = [];
@@ -292,11 +292,11 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         }
 
         // Regra 2: Coerência CC (Local) vs Classe (Tipo)
-        const ccCode = parseInt(row.costCenter.split(' ')[0]);
-        // Garante que ADMIN_CC_CODES esteja disponível no escopo
+        const ccCodeStr = row.costCenter ? row.costCenter.split(' ')[0] : '0';
+        const ccCode = parseInt(ccCodeStr);
         const isAdminCC = typeof ADMIN_CC_CODES !== 'undefined' ? ADMIN_CC_CODES.includes(ccCode) : false;
-        const isCostClass = code.startsWith('03'); // Custos Operacionais
-        const isExpClass = code.startsWith('04'); // Despesas Adm
+        const isCostClass = code.startsWith('03'); 
+        const isExpClass = code.startsWith('04');
 
         if (isAdminCC && isCostClass) {
             issues.push("Alerta: Custo Operacional lançado em Centro de Custo Administrativo.");
@@ -326,64 +326,75 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         let headerIndex = -1;
         let colMap = {};
         
-        // 1. Identificação do Cabeçalho (Suporta Entrada e Saída)
+        // 1. Identificação do Cabeçalho
         for(let i=0; i < lines.length; i++) {
-            [cite_start]// Verifica colunas chave de Entrada ou Saída [cite: 100]
-            if (lines[i].includes('PRGER-CCUS') || lines[i].includes('PRMAT-CCUS') || lines[i].includes('PRGER-TPLC')) {
+            // Procura por colunas chave de Entrada ou Saída
+            if (lines[i].includes('PRGER-CCUS') || lines[i].includes('PRMAT-CCUS')) {
                 headerIndex = i;
-                const cols = lines[i].replace(/"/g, '').split(';');
+                // Remove aspas do cabeçalho para garantir match limpo das chaves
+                const cleanHeader = lines[i].replace(/"/g, '');
+                const cols = cleanHeader.split(';');
                 cols.forEach((col, idx) => { colMap[col.trim()] = idx; });
                 break;
             }
         }
 
-        if (headerIndex === -1) return alert("ERRO: Cabeçalho 'PRGER-CCUS' ou 'PRMAT-CCUS' não encontrado.");
+        if (headerIndex === -1) return alert("ERRO: Cabeçalho não identificado (PRGER-CCUS ou PRMAT-CCUS não encontrados).");
 
         const parsed = [];
         
-        // 2. Processamento das Linhas
+        // Verifica quais colunas essenciais existem no mapeamento
+        const hasSaidaColumns = colMap.hasOwnProperty('PRMAT-CCUS');
+        const hasEntradaColumns = colMap.hasOwnProperty('PRGER-CCUS');
+        const hasTypeColumn = colMap.hasOwnProperty('PRGER-TPLC');
+
         for(let i = headerIndex + 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
+            
+            // Limpeza da linha: remove todas as aspas para evitar problemas no split
             const cleanLine = line.replace(/"/g, '');
             const cols = cleanLine.split(';');
-            
-            // Identificação Robusta do Tipo de Relatório (Remove acentos e espaços extras)
-            // Ex: "Saida  " vira "SAIDA"
-            const rawType = cols[colMap['PRGER-TPLC']]?.trim().toUpperCase() || '';
-            // Verifica se contém SAIDA (com ou sem acento, o toUpperCase normaliza a maioria, mas garantimos com includes)
-            const isOutputReport = rawType.includes('SAIDA') || rawType.includes('SAÍDA');
 
-            // ------------------------------------------------------------------
-            // CENÁRIO A: RELATÓRIO DE SAÍDA (MOVIMENTAÇÃO DE ESTOQUE)
-            // ------------------------------------------------------------------
-            if (isOutputReport) {
+            // Tenta identificar o tipo pela coluna TPLC (se existir)
+            let isOutputRow = false;
+            
+            if (hasTypeColumn) {
+                const typeVal = cols[colMap['PRGER-TPLC']]?.trim().toUpperCase() || '';
+                if (typeVal.includes('SAIDA') || typeVal.includes('SAÍDA')) {
+                    isOutputRow = true;
+                }
+            } else if (hasSaidaColumns && !hasEntradaColumns) {
+                // Se só tem colunas de saída e não tem coluna de tipo, assume saída
+                isOutputRow = true;
+            }
+
+            // --- LÓGICA A: SAÍDA (MOVIMENTAÇÃO DE ESTOQUE) ---
+            if (isOutputRow && hasSaidaColumns) {
                 const ccCode = cols[colMap['PRMAT-CCUS']]?.trim();       
                 const ccDesc = cols[colMap['PRMAT-NCUS']]?.trim() || ''; 
                 const rawDate = cols[colMap['PRGER-DATA']]?.trim();      
-                const supplier = cols[colMap['PRMAT-NSUB']]?.trim();     // Fornecedor/Sub
-                const description = cols[colMap['PRMAT-NOME']]?.trim();  // Descrição do Item
+                const supplier = cols[colMap['PRMAT-NSUB']]?.trim();
+                const description = cols[colMap['PRMAT-NOME']]?.trim();
                 
-                // Colunas numéricas com zeros à esquerda
+                // Valores
                 const rawValue = cols[colMap['PRGER-TTEN']]?.trim();     
                 const rawQtd = cols[colMap['PRGER-QTDES']]?.trim();      
                 
                 if (!ccCode || !rawValue) continue;
 
-                // Converte Valor: Remove zeros, divide por 1000 e pega valor absoluto (Math.abs) pois o TXT traz negativo
+                // Converte Valor (Remove zeros, divide por 1000, absoluto)
                 let value = parseFloat(rawValue);
                 if (isNaN(value)) value = 0;
-                value = Math.abs(value / 1000); [cite_start]// [cite: 100] Ex: -000000003800 -> 3.8
+                value = Math.abs(value / 1000);
 
-                // Data
                 let isoDate = new Date().toISOString().split('T')[0];
                 if (rawDate && rawDate.length === 10) {
-                    const parts = rawDate.split('/'); // DD/MM/YYYY
+                    const parts = rawDate.split('/'); 
                     if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
                 }
                 const safeDateWithTime = `${isoDate}T12:00:00`;
 
-                // Unidade
                 const detectedUnit = getUnitByCostCenter(ccCode);
                 const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
 
@@ -392,108 +403,96 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     date: safeDateWithTime,
                     segment: finalSegment,
                     costCenter: `${ccCode} - ${ccDesc}`,
-                    accountPlan: 'MOV.EST', // Código fixo
-                    planDescription: 'Movimentação de Estoque', // Descrição fixa
-                    description: supplier || 'Estoque', // Coluna PRMAT-NSUB
-                    materialDescription: description,   // Coluna PRMAT-NOME
+                    accountPlan: 'MOV.EST',
+                    planDescription: 'Movimentação de Estoque',
+                    description: supplier || 'Estoque',
+                    materialDescription: description,
                     value: value,
-                    quantity: parseFloat(rawQtd) / 1000, // Armazena quantidade tratada
-                    type: 'expense', // Saída de estoque tratada como despesa/custo
+                    quantity: parseFloat(rawQtd) / 1000,
+                    type: 'expense',
                     source: 'automatic_import',
                     createdAt: new Date().toISOString()
                 });
+
+            } 
+            // --- LÓGICA B: ENTRADA (PADRÃO) ---
+            else if (hasEntradaColumns) {
+                const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
                 
-                continue; // Pula para a próxima linha
-            }
+                if (!ccCode) continue;
 
-            // ------------------------------------------------------------------
-            // CENÁRIO B: RELATÓRIO DE ENTRADA (Lógica Original)
-            // ------------------------------------------------------------------
-            
-            // Só tenta ler PRGER-CCUS se NÃO for saída, para evitar erros
-            const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
-            
-            // Se não encontrou código de custo no padrão entrada, pula linha
-            if (!ccCode) continue;
+                const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
+                const planCode = cols[colMap['PRGER-PLAN']]?.trim();
+                const planDesc = cols[colMap['PRGER-NPLC']]?.trim();
+                const supplier = cols[colMap['PRGER-NFOR']]?.trim() || 'Diversos';
+                let rawValue = cols[colMap['PRGER-TOTA']]?.trim();
+                const ccDesc = cols[colMap['PRGER-NCCU']]?.trim() || '';
+                let sortDesc = cols[colMap['PR-SORT']]?.trim();
 
-            const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
-            const planCode = cols[colMap['PRGER-PLAN']]?.trim();
-            const planDesc = cols[colMap['PRGER-NPLC']]?.trim();
-            const supplier = cols[colMap['PRGER-NFOR']]?.trim() || 'Diversos';
-            let rawValue = cols[colMap['PRGER-TOTA']]?.trim();
-            const ccDesc = cols[colMap['PRGER-NCCU']]?.trim() || '';
-            let sortDesc = cols[colMap['PR-SORT']]?.trim();
-
-            if (!rawValue) continue;
-            
-            // Valor original: divide por 100
-            rawValue = rawValue.replace(/\./g, '').replace(',', '.');
-            let value = parseFloat(rawValue) / 100;
-
-            if (isNaN(value) || value === 0) continue;
-
-            let isoDate = new Date().toISOString().split('T')[0];
-            if (dateStr && dateStr.length === 10) {
-                const parts = dateStr.split('/');
-                if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-            }
-            const safeDateWithTime = `${isoDate}T12:00:00`;
-            if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
-
-            // ------------------------------------------------------------------
-            // LÓGICA DE RATEIO (APENAS ENTRADA - PORTOS E PEDREIRAS)
-            // ------------------------------------------------------------------
-            if (['01087', '1087', '01089', '1089', '99911'].includes(ccCode)) {
-                const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-                const shareValue = value / 8;
-                const baseObj = {
-                    date: safeDateWithTime, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
-                    planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
-                    type: currentType, source: 'automatic_import', createdAt: new Date().toISOString()
-                };
+                if (!rawValue) continue;
                 
-                // 1. REGRAS DOS PORTOS
-                const portoSplit = shareValue / 2;
-                parsed.push({ ...baseObj, id: `${i}_porto1`, value: portoSplit, segment: "Porto de Areia Saara - Mira Estrela" });
-                parsed.push({ ...baseObj, id: `${i}_porto2`, value: portoSplit, segment: "Porto Agua Amarela - Riolândia" });
-                
-                // 2. REGRA DAS PEDREIRAS
-                const pedreiraUnits = typeof BUSINESS_HIERARCHY !== 'undefined' ? BUSINESS_HIERARCHY["Pedreiras"] : [];
-                if (pedreiraUnits) {
-                    pedreiraUnits.forEach((unit, idx) => {
-                        parsed.push({ 
-                            ...baseObj, 
-                            id: `${i}_ped_${idx}`,
-                            value: shareValue, 
-                            segment: unit 
-                        });
-                    });
+                // Formatação padrão de Entrada (Remove pontos, troca vírgula por ponto, divide por 100)
+                rawValue = rawValue.replace(/\./g, '').replace(',', '.');
+                let value = parseFloat(rawValue) / 100;
+
+                if (isNaN(value) || value === 0) continue;
+
+                let isoDate = new Date().toISOString().split('T')[0];
+                if (dateStr && dateStr.length === 10) {
+                    const parts = dateStr.split('/');
+                    if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
                 }
-                
-                continue;
+                const safeDateWithTime = `${isoDate}T12:00:00`;
+                if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
+
+                // Lógica de Rateio (Portos/Pedreiras)
+                if (['01087', '1087', '01089', '1089', '99911'].includes(ccCode)) {
+                    const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
+                    const shareValue = value / 8;
+                    const baseObj = {
+                        date: safeDateWithTime, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
+                        planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
+                        type: currentType, source: 'automatic_import', createdAt: new Date().toISOString()
+                    };
+                    
+                    const portoSplit = shareValue / 2;
+                    parsed.push({ ...baseObj, id: `${i}_porto1`, value: portoSplit, segment: "Porto de Areia Saara - Mira Estrela" });
+                    parsed.push({ ...baseObj, id: `${i}_porto2`, value: portoSplit, segment: "Porto Agua Amarela - Riolândia" });
+                    
+                    const pedreiraUnits = typeof BUSINESS_HIERARCHY !== 'undefined' ? BUSINESS_HIERARCHY["Pedreiras"] : [];
+                    if (pedreiraUnits) {
+                        pedreiraUnits.forEach((unit, idx) => {
+                            parsed.push({ ...baseObj, id: `${i}_ped_${idx}`, value: shareValue, segment: unit });
+                        });
+                    }
+                    continue;
+                }
+
+                const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
+                const detectedUnit = getUnitByCostCenter(ccCode);
+                const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
+
+                parsed.push({
+                    id: i,
+                    date: safeDateWithTime,
+                    segment: finalSegment,
+                    costCenter: `${ccCode} - ${ccDesc}`,
+                    accountPlan: planCode || '00.00',
+                    planDescription: planDesc || 'Indefinido',
+                    description: supplier, 
+                    materialDescription: sortDesc, 
+                    value: value,
+                    type: type,
+                    source: 'automatic_import',
+                    createdAt: new Date().toISOString()
+                });
             }
-            // ------------------------------------------------------------------
-
-            const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-            
-            const detectedUnit = getUnitByCostCenter(ccCode);
-            const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
-
-            parsed.push({
-                id: i, // ID temporário para controle
-                date: safeDateWithTime,
-                segment: finalSegment,
-                costCenter: `${ccCode} - ${ccDesc}`,
-                accountPlan: planCode || '00.00',
-                planDescription: planDesc || 'Indefinido',
-                description: supplier, 
-                materialDescription: sortDesc, 
-                value: value,
-                type: type,
-                source: 'automatic_import',
-                createdAt: new Date().toISOString()
-            });
         }
+        
+        if (parsed.length === 0) {
+            alert("Nenhum dado importado. Verifique se o arquivo corresponde ao leiaute de Entrada ou Saída.");
+        }
+        
         setPreviewData(parsed);
     };
 
@@ -504,13 +503,11 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             
             const updatedRow = { ...row, [field]: value };
 
-            // Se alterou o código da conta, atualiza descrição
             if (field === 'accountPlan') {
                 const found = typeof PLANO_CONTAS !== 'undefined' ? PLANO_CONTAS.find(p => p.code === value) : null;
                 if (found) updatedRow.planDescription = found.name;
             }
 
-            // Se alterou o Centro de Custo, tenta atualizar a Unidade automaticamente
             if (field === 'costCenter') {
                 const cleanCode = value.split(' ')[0];
                 const newUnit = getUnitByCostCenter(cleanCode);
@@ -523,13 +520,11 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
     const handleConfirmImport = () => {
         if (previewData.length === 0) return alert("Nenhum dado válido.");
-        // Remove o 'id' temporário antes de salvar
         const dataToImport = previewData.map(({ id, ...rest }) => rest);
         onImport(dataToImport);
         setFileText(''); setPreviewData([]);
     };
 
-    // SEPARAÇÃO DOS DADOS
     const problematicRows = previewData.filter(row => analyzeConsistency(row).length > 0);
     const cleanRows = previewData.filter(row => analyzeConsistency(row).length === 0);
 
@@ -615,8 +610,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
     return (
         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
-            
-            {/* --- 1. CABEÇALHO (Título + Botões) --- */}
             <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-lg dark:text-white">Auditoria e Importação</h3>
                 
@@ -648,7 +641,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 )}
             </div> 
 
-            {/* --- 2. ÁREA DE UPLOAD (Se não houver dados) --- */}
             {previewData.length === 0 && (
                 <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
                     <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
@@ -657,17 +649,13 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 </div>
             )}
 
-            {/* --- 3. TABELAS DE DADOS (Se houver dados) --- */}
             {previewData.length > 0 && (
                 <div className="animate-in fade-in space-y-6">
-                    {/* BLOCO DE ERROS (SEMPRE NO TOPO) */}
                     <TableBlock 
                         title="Inconsistências Encontradas (Verifique C. Custo e Conta)" 
                         rows={problematicRows} 
                         isProblematic={true} 
                     />
-
-                    {/* BLOCO DE ITENS CORRETOS */}
                     <TableBlock 
                         title="Itens Validados" 
                         rows={cleanRows} 
