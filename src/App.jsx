@@ -343,7 +343,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
         const parsed = [];
         
-        // Verifica quais colunas essenciais existem no mapeamento
         const hasSaidaColumns = colMap.hasOwnProperty('PRMAT-CCUS');
         const hasEntradaColumns = colMap.hasOwnProperty('PRGER-CCUS');
         const hasTypeColumn = colMap.hasOwnProperty('PRGER-TPLC');
@@ -352,11 +351,9 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             const line = lines[i].trim();
             if (!line) continue;
             
-            // Limpeza da linha: remove todas as aspas para evitar problemas no split
             const cleanLine = line.replace(/"/g, '');
             const cols = cleanLine.split(';');
 
-            // Tenta identificar o tipo pela coluna TPLC (se existir)
             let isOutputRow = false;
             
             if (hasTypeColumn) {
@@ -365,7 +362,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     isOutputRow = true;
                 }
             } else if (hasSaidaColumns && !hasEntradaColumns) {
-                // Se só tem colunas de saída e não tem coluna de tipo, assume saída
                 isOutputRow = true;
             }
 
@@ -377,13 +373,11 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 const supplier = cols[colMap['PRMAT-NSUB']]?.trim();
                 const description = cols[colMap['PRMAT-NOME']]?.trim();
                 
-                // Valores
                 const rawValue = cols[colMap['PRGER-TTEN']]?.trim();     
                 const rawQtd = cols[colMap['PRGER-QTDES']]?.trim();      
                 
                 if (!ccCode || !rawValue) continue;
 
-                // Converte Valor (Remove zeros, divide por 1000, absoluto)
                 let value = parseFloat(rawValue);
                 if (isNaN(value)) value = 0;
                 value = Math.abs(value / 1000);
@@ -403,6 +397,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     date: safeDateWithTime,
                     segment: finalSegment,
                     costCenter: `${ccCode} - ${ccDesc}`,
+                    costCenterCode: ccCode, // <--- SALVA O CÓDIGO PURO PARA O RELATÓRIO
                     accountPlan: 'MOV.EST',
                     planDescription: 'Movimentação de Estoque',
                     description: supplier || 'Estoque',
@@ -431,7 +426,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
                 if (!rawValue) continue;
                 
-                // Formatação padrão de Entrada (Remove pontos, troca vírgula por ponto, divide por 100)
                 rawValue = rawValue.replace(/\./g, '').replace(',', '.');
                 let value = parseFloat(rawValue) / 100;
 
@@ -445,12 +439,16 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 const safeDateWithTime = `${isoDate}T12:00:00`;
                 if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
 
+                const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
+
                 // Lógica de Rateio (Portos/Pedreiras)
                 if (['01087', '1087', '01089', '1089', '99911'].includes(ccCode)) {
-                    const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
                     const shareValue = value / 8;
                     const baseObj = {
-                        date: safeDateWithTime, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
+                        date: safeDateWithTime, 
+                        costCenter: `${ccCode} - ${ccDesc}`,
+                        costCenterCode: ccCode, // <--- SALVA O CÓDIGO NO RATEIO TAMBÉM
+                        accountPlan: planCode || '00.00',
                         planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
                         type: currentType, source: 'automatic_import', createdAt: new Date().toISOString()
                     };
@@ -468,7 +466,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     continue;
                 }
 
-                const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
                 const detectedUnit = getUnitByCostCenter(ccCode);
                 const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
 
@@ -477,12 +474,13 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     date: safeDateWithTime,
                     segment: finalSegment,
                     costCenter: `${ccCode} - ${ccDesc}`,
+                    costCenterCode: ccCode, // <--- SALVA O CÓDIGO PURO
                     accountPlan: planCode || '00.00',
                     planDescription: planDesc || 'Indefinido',
                     description: supplier, 
                     materialDescription: sortDesc, 
                     value: value,
-                    type: type,
+                    type: currentType,
                     source: 'automatic_import',
                     createdAt: new Date().toISOString()
                 });
@@ -509,7 +507,10 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             }
 
             if (field === 'costCenter') {
+                // Ao editar o campo visual (costCenter), atualiza também o código puro (costCenterCode)
                 const cleanCode = value.split(' ')[0];
+                updatedRow.costCenterCode = cleanCode; // <--- ATUALIZAÇÃO AUTOMÁTICA DO CÓDIGO
+                
                 const newUnit = getUnitByCostCenter(cleanCode);
                 if (newUnit) updatedRow.segment = newUnit;
             }
