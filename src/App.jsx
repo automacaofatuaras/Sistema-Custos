@@ -268,8 +268,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const fileRef = useRef(null);
     const [importMode, setImportMode] = useState(null); // 'ENTRADA' ou 'SAIDA'
     const [previewData, setPreviewData] = useState([]);
-    
-    // Estados para o resumo da importação
     const [stats, setStats] = useState({ total: 0, skipped: 0 });
 
     // --- FUNÇÕES AUXILIARES ---
@@ -283,39 +281,31 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             for (const [group, units] of Object.entries(BUSINESS_HIERARCHY)) {
                 for (const unit of units) {
                     const unitClean = normalize(unit);
-                    // Prioridade Fábrica
                     if (searchName.includes("FABRICA") && unitClean.includes("FABRICA")) return `${group}: ${unit}`;
-                    // Match padrão
                     if (searchName.includes(unitClean) || unitClean.includes(searchName)) return `${group}: ${unit}`;
                 }
             }
         }
-        // Mapeamentos manuais de segurança
         if (searchName.includes("PORTO")) return "Portos de Areia: Porto Saara";
         if (searchName.includes("PEDREIRA")) return "Pedreiras: Pedreira Votuporanga";
-        
         return 'Geral: Indefinido';
     };
 
-    // --- LÓGICA DE CONSISTÊNCIA (ORIGINAL DO SEU ARQUIVO) ---
+    // --- ANÁLISE DE CONSISTÊNCIA ---
     const analyzeConsistency = (row) => {
         const issues = [];
         const desc = (row.description || "").toLowerCase();
         const plan = (row.accountPlan || "").toLowerCase();
         
-        // Regra 1: Combustível
         if (desc.includes('diesel') || desc.includes('combustivel')) {
             if (!plan.includes('combustível') && !plan.includes('veículos')) issues.push("Item parece Combustível, mas classe difere.");
         }
-        // Regra 2: Manutenção
         if (desc.includes('pneu') || desc.includes('manuten') || desc.includes('peça')) {
             if (!plan.includes('manutenção') && !plan.includes('manutencao')) issues.push("Item parece Manutenção, mas classe difere.");
         }
-        // Regra 3: Energia
         if (desc.includes('energia') || desc.includes('eletrica')) {
-            if (!plan.includes('energia')) issues.push("Item parece Energia, verifique a classe.");
+            if (!plan.includes('energia')) issues.push("Item parece Energia.");
         }
-        
         return issues;
     };
 
@@ -328,25 +318,28 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             if (importMode === 'ENTRADA') processEntrada(content);
             else if (importMode === 'SAIDA') processSaida(content);
         };
-        reader.readAsText(file, 'ISO-8859-1'); // Garante leitura de acentos
+        reader.readAsText(file, 'ISO-8859-1'); 
         e.target.value = ''; 
     };
 
-    // --- PROCESSAMENTO: ENTRADA (BASEADO NO SEU TXT ANTIGO) ---
+    // --- PROCESSAMENTO: ENTRADA (INTELIGENTE - SUPORTA 2 LAYOUTS) ---
     const processEntrada = (content) => {
         const lines = content.split('\n');
         if (lines.length < 2) { alert("Arquivo inválido"); return; }
         
-        // Limpa aspas e espaços dos cabeçalhos
         const headers = lines[0].split(';').map(h => h.trim().replace(/"/g, ''));
         
+        // DETECÇÃO DE LAYOUT
+        let layout = 'PADRAO'; // Layout SAE127 (Antigo)
+        if (headers.includes('PRPRO-NOME')) layout = 'SAE134'; // Layout Novo (Produto/Emissão)
+
+        // MAPEAMENTO DE COLUNAS BASEADO NO LAYOUT
         const idx = {
-            DATA: headers.indexOf('PRGER-DATA'),
-            VREN: headers.indexOf('PRGER-VREN'), // Valor Entrada (Prioritário)
-            TTEN: headers.indexOf('PRGER-TTEN'), // Valor Total (Fallback)
-            NOME: headers.indexOf('PRMAT-NOME'), // Descrição
-            CCUS: headers.indexOf('PRMAT-NCUS'), // Centro de Custo (Nome)
-            CONTA: headers.indexOf('PRMAT-NGRU') // Grupo/Conta
+            DATA: layout === 'SAE134' ? headers.indexOf('PRGER-EMIS') : headers.indexOf('PRGER-DATA'),
+            VALOR: layout === 'SAE134' ? headers.indexOf('PRGER-TOTA') : (headers.indexOf('PRGER-VREN') !== -1 ? headers.indexOf('PRGER-VREN') : headers.indexOf('PRGER-TTEN')),
+            NOME: layout === 'SAE134' ? headers.indexOf('PRPRO-NOME') : headers.indexOf('PRMAT-NOME'),
+            CCUS: layout === 'SAE134' ? headers.indexOf('PRGER-NCCU') : headers.indexOf('PRMAT-NCUS'),
+            CONTA: layout === 'SAE134' ? headers.indexOf('PRGER-NPLC') : headers.indexOf('PRMAT-NGRU')
         };
 
         const parsed = [];
@@ -355,29 +348,38 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-
             const cols = line.split(';').map(c => c.trim().replace(/"/g, ''));
             
-            // Validação mínima: precisa ter Data e Nome
+            // Validação
             if (!cols[idx.DATA] || !cols[idx.NOME]) { skipped++; continue; }
 
-            // Tratamento Data
-            const dRaw = cols[idx.DATA];
+            // TRATAMENTO DATA (Formatos diferentes)
+            const dRaw = cols[idx.DATA].trim();
             let dateIso = '';
-            if (dRaw.length === 10) { const p = dRaw.split('/'); dateIso = `${p[2]}-${p[1]}-${p[0]}`; }
+            
+            if (layout === 'SAE134' && dRaw.length === 8) {
+                // Formato YYYYMMDD (ex: 20251125) do arquivo novo
+                const y = dRaw.substring(0, 4);
+                const m = dRaw.substring(4, 6);
+                const d = dRaw.substring(6, 8);
+                dateIso = `${y}-${m}-${d}`;
+            } else if (dRaw.length >= 10) {
+                // Formato DD/MM/AAAA do arquivo antigo
+                const p = dRaw.split('/');
+                if (p.length === 3) dateIso = `${p[2]}-${p[1]}-${p[0]}`;
+            }
             
             if (!dateIso) { skipped++; continue; }
 
-            // Tratamento Valor (Entrada): Tenta VREN, se for 0 ou vazio, tenta TTEN
+            // TRATAMENTO VALOR
             let val = 0;
-            if (idx.VREN !== -1 && cols[idx.VREN]) val = Math.abs(parseFloat(cols[idx.VREN]) / 1000);
-            
-            // Se VREN falhou, tenta TTEN
-            if (val === 0 && idx.TTEN !== -1 && cols[idx.TTEN]) val = Math.abs(parseFloat(cols[idx.TTEN]) / 1000);
+            if (cols[idx.VALOR]) {
+                // Mantendo padrão de divisão por 1000 conforme seu sistema
+                val = Math.abs(parseFloat(cols[idx.VALOR]) / 1000);
+            }
 
             if (val === 0 || isNaN(val)) { skipped++; continue; }
 
-            // Monta objeto
             const row = {
                 id: Math.random().toString(36).substr(2,9),
                 date: dateIso,
@@ -397,23 +399,23 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             parsed.push(row);
         }
         
-        if (parsed.length === 0) alert("Nenhum dado encontrado. Verifique se o arquivo é do tipo Entrada (colunas PRGER-DATA, PRGER-VREN).");
+        if (parsed.length === 0) alert(`Nenhum dado válido encontrado. Layout detectado: ${layout}`);
         setPreviewData(parsed);
         setStats({ total: parsed.length, skipped });
     };
 
-    // --- PROCESSAMENTO: SAÍDA (NOVA LÓGICA DE ESTOQUE) ---
+    // --- PROCESSAMENTO: SAÍDA (PADRÃO ESTOQUE) ---
     const processSaida = (content) => {
         const lines = content.split('\n');
         const headers = lines[0].split(';').map(h => h.trim().replace(/"/g, ''));
         
         const idx = {
             DATA: headers.indexOf('PRGER-DATA'),
-            TTEN: headers.indexOf('PRGER-TTEN'), // Valor Saída
-            QTDES: headers.indexOf('PRGER-QTDES'), // Quantidade
-            NOME: headers.indexOf('PRMAT-NOME'),   // Item
-            NSUB: headers.indexOf('PRMAT-NSUB'),   // Fornecedor
-            NCUS: headers.indexOf('PRMAT-NCUS')    // Centro de Custo
+            TTEN: headers.indexOf('PRGER-TTEN'),
+            QTDES: headers.indexOf('PRGER-QTDES'),
+            NOME: headers.indexOf('PRMAT-NOME'),
+            NSUB: headers.indexOf('PRMAT-NSUB'),
+            NCUS: headers.indexOf('PRMAT-NCUS')
         };
 
         const parsed = [];
@@ -422,35 +424,30 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            
             const cols = line.split(';').map(c => c.trim().replace(/"/g, ''));
+            
             if (!cols[idx.DATA]) { skipped++; continue; }
 
-            // Data
             const dRaw = cols[idx.DATA];
             let dateIso = '';
-            if (dRaw.length === 10) { const p = dRaw.split('/'); dateIso = `${p[2]}-${p[1]}-${p[0]}`; }
+            if (dRaw.length >= 10) { const p = dRaw.split('/'); dateIso = `${p[2]}-${p[1]}-${p[0]}`; }
             if (!dateIso) { skipped++; continue; }
 
-            // Valor
             let val = 0;
             if (cols[idx.TTEN]) val = Math.abs(parseFloat(cols[idx.TTEN]) / 1000);
             
-            // Qtd
             let qtd = 0;
             if (cols[idx.QTDES]) qtd = parseFloat(cols[idx.QTDES]) / 1000;
 
             if (val === 0 || isNaN(val)) { skipped++; continue; }
 
-            // Descrição (Fornecedor - Item)
             const fornec = (idx.NSUB !== -1 && cols[idx.NSUB]) ? cols[idx.NSUB] : 'Interno';
             const item = cols[idx.NOME] || 'Item';
-            const desc = `${fornec} - ${item}`;
 
             parsed.push({
                 id: Math.random().toString(36).substr(2,9),
                 date: dateIso,
-                description: desc,
+                description: `${fornec} - ${item}`,
                 value: val,
                 quantity: qtd,
                 segment: findSegmentByCostCenter(cols[idx.NCUS]),
@@ -464,13 +461,12 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             });
         }
 
-        if (parsed.length === 0) alert("Nenhum dado encontrado. Verifique se o arquivo é do tipo Saída.");
+        if (parsed.length === 0) alert("Nenhum dado encontrado no arquivo de Saída.");
         setPreviewData(parsed);
         setStats({ total: parsed.length, skipped });
     };
 
     const handleConfirm = () => {
-        // Remove 'issues' antes de salvar
         const cleanData = previewData.map(({issues, id, ...rest}) => rest);
         onImport(cleanData);
         setPreviewData([]);
@@ -483,7 +479,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         if (fileRef.current) fileRef.current.value = '';
     };
 
-    // --- TABELA DE EXIBIÇÃO ---
+    // --- TABELAS ---
     const TableBlock = ({ title, rows, isProblematic }) => {
         if (!rows || rows.length === 0) return null;
         return (
@@ -512,16 +508,11 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                                     <td className={`p-3 font-medium ${row.segment.includes('Indefinido') ? 'text-rose-500' : 'text-emerald-600'}`}>{row.segment}</td>
                                     <td className="p-3 dark:text-slate-300">{row.accountPlan}</td>
                                     <td className="p-3 text-right font-bold dark:text-slate-200">{row.value.toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td>
-                                    {isProblematic && (
-                                        <td className="p-3 text-amber-600 font-bold bg-amber-50 dark:bg-amber-900/20">
-                                            {row.issues.join(', ')}
-                                        </td>
-                                    )}
+                                    {isProblematic && <td className="p-3 text-amber-600 font-bold bg-amber-50 dark:bg-amber-900/20">{row.issues.join(', ')}</td>}
                                 </tr>
                             ))}
                         </tbody>
                     </table>
-                    {rows.length > 100 && <div className="p-2 text-center text-xs text-slate-400">... e mais {rows.length - 100} itens</div>}
                 </div>
             </div>
         );
@@ -531,8 +522,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const cleanRows = previewData.filter(r => !r.issues || r.issues.length === 0);
 
     // --- RENDERIZAÇÃO ---
-    
-    // 1. TELA DE SELEÇÃO INICIAL
     if (!importMode) {
         return (
             <div className="flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 h-[calc(100vh-200px)]">
@@ -540,20 +529,12 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     <UploadCloud size={64} className="text-indigo-500" />
                 </div>
                 <h2 className="text-2xl font-bold mb-6 dark:text-white">Selecione o Tipo de Arquivo</h2>
-                
                 <div className="flex gap-4">
-                    <button 
-                        onClick={() => setImportMode('ENTRADA')}
-                        className="flex flex-col items-center justify-center w-48 h-32 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 border-2 border-emerald-200 dark:border-emerald-700 rounded-2xl transition-all gap-3 group"
-                    >
+                    <button onClick={() => setImportMode('ENTRADA')} className="flex flex-col items-center justify-center w-48 h-32 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 border-2 border-emerald-200 dark:border-emerald-700 rounded-2xl transition-all gap-3 group">
                         <FileUp className="text-emerald-600 group-hover:scale-110 transition-transform" size={32} />
                         <span className="font-bold text-emerald-700 dark:text-emerald-400">Importar Entrada</span>
                     </button>
-
-                    <button 
-                        onClick={() => setImportMode('SAIDA')}
-                        className="flex flex-col items-center justify-center w-48 h-32 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 border-2 border-blue-200 dark:border-blue-700 rounded-2xl transition-all gap-3 group"
-                    >
+                    <button onClick={() => setImportMode('SAIDA')} className="flex flex-col items-center justify-center w-48 h-32 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 border-2 border-blue-200 dark:border-blue-700 rounded-2xl transition-all gap-3 group">
                         <Package className="text-blue-600 group-hover:scale-110 transition-transform" size={32} />
                         <span className="font-bold text-blue-700 dark:text-blue-400">Importar Saída</span>
                     </button>
@@ -562,7 +543,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         );
     }
 
-    // 2. TELA DE UPLOAD
     if (previewData.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 h-[calc(100vh-200px)]">
@@ -570,20 +550,9 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     <button onClick={() => setImportMode(null)} className="mb-4 text-sm text-slate-400 hover:text-indigo-500 flex items-center justify-center gap-1 mx-auto">
                         <ChevronLeft size={14}/> Voltar
                     </button>
-                    
-                    <h2 className="text-xl font-bold mb-2 dark:text-white">
-                        Importar Arquivo de {importMode === 'ENTRADA' ? 'Entradas' : 'Saídas'}
-                    </h2>
-                    <p className="text-sm text-slate-500 mb-8">
-                        {importMode === 'ENTRADA' 
-                            ? 'O sistema verificará a consistência (Combustível, Pneus, Energia).' 
-                            : 'O sistema aplicará regras de estoque (Divisão por 1000, Fornecedor + Item).'}
-                    </p>
-
-                    <div 
-                        onClick={() => fileRef.current?.click()}
-                        className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-10 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
-                    >
+                    <h2 className="text-xl font-bold mb-2 dark:text-white">Importar Arquivo de {importMode === 'ENTRADA' ? 'Entradas' : 'Saídas'}</h2>
+                    <p className="text-sm text-slate-500 mb-8">{importMode === 'ENTRADA' ? 'O sistema verificará a consistência (Combustível, Pneus, Energia).' : 'O sistema aplicará regras de estoque.'}</p>
+                    <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-10 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                         <UploadCloud className="mx-auto text-indigo-500 mb-4" size={48} />
                         <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o TXT</p>
                         <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFileSelect} />
@@ -593,40 +562,21 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         );
     }
 
-    // 3. TELA DE VALIDAÇÃO
     return (
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 h-full flex flex-col animate-in fade-in duration-300">
             <div className="flex justify-between items-center mb-6 border-b dark:border-slate-700 pb-4">
                 <div>
-                    <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
-                        {importMode === 'ENTRADA' ? 'Validar Entradas' : 'Validar Saídas de Estoque'}
-                    </h2>
-                    <p className="text-sm text-slate-500 mt-1">
-                        Total: <strong>{stats.total}</strong> | Ignorados: <strong>{stats.skipped}</strong>
-                    </p>
+                    <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">{importMode === 'ENTRADA' ? 'Validar Entradas' : 'Validar Saídas de Estoque'}</h2>
+                    <p className="text-sm text-slate-500 mt-1">Total: <strong>{stats.total}</strong> | Ignorados: <strong>{stats.skipped}</strong></p>
                 </div>
                 <div className="flex gap-3">
-                    <button onClick={handleCancel} className="px-4 py-2 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300 font-medium">
-                        Cancelar
-                    </button>
-                    <button onClick={handleConfirm} disabled={isProcessing} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20">
-                        {isProcessing ? <Loader2 className="animate-spin"/> : <Save size={18}/>}
-                        Confirmar
-                    </button>
+                    <button onClick={handleCancel} className="px-4 py-2 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300 font-medium">Cancelar</button>
+                    <button onClick={handleConfirm} disabled={isProcessing} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20">{isProcessing ? <Loader2 className="animate-spin"/> : <Save size={18}/>} Confirmar</button>
                 </div>
             </div>
-
             <div className="flex-1 overflow-y-auto pr-2">
-                {/* Se for entrada, mostra inconsistências primeiro */}
-                {importMode === 'ENTRADA' && problematicRows.length > 0 && (
-                    <TableBlock title="Possíveis Inconsistências (Verifique)" rows={problematicRows} isProblematic={true} />
-                )}
-
-                <TableBlock 
-                    title={importMode === 'ENTRADA' ? "Itens Validados" : "Itens para Importação"} 
-                    rows={importMode === 'ENTRADA' ? cleanRows : previewData} 
-                    isProblematic={false} 
-                />
+                {importMode === 'ENTRADA' && problematicRows.length > 0 && <TableBlock title="Inconsistências (Verifique)" rows={problematicRows} isProblematic={true} />}
+                <TableBlock title={importMode === 'ENTRADA' ? "Itens Validados" : "Itens para Importação"} rows={importMode === 'ENTRADA' ? cleanRows : previewData} isProblematic={false} />
             </div>
         </div>
     );
