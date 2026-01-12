@@ -3160,6 +3160,7 @@ export default function App() {
   }, []);
 
   // --- DADOS FILTRADOS (Lógica Corrigida e Segura) ---
+  // --- DADOS FILTRADOS (CORREÇÃO FÁBRICA DE TUBOS) ---
   const filteredData = useMemo(() => {
       return transactions.filter(t => {
           // 1. FILTRO DE DATA
@@ -3189,20 +3190,31 @@ export default function App() {
           if (globalUnitFilter && globalUnitFilter !== 'ALL') {
               const cleanStr = (str) => str ? str.toLowerCase().trim() : '';
               
-              // Proteção se t.segment for undefined
+              // Remove prefixo "Segmento: " se existir
               const txUnitRaw = (t.segment && t.segment.includes(':')) ? t.segment.split(':')[1] : (t.segment || '');
               const txUnitClean = cleanStr(txUnitRaw);
 
+              // SE FOR UM GRUPO (Ex: Fábrica de Tubos)
               if (typeof BUSINESS_HIERARCHY !== 'undefined' && BUSINESS_HIERARCHY[globalUnitFilter]) {
                   const groupUnits = BUSINESS_HIERARCHY[globalUnitFilter].map(u => cleanStr(u));
-                  return groupUnits.some(groupUnit => 
-                      txUnitClean === groupUnit || 
-                      txUnitClean.includes(groupUnit) || 
-                      groupUnit.includes(txUnitClean)
-                  );
+                  
+                  return groupUnits.some(groupUnit => {
+                      // 1. Match Exato (O ideal)
+                      if (txUnitClean === groupUnit) return true;
+                      
+                      // 2. A transação contém o nome da hierarquia (ex: dados manuais com sufixo)
+                      if (txUnitClean.includes(groupUnit)) return true;
+
+                      // 3. REGRA REMOVIDA: groupUnit.includes(txUnitClean)
+                      // Isso impedia a separação correta entre "Votuporanga" e "Votuporanga (Fábrica)"
+                      return false; 
+                  });
               } else {
+                  // SE FOR UMA UNIDADE ESPECÍFICA
                   const filterRaw = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1] : globalUnitFilter;
                   const filterClean = cleanStr(filterRaw);
+                  
+                  // Aqui mantemos a flexibilidade, mas priorizamos o match exato
                   return txUnitClean === filterClean || txUnitClean.includes(filterClean);
               }
           }
