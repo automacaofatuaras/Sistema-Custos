@@ -266,34 +266,39 @@ const KpiCard = ({ title, value, icon: Icon, color, trend, reverseColor = false 
 
 const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const fileInputRef = useRef(null);
+    const [previewData, setPreviewData] = useState([]);
+    const [stats, setStats] = useState({ total: 0, skipped: 0, type: '' });
 
-    // Função auxiliar para mapear o Centro de Custo para a Unidade/Segmento do sistema
+    // Função para limpar textos (remover acentos e deixar maiúsculo para comparação)
+    const normalize = (str) => {
+        if (!str) return '';
+        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+    };
+
+    // Função auxiliar para mapear o Centro de Custo para a Unidade/Segmento
     const findSegmentByCostCenter = (ccName) => {
         if (!ccName) return 'Geral: Indefinido';
-        const searchName = ccName.toUpperCase().trim();
+        const searchName = normalize(ccName);
 
-        // Tenta encontrar nas opções de hierarquia existentes
         if (typeof BUSINESS_HIERARCHY !== 'undefined') {
             for (const [group, units] of Object.entries(BUSINESS_HIERARCHY)) {
                 for (const unit of units) {
-                    const unitUpper = unit.toUpperCase();
-                    
-                    // Lógica específica para Votuporanga vs Fábrica
-                    if (searchName.includes("FABRICA") && unitUpper.includes("FABRICA")) {
-                         return `${group}: ${unit}`;
-                    }
+                    const unitClean = normalize(unit);
 
-                    // Verifica se o nome do CC contem a unidade ou vice-versa
-                    if (searchName.includes(unitUpper) || unitUpper.includes(searchName)) {
+                    // 1. Prioridade para Fábrica (Evita confusão com Votuporanga genérico)
+                    if (searchName.includes("FABRICA") && unitClean.includes("FABRICA")) {
                         return `${group}: ${unit}`;
                     }
-                    
-                    // Mapeamentos manuais comuns
-                    if (searchName.includes("PORTO SAARA")) return "Portos de Areia: Porto Saara";
+
+                    // 2. Comparação Padrão (Nome do CC contem a Unidade ou vice-versa)
+                    // Ex: "INDUSTRIA PORTO SAARA" contém "PORTO SAARA" -> Match!
+                    if (searchName.includes(unitClean) || unitClean.includes(searchName)) {
+                        return `${group}: ${unit}`;
+                    }
                 }
             }
         }
-        return 'Geral: Outros';
+        return 'Geral: Indefinido';
     };
 
     const handleFileUpload = (event) => {
@@ -310,28 +315,30 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
     const processTXT = (content) => {
         const lines = content.split('\n');
-        if (lines.length < 2) return;
+        if (lines.length < 2) {
+            alert("Arquivo vazio ou inválido.");
+            return;
+        }
 
         // 1. Mapeamento Dinâmico de Colunas
         const headers = lines[0].split(';').map(h => h.trim().replace(/"/g, ''));
         
         const idx = {
-            TPLC: headers.indexOf('PRGER-TPLC'),   // Tipo
-            DATA: headers.indexOf('PRGER-DATA'),   // Data
-            TTEN: headers.indexOf('PRGER-TTEN'),   // Valor Total (Saída)
-            VREN: headers.indexOf('PRGER-VREN'),   // Valor Entrada
-            QTDES: headers.indexOf('PRGER-QTDES'), // Qtd Saída
-            QTDEE: headers.indexOf('PRGER-QTDEE'), // Qtd Entrada
-            NOME: headers.indexOf('PRMAT-NOME'),   // Nome Item
-            NSUB: headers.indexOf('PRMAT-NSUB'),   // Fornecedor
-            CCUS: headers.indexOf('PRMAT-CCUS'),   // Cód. Centro Custo
-            NCUS: headers.indexOf('PRMAT-NCUS')    // Nome Centro Custo
+            TPLC: headers.indexOf('PRGER-TPLC'),
+            DATA: headers.indexOf('PRGER-DATA'),
+            TTEN: headers.indexOf('PRGER-TTEN'), // Valor Saída
+            VREN: headers.indexOf('PRGER-VREN'), // Valor Entrada
+            QTDES: headers.indexOf('PRGER-QTDES'),
+            NOME: headers.indexOf('PRMAT-NOME'),
+            NSUB: headers.indexOf('PRMAT-NSUB'), // Fornecedor
+            CCUS: headers.indexOf('PRMAT-CCUS'), // Cód. CC
+            NCUS: headers.indexOf('PRMAT-NCUS')  // Nome CC
         };
 
         const newTransactions = [];
-        let skippedCount = 0; // Contador de inconsistências
+        let skippedCount = 0;
+        let detectedType = 'Indefinido';
 
-        // Começa do 1 para pular cabeçalho
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
@@ -339,28 +346,27 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             const rawCols = line.split(';');
             const cols = rawCols.map(c => c.trim().replace(/"/g, ''));
 
-            // VERIFICAÇÃO 1: Estrutura da Linha
-            if (cols.length < headers.length) {
-                skippedCount++;
-                continue;
+            // Relaxamos a verificação de colunas para evitar bloquear arquivos válidos
+            // Verificamos apenas se existe data para prosseguir
+            if (!cols[idx.DATA]) { 
+                skippedCount++; 
+                continue; 
             }
 
             const tipoLancamento = cols[idx.TPLC] ? cols[idx.TPLC].toUpperCase() : '';
             const isSaida = tipoLancamento.includes('SAIDA') || tipoLancamento.includes('SAÍDA');
             
+            if (i === 1) detectedType = isSaida ? 'Saída (Estoque)' : 'Entrada (Padrão)';
+
             // Tratamento de Data
             const dataRaw = cols[idx.DATA];
             let dateIso = '';
             if (dataRaw && dataRaw.length === 10) {
-                const [d, m, y] = dataRaw.split('/');
-                dateIso = `${y}-${m}-${d}`;
+                constParts = dataRaw.split('/');
+                if(constParts.length === 3) dateIso = `${constParts[2]}-${constParts[1]}-${constParts[0]}`;
             }
 
-            // VERIFICAÇÃO 2: Data Inválida
-            if (!dateIso) {
-                skippedCount++;
-                continue;
-            }
+            if (!dateIso) { skippedCount++; continue; }
 
             let value = 0;
             let quantity = 0;
@@ -369,51 +375,44 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             let accountPlan = '';
             let planDescription = '';
 
-            // --- LÓGICA DE SAÍDA (MOVIMENTAÇÃO) ---
+            // --- LÓGICA ---
             if (isSaida) {
-                // Valor: TTEN / 1000 (Absoluto)
+                // SAÍDA
                 const valRaw = cols[idx.TTEN];
                 if (valRaw) value = Math.abs(parseFloat(valRaw) / 1000);
-
-                // Quantidade: QTDES / 1000
+                
                 const qtdRaw = cols[idx.QTDES];
                 if (qtdRaw) quantity = parseFloat(qtdRaw) / 1000;
 
-                // Descrição Composta
                 const item = cols[idx.NOME] || 'Item Desconhecido';
-                const fornecedor = cols[idx.NSUB] || 'Fornecedor Div.';
+                const fornecedor = cols[idx.NSUB] || 'Div.';
                 description = `${fornecedor} - ${item}`;
-                
                 accountPlan = 'Movimentação de Estoque';
                 planDescription = 'Custos Variáveis';
-
-            } 
-            // --- LÓGICA DE ENTRADA (PADRÃO) ---
-            else {
-                // Valor: VREN / 1000
-                // Se VREN não existir, tenta TTEN como fallback
-                const valColIdx = idx.VREN !== -1 ? idx.VREN : idx.TTEN;
-                const valRaw = cols[valColIdx];
+            } else {
+                // ENTRADA
+                // Fallback: Se não achar VREN, tenta TTEN
+                let valRaw = idx.VREN !== -1 ? cols[idx.VREN] : cols[idx.TTEN];
                 if (valRaw) value = Math.abs(parseFloat(valRaw) / 1000);
 
                 const item = cols[idx.NOME] || 'Item';
                 description = item;
-                
                 accountPlan = 'Compra de Materiais';
                 planDescription = 'Custos Diretos';
             }
 
-            // VERIFICAÇÃO 3: Valor Zerado ou Inválido (Inconsistência)
-            if (!value || value === 0 || isNaN(value)) {
+            // Ignorar apenas se valor for zero absoluto ou NaN
+            if (!value || isNaN(value) || value === 0) {
                 skippedCount++;
                 continue;
             }
 
-            // Definição de Unidade
+            // Unidade
             const ccNome = cols[idx.NCUS];
             const segment = findSegmentByCostCenter(ccNome);
 
             newTransactions.push({
+                id: Math.random().toString(36).substr(2, 9), // ID temporário para a tabela
                 date: dateIso,
                 description: description.trim(),
                 value: value,
@@ -425,20 +424,93 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 status: isSaida ? 'paid' : 'pending',
                 quantity: quantity,
                 importSource: isSaida ? 'TXT_SAIDA' : 'TXT_ENTRADA',
-                costCenterCode: cols[idx.CCUS]
+                originalCC: ccNome // Apenas para debug visual se necessário
             });
         }
 
         if (newTransactions.length > 0) {
-            if (skippedCount > 0) {
-                alert(`Importação concluída! ${newTransactions.length} itens processados.\n\nAtenção: ${skippedCount} linhas foram ignoradas por inconsistências (valor zerado ou data inválida).`);
-            }
-            onImport(newTransactions);
+            setStats({ total: newTransactions.length, skipped: skippedCount, type: detectedType });
+            setPreviewData(newTransactions);
         } else {
-            alert("Nenhum dado válido encontrado. Verifique se o arquivo possui valores e datas corretas.");
+            alert("Nenhum dado válido encontrado.");
         }
     };
 
+    const confirmImport = () => {
+        // Remove campos temporários antes de enviar
+        const finalData = previewData.map(({ id, originalCC, ...rest }) => rest);
+        onImport(finalData);
+        setPreviewData([]);
+    };
+
+    const cancelImport = () => {
+        setPreviewData([]);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+
+    // --- TELA DE PRÉ-VISUALIZAÇÃO ---
+    if (previewData.length > 0) {
+        return (
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 h-full flex flex-col">
+                <div className="flex justify-between items-center mb-4">
+                    <div>
+                        <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
+                            <CheckCircle className="text-emerald-500"/> Validar Importação
+                        </h2>
+                        <p className="text-sm text-slate-500">
+                            Tipo detectado: <strong>{stats.type}</strong> | 
+                            Itens válidos: <strong>{stats.total}</strong> | 
+                            Ignorados (Zero/Erro): <strong>{stats.skipped}</strong>
+                        </p>
+                    </div>
+                    <div className="flex gap-3">
+                        <button onClick={cancelImport} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold border border-slate-300 transition-colors">
+                            Cancelar
+                        </button>
+                        <button onClick={confirmImport} disabled={isProcessing} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center gap-2 transition-colors">
+                            {isProcessing ? <Loader2 className="animate-spin"/> : <Save size={18}/>}
+                            Confirmar Importação
+                        </button>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-auto border rounded-lg dark:border-slate-700">
+                    <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10">
+                            <tr>
+                                <th className="p-3 text-slate-500 font-bold border-b dark:border-slate-700">Data</th>
+                                <th className="p-3 text-slate-500 font-bold border-b dark:border-slate-700">Descrição</th>
+                                <th className="p-3 text-slate-500 font-bold border-b dark:border-slate-700">Unidade (Identificada)</th>
+                                <th className="p-3 text-slate-500 font-bold border-b dark:border-slate-700">Conta</th>
+                                <th className="p-3 text-slate-500 font-bold border-b dark:border-slate-700 text-right">Valor</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y dark:divide-slate-700">
+                            {previewData.slice(0, 100).map((row) => (
+                                <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                    <tr className="p-3 dark:text-slate-300">{row.date}</tr>
+                                    <td className="p-3 dark:text-slate-300 truncate max-w-[300px]" title={row.description}>{row.description}</td>
+                                    <td className={`p-3 font-medium ${row.segment.includes('Indefinido') ? 'text-rose-500' : 'text-emerald-600'}`}>
+                                        {row.segment}
+                                        {row.segment.includes('Indefinido') && <span className="block text-[9px] text-slate-400">CC: {row.originalCC}</span>}
+                                    </td>
+                                    <td className="p-3 dark:text-slate-300">{row.accountPlan}</td>
+                                    <td className="p-3 text-right font-bold dark:text-slate-200">{row.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    {previewData.length > 100 && (
+                        <div className="p-4 text-center text-slate-500 text-xs italic bg-slate-50 dark:bg-slate-900">
+                            Exibindo apenas os primeiros 100 itens de {previewData.length}...
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // --- TELA DE UPLOAD (ESTADO INICIAL) ---
     return (
         <div className="flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 h-[calc(100vh-200px)]">
             <div className="bg-indigo-50 dark:bg-slate-900/50 p-6 rounded-full mb-6">
@@ -446,8 +518,8 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             </div>
             <h2 className="text-2xl font-bold mb-2 dark:text-white">Importação de Arquivos</h2>
             <p className="text-slate-500 dark:text-slate-400 text-center max-w-md mb-8">
-                Selecione o arquivo TXT padrão (Entrada ou Saída). <br/>
-                O sistema identificará inconsistências automaticamente.
+                Selecione o arquivo TXT (Entrada ou Saída). <br/>
+                O sistema fará uma pré-visualização antes de salvar.
             </p>
             
             <input 
@@ -466,17 +538,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 {isProcessing ? <Loader2 className="animate-spin"/> : <FileText />}
                 {isProcessing ? 'Processando...' : 'Selecionar Arquivo TXT'}
             </button>
-            
-            <div className="mt-8 grid grid-cols-2 gap-4 text-xs text-slate-400">
-                <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
-                    Entradas (Validadas)
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-rose-500 rounded-full"></div>
-                    Saídas de Estoque
-                </div>
-            </div>
         </div>
     );
 };
