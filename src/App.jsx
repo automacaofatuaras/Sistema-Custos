@@ -997,6 +997,200 @@ const UsersScreen = ({ user, myRole, showToast }) => {
     return (<div className="p-6 max-w-4xl mx-auto"><h2 className="text-2xl font-bold mb-6 dark:text-white">Gestão de Acessos</h2><div className="bg-white dark:bg-slate-800 p-6 rounded-xl shadow-sm mb-8 border dark:border-slate-700"><h3 className="font-bold mb-4 flex items-center gap-2 dark:text-white"><PlusCircle size={20}/> Cadastrar Novo Usuário</h3><div className="flex gap-4 items-end"><div className="flex-1"><label className="text-xs font-bold text-slate-500">Email</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserEmail} onChange={e=>setNewUserEmail(e.target.value)}/></div><div className="flex-1"><label className="text-xs font-bold text-slate-500">Senha Provisória</label><input className="w-full border p-2 rounded dark:bg-slate-700 dark:text-white" value={newUserPass} onChange={e=>setNewUserPass(e.target.value)}/></div><button onClick={handleCreateUser} className="bg-emerald-600 text-white px-4 py-2 rounded font-bold hover:bg-emerald-700">Criar</button></div></div><div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border dark:border-slate-700"><table className="w-full text-left"><thead className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase text-xs"><tr><th className="p-4">Email</th><th className="p-4">Permissão</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y dark:divide-slate-700">{users.map(u => (<tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="p-4 dark:text-white">{u.email}</td><td className="p-4"><select value={u.role} onChange={(e)=>handleChangeRole(u.id, e.target.value)} disabled={u.role === 'admin' && u.email === user.email} className="border rounded p-1 text-sm dark:bg-slate-900 dark:text-white"><option value="viewer">Visualizador</option><option value="editor">Editor</option><option value="admin">Administrador</option></select></td><td className="p-4">{u.email !== user.email && <button onClick={()=>handleDelete(u.id)} className="text-rose-500 hover:text-rose-700"><Trash2 size={18}/></button>}</td></tr>))}</tbody></table></div></div>);
 };
 
+const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [ccInput, setCcInput] = useState('');
+    const [selectedCCs, setSelectedCCs] = useState([]);
+    const [reportData, setReportData] = useState([]);
+    const [hasGenerated, setHasGenerated] = useState(false);
+
+    if (!isOpen) return null;
+
+    // Adiciona CC à lista ao dar Enter
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && ccInput.trim()) {
+            e.preventDefault();
+            handleAddCC();
+        }
+    };
+
+    const handleAddCC = () => {
+        if (ccInput.trim() && !selectedCCs.includes(ccInput.trim())) {
+            setSelectedCCs([...selectedCCs, ccInput.trim()]);
+            setCcInput('');
+        }
+    };
+
+    const handleRemoveCC = (cc) => {
+        setSelectedCCs(selectedCCs.filter(item => item !== cc));
+    };
+
+    const generateReport = () => {
+        if (selectedCCs.length === 0) {
+            alert("Adicione pelo menos um Centro de Custo.");
+            return;
+        }
+
+        const filtered = transactions.filter(t => {
+            // 1. Filtro de Data (Mês e Ano)
+            let tDate = new Date(t.date);
+            // Ajuste para garantir leitura correta da string YYYY-MM-DD
+            if (typeof t.date === 'string') {
+                const parts = t.date.split('-'); // 2025-12-01
+                tDate = new Date(parts[0], parts[1] - 1, parts[2]);
+            }
+
+            const matchDate = tDate.getMonth() === parseInt(selectedMonth) && tDate.getFullYear() === parseInt(selectedYear);
+            
+            // 2. Filtro de CC (Verifica se o CC da transação está na lista selecionada)
+            // Normaliza para string para evitar erro de tipo
+            const tCC = String(t.costCenterCode || '').trim();
+            const matchCC = selectedCCs.some(selected => tCC === selected || tCC.startsWith(selected)); 
+            
+            return matchDate && matchCC;
+        });
+
+        setReportData(filtered);
+        setHasGenerated(true);
+    };
+
+    const totalValue = reportData.reduce((acc, curr) => acc + curr.value, 0);
+
+    return (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700">
+                
+                {/* Header */}
+                <div className="p-6 border-b dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 rounded-t-2xl">
+                    <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
+                        <FileText className="text-indigo-500"/> Relatório de Centro de Custo
+                    </h2>
+                    <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-full transition-colors">
+                        <X size={20} className="text-slate-500"/>
+                    </button>
+                </div>
+
+                {/* Filtros */}
+                <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-4 border-b dark:border-slate-800">
+                    
+                    {/* Seleção de Data */}
+                    <div className="md:col-span-3 flex gap-2">
+                        <select 
+                            value={selectedMonth} 
+                            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"
+                        >
+                            {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (
+                                <option key={i} value={i}>{m}</option>
+                            ))}
+                        </select>
+                        <select 
+                            value={selectedYear} 
+                            onChange={(e) => setSelectedYear(Number(e.target.value))}
+                            className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"
+                        >
+                            {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                    </div>
+
+                    {/* Input de CC */}
+                    <div className="md:col-span-7">
+                        <div className="relative flex gap-2">
+                            <input 
+                                type="text" 
+                                placeholder="Digite o CC (ex: 1087) e dê Enter..." 
+                                value={ccInput}
+                                onChange={(e) => setCcInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                                className="w-full pl-4 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"
+                            />
+                            <button onClick={handleAddCC} className="bg-slate-200 dark:bg-slate-700 p-2 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors">
+                                <PlusCircle size={20} className="text-slate-600 dark:text-slate-300"/>
+                            </button>
+                        </div>
+                        {/* Lista de Selecionados */}
+                        <div className="flex flex-wrap gap-2 mt-2">
+                            {selectedCCs.map(cc => (
+                                <span key={cc} className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
+                                    {cc}
+                                    <X size={12} className="cursor-pointer hover:text-indigo-900" onClick={() => handleRemoveCC(cc)}/>
+                                </span>
+                            ))}
+                            {selectedCCs.length === 0 && <span className="text-xs text-slate-400 italic mt-1">Nenhum CC selecionado</span>}
+                        </div>
+                    </div>
+
+                    {/* Botão Gerar */}
+                    <div className="md:col-span-2">
+                        <button 
+                            onClick={generateReport}
+                            className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-indigo-500/30"
+                        >
+                            Gerar Relatório
+                        </button>
+                    </div>
+                </div>
+
+                {/* Resultados - Tabela */}
+                <div className="flex-1 overflow-y-auto p-0 bg-slate-50/50 dark:bg-slate-900/50">
+                    {!hasGenerated ? (
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                            <Search size={48} className="mb-2 opacity-20"/>
+                            <p>Selecione os filtros e clique em Gerar</p>
+                        </div>
+                    ) : (
+                        <>
+                            <table className="w-full text-left text-xs border-collapse">
+                                <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 shadow-sm z-10">
+                                    <tr>
+                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Data</th>
+                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Descrição</th>
+                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">CC</th>
+                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Unidade</th>
+                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Conta/Tipo</th>
+                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700 text-right">Valor</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y dark:divide-slate-700 bg-white dark:bg-slate-900">
+                                    {reportData.length > 0 ? (
+                                        reportData.map((row) => (
+                                            <tr key={row.id} className="hover:bg-indigo-50 dark:hover:bg-slate-800/50 transition-colors">
+                                                <td className="p-3 dark:text-slate-300 whitespace-nowrap">{row.date ? row.date.split('-').reverse().join('/') : '-'}</td>
+                                                <td className="p-3 dark:text-slate-300 truncate max-w-[250px]" title={row.description}>{row.description}</td>
+                                                <td className="p-3 font-mono text-slate-500 dark:text-slate-400">{row.costCenterCode || '-'}</td>
+                                                <td className="p-3 dark:text-slate-300 text-[10px]">{row.segment}</td>
+                                                <td className="p-3 dark:text-slate-300">{row.accountPlan || row.planDescription}</td>
+                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">{row.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan="6" className="p-8 text-center text-slate-500 italic">Nenhum lançamento encontrado para estes critérios.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </>
+                    )}
+                </div>
+
+                {/* Footer com Totais */}
+                {hasGenerated && (
+                    <div className="p-4 bg-white dark:bg-slate-900 border-t dark:border-slate-800 flex justify-between items-center">
+                        <div className="text-sm text-slate-500">
+                            Registros: <strong>{reportData.length}</strong>
+                        </div>
+                        <div className="text-lg font-bold text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-lg border dark:border-slate-700">
+                            Total: <span className="text-indigo-600 dark:text-indigo-400">{totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
     // Estado inicial seguro
     const [form, setForm] = useState({ 
@@ -3162,6 +3356,7 @@ export default function App() {
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [showCCReportModal, setShowCCReportModal] = useState(false);
   
   // NOVOS ESTADOS PARA A ABA LANÇAMENTOS
   const [lancamentosSearch, setLancamentosSearch] = useState('');
@@ -3520,15 +3715,32 @@ export default function App() {
         {activeTab === 'lancamentos' && (
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden border dark:border-slate-700">
              <div className="p-6 border-b dark:border-slate-700 flex flex-col gap-4">
-                 <div className="flex justify-between items-center">
-                    <div className="flex gap-4 items-center">
-                        <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
-                        {selectedIds.length > 0 && userRole === 'admin' && (
-                            <button onClick={handleBatchDelete} className="bg-rose-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-rose-700 transition-colors">
-                                Excluir ({selectedIds.length})
-                            </button>
-                        )}
-                    </div>
+                 <div className="flex justify-between items-center flex-wrap gap-4">
+                <div className="flex gap-4 items-center">
+                    <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
+                    {selectedIds.length > 0 && userRole === 'admin' && (
+                        <button onClick={handleBatchDelete} className="bg-rose-600 text-white px-3 py-1 rounded text-sm font-bold hover:bg-rose-700 transition-colors">
+                            Excluir ({selectedIds.length})
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex gap-2">
+                    {/* NOVO BOTÃO DE RELATÓRIO CC */}
+                    <button 
+                        onClick={() => setShowCCReportModal(true)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors"
+                    >
+                        <FileText size={18} /> Relatório CC
+                    </button>
+
+                    {['admin', 'editor'].includes(userRole) && (
+                        <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors">
+                            <PlusCircle size={18} /> Novo Lançamento
+                        </button>
+                    )}
+                </div>
+             </div>
                     {['admin', 'editor'].includes(userRole) && <button onClick={() => {setEditingTx(null); setShowEntryModal(true);}} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"><PlusCircle size={18} /> Novo Lançamento</button>}
                  </div>
                  <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border dark:border-slate-700">
