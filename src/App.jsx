@@ -328,7 +328,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         
         // 1. Identificação do Cabeçalho (Suporta Entrada e Saída)
         for(let i=0; i < lines.length; i++) {
-            // Verifica colunas chave de Entrada ou Saída
+            [cite_start]// Verifica colunas chave de Entrada ou Saída [cite: 100]
             if (lines[i].includes('PRGER-CCUS') || lines[i].includes('PRMAT-CCUS') || lines[i].includes('PRGER-TPLC')) {
                 headerIndex = i;
                 const cols = lines[i].replace(/"/g, '').split(';');
@@ -348,9 +348,11 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             const cleanLine = line.replace(/"/g, '');
             const cols = cleanLine.split(';');
             
-            // Identifica se é Saída
-            const reportType = cols[colMap['PRGER-TPLC']]?.trim();
-            const isOutputReport = reportType === 'Saída' || reportType === 'SAIDA';
+            // Identificação Robusta do Tipo de Relatório (Remove acentos e espaços extras)
+            // Ex: "Saida  " vira "SAIDA"
+            const rawType = cols[colMap['PRGER-TPLC']]?.trim().toUpperCase() || '';
+            // Verifica se contém SAIDA (com ou sem acento, o toUpperCase normaliza a maioria, mas garantimos com includes)
+            const isOutputReport = rawType.includes('SAIDA') || rawType.includes('SAÍDA');
 
             // ------------------------------------------------------------------
             // CENÁRIO A: RELATÓRIO DE SAÍDA (MOVIMENTAÇÃO DE ESTOQUE)
@@ -368,10 +370,10 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 
                 if (!ccCode || !rawValue) continue;
 
-                // Converte Valor: Remove zeros à esquerda (parseFloat resolve) e divide por 1000
+                // Converte Valor: Remove zeros, divide por 1000 e pega valor absoluto (Math.abs) pois o TXT traz negativo
                 let value = parseFloat(rawValue);
                 if (isNaN(value)) value = 0;
-                value = value / 1000;
+                value = Math.abs(value / 1000); [cite_start]// [cite: 100] Ex: -000000003800 -> 3.8
 
                 // Data
                 let isoDate = new Date().toISOString().split('T')[0];
@@ -408,7 +410,12 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             // CENÁRIO B: RELATÓRIO DE ENTRADA (Lógica Original)
             // ------------------------------------------------------------------
             
+            // Só tenta ler PRGER-CCUS se NÃO for saída, para evitar erros
             const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
+            
+            // Se não encontrou código de custo no padrão entrada, pula linha
+            if (!ccCode) continue;
+
             const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
             const planCode = cols[colMap['PRGER-PLAN']]?.trim();
             const planDesc = cols[colMap['PRGER-NPLC']]?.trim();
@@ -417,7 +424,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             const ccDesc = cols[colMap['PRGER-NCCU']]?.trim() || '';
             let sortDesc = cols[colMap['PR-SORT']]?.trim();
 
-            if (!ccCode || !rawValue) continue;
+            if (!rawValue) continue;
             
             // Valor original: divide por 100
             rawValue = rawValue.replace(/\./g, '').replace(',', '.');
@@ -438,7 +445,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             // ------------------------------------------------------------------
             if (['01087', '1087', '01089', '1089', '99911'].includes(ccCode)) {
                 const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-                // O valor total é dividido em 8 cotas "virtuais"
                 const shareValue = value / 8;
                 const baseObj = {
                     date: safeDateWithTime, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
