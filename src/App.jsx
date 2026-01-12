@@ -265,350 +265,218 @@ const KpiCard = ({ title, value, icon: Icon, color, trend, reverseColor = false 
 };
 
 const AutomaticImportComponent = ({ onImport, isProcessing }) => {
-    const [fileText, setFileText] = useState('');
-    const [previewData, setPreviewData] = useState([]);
-    const fileRef = useRef(null);
+    const fileInputRef = useRef(null);
 
-    // --- REGRAS DE INCONSISTÊNCIA ---
-    const analyzeConsistency = (row) => {
-        const issues = [];
-        const desc = (row.description || "") + " " + (row.materialDescription || "");
-        const descLower = desc.toLowerCase();
-        const plan = (row.planDescription || "").toLowerCase();
-        const code = row.accountPlan || "";
-        
-        // Regra 1: Palavras-chave vs Classe
-        if (descLower.includes('diesel') || descLower.includes('combustivel')) {
-            if (!plan.includes('combustível') && !plan.includes('veículos') && !code.includes('03.07')) issues.push("Item parece Combustível, mas classe difere.");
-        }
-        if (descLower.includes('pneu') || descLower.includes('manuten') || descLower.includes('peça')) {
-            if (!plan.includes('manutenção') && !code.includes('03.05')) issues.push("Item parece Manutenção, mas classe difere.");
-        }
-        if (descLower.includes('energia') || descLower.includes('eletrica')) {
-            if (!plan.includes('energia') && !plan.includes('administrativa')) issues.push("Item parece Energia, verifique a classe.");
-        }
+    // Função auxiliar para mapear o Centro de Custo para a Unidade/Segmento do sistema
+    const findSegmentByCostCenter = (ccName) => {
+        if (!ccName) return 'Geral: Indefinido';
+        const searchName = ccName.toUpperCase().trim();
 
-        // Regra 2: Coerência CC (Local) vs Classe (Tipo)
-        const ccCode = parseInt(row.costCenter.split(' ')[0]);
-        // Garante que ADMIN_CC_CODES esteja disponível no escopo
-        const isAdminCC = typeof ADMIN_CC_CODES !== 'undefined' ? ADMIN_CC_CODES.includes(ccCode) : false;
-        const isCostClass = code.startsWith('03'); // Custos Operacionais
-        const isExpClass = code.startsWith('04');  // Despesas Adm
+        // Tenta encontrar nas opções de hierarquia existentes
+        if (typeof BUSINESS_HIERARCHY !== 'undefined') {
+            for (const [group, units] of Object.entries(BUSINESS_HIERARCHY)) {
+                for (const unit of units) {
+                    const unitUpper = unit.toUpperCase();
+                    
+                    // Lógica específica para Votuporanga vs Fábrica
+                    if (searchName.includes("FABRICA") && unitUpper.includes("FABRICA")) {
+                         return `${group}: ${unit}`;
+                    }
 
-        if (isAdminCC && isCostClass) {
-            issues.push("Alerta: Custo Operacional lançado em Centro de Custo Administrativo.");
+                    // Verifica se o nome do CC contem a unidade ou vice-versa
+                    if (searchName.includes(unitUpper) || unitUpper.includes(searchName)) {
+                        return `${group}: ${unit}`;
+                    }
+                    
+                    // Mapeamentos manuais comuns
+                    if (searchName.includes("PORTO SAARA")) return "Portos de Areia: Porto Saara";
+                }
+            }
         }
-        if (!isAdminCC && isExpClass && !plan.includes('rateio')) {
-            issues.push("Alerta: Despesa Administrativa lançada em Centro de Custo Operacional.");
-        }
-
-        return issues;
+        return 'Geral: Outros';
     };
 
-    const handleFile = (e) => {
-        const file = e.target.files[0];
+    const handleFileUpload = (event) => {
+        const file = event.target.files[0];
         if (!file) return;
+
         const reader = new FileReader();
-        reader.onload = (evt) => {
-            const text = evt.target.result;
-            setFileText(text);
-            parseAndPreview(text);
+        reader.onload = (e) => {
+            const text = e.target.result;
+            processTXT(text);
         };
         reader.readAsText(file, 'ISO-8859-1'); 
     };
 
-    const parseAndPreview = (text) => {
-        const lines = text.split('\n');
-        let headerIndex = -1;
-        let colMap = {};
+    const processTXT = (content) => {
+        const lines = content.split('\n');
+        if (lines.length < 2) return;
+
+        // 1. Mapeamento Dinâmico de Colunas
+        const headers = lines[0].split(';').map(h => h.trim().replace(/"/g, ''));
         
-        for(let i=0; i < lines.length; i++) {
-            if (lines[i].includes('PRGER-CCUS')) {
-                headerIndex = i;
-                const cols = lines[i].replace(/"/g, '').split(';');
-                cols.forEach((col, idx) => { colMap[col.trim()] = idx; });
-                break;
-            }
-        }
+        const idx = {
+            TPLC: headers.indexOf('PRGER-TPLC'),   // Tipo
+            DATA: headers.indexOf('PRGER-DATA'),   // Data
+            TTEN: headers.indexOf('PRGER-TTEN'),   // Valor Total (Saída)
+            VREN: headers.indexOf('PRGER-VREN'),   // Valor Entrada
+            QTDES: headers.indexOf('PRGER-QTDES'), // Qtd Saída
+            QTDEE: headers.indexOf('PRGER-QTDEE'), // Qtd Entrada
+            NOME: headers.indexOf('PRMAT-NOME'),   // Nome Item
+            NSUB: headers.indexOf('PRMAT-NSUB'),   // Fornecedor
+            CCUS: headers.indexOf('PRMAT-CCUS'),   // Cód. Centro Custo
+            NCUS: headers.indexOf('PRMAT-NCUS')    // Nome Centro Custo
+        };
 
-        if (headerIndex === -1) return alert("ERRO: Cabeçalho 'PRGER-CCUS' não encontrado.");
+        const newTransactions = [];
+        let skippedCount = 0; // Contador de inconsistências
 
-        const parsed = [];
-        for(let i = headerIndex + 1; i < lines.length; i++) {
+        // Começa do 1 para pular cabeçalho
+        for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            const cleanLine = line.replace(/"/g, ''); 
-            const cols = cleanLine.split(';');
-            
-            const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
-            const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
-            const planCode = cols[colMap['PRGER-PLAN']]?.trim();
-            const planDesc = cols[colMap['PRGER-NPLC']]?.trim();
-            const supplier = cols[colMap['PRGER-NFOR']]?.trim() || 'Diversos';
-            let rawValue = cols[colMap['PRGER-TOTA']]?.trim();
-            const ccDesc = cols[colMap['PRGER-NCCU']]?.trim() || '';
-            let sortDesc = cols[colMap['PR-SORT']]?.trim();
 
-            if (!ccCode || !rawValue) continue;
-            
-            rawValue = rawValue.replace(/\./g, '').replace(',', '.');
-            let value = parseFloat(rawValue) / 100;
+            const rawCols = line.split(';');
+            const cols = rawCols.map(c => c.trim().replace(/"/g, ''));
 
-            if (isNaN(value) || value === 0) continue;
-
-            let isoDate = new Date().toISOString().split('T')[0];
-            if (dateStr && dateStr.length === 10) {
-                const parts = dateStr.split('/');
-                if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            // VERIFICAÇÃO 1: Estrutura da Linha
+            if (cols.length < headers.length) {
+                skippedCount++;
+                continue;
             }
-            const safeDateWithTime = `${isoDate}T12:00:00`;
 
-            if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
-
-            // ------------------------------------------------------------------
-            // NOVA LÓGICA DE RATEIO (PORTOS E PEDREIRAS)
-            // ------------------------------------------------------------------
-            if (['01087', '1087', '01089', '1089', '99911'].includes(ccCode)) {
-                
-                const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-
-                // O valor total é dividido em 8 cotas "virtuais"
-                const shareValue = value / 8;
-
-                const baseObj = {
-                    date: safeDateWithTime, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
-                    planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
-                    type: currentType, source: 'automatic_import', createdAt: new Date().toISOString()
-                };
-
-                // 1. REGRAS DOS PORTOS (Cota dividida por 2 entre as duas unidades)
-                const portoSplit = shareValue / 2;
-                parsed.push({ ...baseObj, id: `${i}_porto1`, value: portoSplit, segment: "Porto de Areia Saara - Mira Estrela" });
-                parsed.push({ ...baseObj, id: `${i}_porto2`, value: portoSplit, segment: "Porto Agua Amarela - Riolândia" });
-
-                // 2. REGRA DAS PEDREIRAS (1 Cota cheia para cada uma das 6 unidades)
-                const pedreiraUnits = BUSINESS_HIERARCHY["Pedreiras"];
-                if (pedreiraUnits) {
-                    pedreiraUnits.forEach((unit, idx) => {
-                        parsed.push({ 
-                            ...baseObj, 
-                            id: `${i}_ped_${idx}`, // ID único para evitar erros de key
-                            value: shareValue, // Recebe a cota inteira (divisão por 8)
-                            segment: unit 
-                        });
-                    });
-                }
-                
-                continue; // Pula o fluxo normal abaixo
-            }
-            // ------------------------------------------------------------------
-
-            const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
+            const tipoLancamento = cols[idx.TPLC] ? cols[idx.TPLC].toUpperCase() : '';
+            const isSaida = tipoLancamento.includes('SAIDA') || tipoLancamento.includes('SAÍDA');
             
-            const detectedUnit = getUnitByCostCenter(ccCode);
-            const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
+            // Tratamento de Data
+            const dataRaw = cols[idx.DATA];
+            let dateIso = '';
+            if (dataRaw && dataRaw.length === 10) {
+                const [d, m, y] = dataRaw.split('/');
+                dateIso = `${y}-${m}-${d}`;
+            }
 
-            parsed.push({
-                id: i, // ID temporário para controle
-                date: safeDateWithTime,
-                segment: finalSegment,
-                costCenter: `${ccCode} - ${ccDesc}`,
-                accountPlan: planCode || '00.00',
-                planDescription: planDesc || 'Indefinido',
-                description: supplier, 
-                materialDescription: sortDesc, 
+            // VERIFICAÇÃO 2: Data Inválida
+            if (!dateIso) {
+                skippedCount++;
+                continue;
+            }
+
+            let value = 0;
+            let quantity = 0;
+            let description = '';
+            let type = 'expense';
+            let accountPlan = '';
+            let planDescription = '';
+
+            // --- LÓGICA DE SAÍDA (MOVIMENTAÇÃO) ---
+            if (isSaida) {
+                // Valor: TTEN / 1000 (Absoluto)
+                const valRaw = cols[idx.TTEN];
+                if (valRaw) value = Math.abs(parseFloat(valRaw) / 1000);
+
+                // Quantidade: QTDES / 1000
+                const qtdRaw = cols[idx.QTDES];
+                if (qtdRaw) quantity = parseFloat(qtdRaw) / 1000;
+
+                // Descrição Composta
+                const item = cols[idx.NOME] || 'Item Desconhecido';
+                const fornecedor = cols[idx.NSUB] || 'Fornecedor Div.';
+                description = `${fornecedor} - ${item}`;
+                
+                accountPlan = 'Movimentação de Estoque';
+                planDescription = 'Custos Variáveis';
+
+            } 
+            // --- LÓGICA DE ENTRADA (PADRÃO) ---
+            else {
+                // Valor: VREN / 1000
+                // Se VREN não existir, tenta TTEN como fallback
+                const valColIdx = idx.VREN !== -1 ? idx.VREN : idx.TTEN;
+                const valRaw = cols[valColIdx];
+                if (valRaw) value = Math.abs(parseFloat(valRaw) / 1000);
+
+                const item = cols[idx.NOME] || 'Item';
+                description = item;
+                
+                accountPlan = 'Compra de Materiais';
+                planDescription = 'Custos Diretos';
+            }
+
+            // VERIFICAÇÃO 3: Valor Zerado ou Inválido (Inconsistência)
+            if (!value || value === 0 || isNaN(value)) {
+                skippedCount++;
+                continue;
+            }
+
+            // Definição de Unidade
+            const ccNome = cols[idx.NCUS];
+            const segment = findSegmentByCostCenter(ccNome);
+
+            newTransactions.push({
+                date: dateIso,
+                description: description.trim(),
                 value: value,
                 type: type,
-                source: 'automatic_import',
-                createdAt: new Date().toISOString()
+                segment: segment,
+                accountPlan: accountPlan,
+                planDescription: planDescription,
+                paymentMethod: isSaida ? 'Estoque' : 'Boleto',
+                status: isSaida ? 'paid' : 'pending',
+                quantity: quantity,
+                importSource: isSaida ? 'TXT_SAIDA' : 'TXT_ENTRADA',
+                costCenterCode: cols[idx.CCUS]
             });
         }
-        setPreviewData(parsed);
-    };
 
-    // Função para alterar dados na tabela
-    const handleEditRow = (id, field, value) => {
-        setPreviewData(prev => prev.map(row => {
-            if (row.id !== id) return row;
-            
-            const updatedRow = { ...row, [field]: value };
-
-            // Se alterou o código da conta, atualiza descrição
-            if (field === 'accountPlan') {
-                const found = PLANO_CONTAS.find(p => p.code === value);
-                if (found) updatedRow.planDescription = found.name;
+        if (newTransactions.length > 0) {
+            if (skippedCount > 0) {
+                alert(`Importação concluída! ${newTransactions.length} itens processados.\n\nAtenção: ${skippedCount} linhas foram ignoradas por inconsistências (valor zerado ou data inválida).`);
             }
-
-            // Se alterou o Centro de Custo, tenta atualizar a Unidade automaticamente
-            if (field === 'costCenter') {
-                // Tenta extrair apenas o número caso o usuário digite texto junto
-                const cleanCode = value.split(' ')[0];
-                const newUnit = getUnitByCostCenter(cleanCode);
-                if (newUnit) updatedRow.segment = newUnit;
-            }
-
-            return updatedRow;
-        }));
-    };
-
-    const handleConfirmImport = () => {
-        if (previewData.length === 0) return alert("Nenhum dado válido.");
-        
-        // --- CORREÇÃO: Remove o 'id' temporário (usado só na tabela) antes de salvar ---
-        const dataToImport = previewData.map(({ id, ...rest }) => rest);
-        
-        onImport(dataToImport);
-        setFileText(''); setPreviewData([]);
-    };
-
-    // SEPARAÇÃO DOS DADOS
-    const problematicRows = previewData.filter(row => analyzeConsistency(row).length > 0);
-    const cleanRows = previewData.filter(row => analyzeConsistency(row).length === 0);
-
-    const TableBlock = ({ title, rows, isProblematic }) => {
-        if (rows.length === 0) return null;
-        return (
-            <div className={`mb-8 rounded-xl border overflow-hidden ${isProblematic ? 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/10' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'}`}>
-                <div className={`p-4 font-bold flex items-center justify-between ${isProblematic ? 'text-amber-700 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-500' : 'text-slate-700 bg-slate-50 dark:bg-slate-900 dark:text-slate-300'}`}>
-                    <div className="flex items-center gap-2">
-                        {isProblematic ? <AlertTriangle size={20}/> : <CheckCircle size={20}/>}
-                        {title}
-                    </div>
-                    <span className="text-xs px-2 py-1 rounded bg-white/50">{rows.length} itens</span>
-                </div>
-                <div className="overflow-x-auto max-h-[400px]">
-                    <table className="w-full text-xs text-left">
-                        <thead className={`sticky top-0 z-10 ${isProblematic ? 'bg-amber-100/50' : 'bg-slate-100 dark:bg-slate-900'}`}>
-                            <tr>
-                                <th className="p-3">Data</th>
-                                <th className="p-3 w-1/4">Descrição</th>
-                                <th className="p-3">Centro de Custo (Editável)</th>
-                                <th className="p-3">Unidade (Automático)</th>
-                                <th className="p-3">Conta (Editável)</th>
-                                <th className="p-3 text-right">Valor</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                            {rows.map((row) => {
-                                const issues = analyzeConsistency(row);
-                                return (
-                                    <tr key={row.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                                        <td className="p-2 whitespace-nowrap text-slate-500">{formatDate(row.date)}</td>
-                                        
-                                        <td className="p-2">
-                                            <div className="font-bold text-slate-700 dark:text-slate-200">{row.description}</div>
-                                            <div className="text-[10px] text-slate-400">{row.materialDescription}</div>
-                                            {isProblematic && issues.map((issue, idx) => (
-                                                <div key={idx} className="mt-1 text-[10px] font-bold text-amber-600 flex items-center gap-1">
-                                                    <AlertTriangle size={10}/> {issue}
-                                                </div>
-                                            ))}
-                                        </td>
-
-                                        <td className="p-2">
-                                            {/* EDIÇÃO DO CENTRO DE CUSTO */}
-                                            <input 
-                                                className={`w-full bg-transparent border-b border-dashed outline-none text-xs py-1 ${isProblematic ? 'border-amber-400 focus:border-amber-600' : 'border-slate-300 focus:border-indigo-500'} dark:text-slate-300`}
-                                                value={row.costCenter}
-                                                onChange={(e) => handleEditRow(row.id, 'costCenter', e.target.value)}
-                                            />
-                                        </td>
-
-                                        <td className="p-2">
-                                            {/* UNIDADE AGORA É APENAS LEITURA (AUTOMÁTICA) */}
-                                            <div className="text-slate-600 dark:text-slate-400 italic">
-                                                {row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}
-                                            </div>
-                                        </td>
-
-                                        <td className="p-2">
-                                            <select 
-                                                className={`w-full bg-transparent border rounded px-1 py-1 text-xs outline-none cursor-pointer ${issues.length > 0 ? 'border-amber-400 text-amber-700 font-bold' : 'border-slate-200 text-slate-600 dark:text-slate-300 dark:border-slate-600'}`}
-                                                value={row.accountPlan}
-                                                onChange={(e) => handleEditRow(row.id, 'accountPlan', e.target.value)}
-                                            >
-                                                <option value={row.accountPlan}>{row.accountPlan} - {row.planDescription} (Original)</option>
-                                                {typeof PLANO_CONTAS !== 'undefined' && PLANO_CONTAS.map(p => (
-                                                    <option key={p.code} value={p.code}>{p.code} - {p.name}</option>
-                                                ))}
-                                            </select>
-                                        </td>
-
-                                        <td className={`p-2 text-right font-bold whitespace-nowrap ${row.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                            {row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        );
+            onImport(newTransactions);
+        } else {
+            alert("Nenhum dado válido encontrado. Verifique se o arquivo possui valores e datas corretas.");
+        }
     };
 
     return (
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
+        <div className="flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 h-[calc(100vh-200px)]">
+            <div className="bg-indigo-50 dark:bg-slate-900/50 p-6 rounded-full mb-6">
+                <UploadCloud size={64} className="text-indigo-500" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2 dark:text-white">Importação de Arquivos</h2>
+            <p className="text-slate-500 dark:text-slate-400 text-center max-w-md mb-8">
+                Selecione o arquivo TXT padrão (Entrada ou Saída). <br/>
+                O sistema identificará inconsistências automaticamente.
+            </p>
             
-            {/* --- 1. CABEÇALHO (Título + Botões) --- */}
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="font-bold text-lg dark:text-white">Auditoria e Importação</h3>
-                
-                {previewData.length > 0 && (
-                    <div className="flex gap-3">
-                        <button 
-                            onClick={() => { setPreviewData([]); setFileText(''); }}
-                            className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-colors"
-                        >
-                            Cancelar
-                        </button>
-
-                        <button 
-                            onClick={handleConfirmImport} 
-                            disabled={isProcessing} 
-                            className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all text-white
-                                ${problematicRows.length > 0 
-                                    ? 'bg-amber-500 hover:bg-amber-600' 
-                                    : 'bg-emerald-600 hover:bg-emerald-700'
-                                }`}
-                        >
-                            {isProcessing ? <Loader2 className="animate-spin"/> : (problematicRows.length > 0 ? <AlertTriangle size={18}/> : <CheckCircle size={18}/>)} 
-                            
-                            {problematicRows.length > 0 
-                                ? `Importar com ${problematicRows.length} Avisos` 
-                                : 'Confirmar Importação'}
-                        </button>
-                    </div>
-                )}
-            </div> 
-
-            {/* --- 2. ÁREA DE UPLOAD (Se não houver dados) --- */}
-            {previewData.length === 0 && (
-                <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
-                    <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
-                    <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
-                    <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
+            <input 
+                type="file" 
+                ref={fileInputRef}
+                accept=".txt,.csv"
+                onChange={handleFileUpload}
+                className="hidden" 
+            />
+            
+            <button 
+                onClick={() => fileInputRef.current.click()} 
+                disabled={isProcessing}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-xl font-bold text-lg flex items-center gap-3 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                {isProcessing ? <Loader2 className="animate-spin"/> : <FileText />}
+                {isProcessing ? 'Processando...' : 'Selecionar Arquivo TXT'}
+            </button>
+            
+            <div className="mt-8 grid grid-cols-2 gap-4 text-xs text-slate-400">
+                <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                    Entradas (Validadas)
                 </div>
-            )}
-
-            {/* --- 3. TABELAS DE DADOS (Se houver dados) --- */}
-            {previewData.length > 0 && (
-                <div className="animate-in fade-in space-y-6">
-                    {/* BLOCO DE ERROS (SEMPRE NO TOPO) */}
-                    <TableBlock 
-                        title="Inconsistências Encontradas (Verifique C. Custo e Conta)" 
-                        rows={problematicRows} 
-                        isProblematic={true} 
-                    />
-
-                    {/* BLOCO DE ITENS CORRETOS */}
-                    <TableBlock 
-                        title="Itens Validados" 
-                        rows={cleanRows} 
-                        isProblematic={false} 
-                    />
+                <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-rose-500 rounded-full"></div>
+                    Saídas de Estoque
                 </div>
-            )}
+            </div>
         </div>
     );
 };
