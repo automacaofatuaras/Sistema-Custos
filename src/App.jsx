@@ -271,12 +271,15 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
     // --- REGRAS DE INCONSISTÊNCIA ---
     const analyzeConsistency = (row) => {
+        // NOVA REGRA: Ignora validações de classe para Movimentação de Estoque
+        if (row.accountPlan === 'MOV.EST') return [];
+
         const issues = [];
         const desc = (row.description || "") + " " + (row.materialDescription || "");
         const descLower = desc.toLowerCase();
         const plan = (row.planDescription || "").toLowerCase();
         const code = row.accountPlan || "";
-        
+
         // Regra 1: Palavras-chave vs Classe
         if (descLower.includes('diesel') || descLower.includes('combustivel')) {
             if (!plan.includes('combustível') && !plan.includes('veículos') && !code.includes('03.07')) issues.push("Item parece Combustível, mas classe difere.");
@@ -293,7 +296,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         // Garante que ADMIN_CC_CODES esteja disponível no escopo
         const isAdminCC = typeof ADMIN_CC_CODES !== 'undefined' ? ADMIN_CC_CODES.includes(ccCode) : false;
         const isCostClass = code.startsWith('03'); // Custos Operacionais
-        const isExpClass = code.startsWith('04');  // Despesas Adm
+        const isExpClass = code.startsWith('04'); // Despesas Adm
 
         if (isAdminCC && isCostClass) {
             issues.push("Alerta: Custo Operacional lançado em Centro de Custo Administrativo.");
@@ -308,6 +311,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const handleFile = (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
         const reader = new FileReader();
         reader.onload = (evt) => {
             const text = evt.target.result;
@@ -322,8 +326,10 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         let headerIndex = -1;
         let colMap = {};
         
+        // 1. Identificação do Cabeçalho (Suporta Entrada e Saída)
         for(let i=0; i < lines.length; i++) {
-            if (lines[i].includes('PRGER-CCUS')) {
+            // Verifica colunas chave de Entrada ou Saída
+            if (lines[i].includes('PRGER-CCUS') || lines[i].includes('PRMAT-CCUS') || lines[i].includes('PRGER-TPLC')) {
                 headerIndex = i;
                 const cols = lines[i].replace(/"/g, '').split(';');
                 cols.forEach((col, idx) => { colMap[col.trim()] = idx; });
@@ -331,14 +337,76 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             }
         }
 
-        if (headerIndex === -1) return alert("ERRO: Cabeçalho 'PRGER-CCUS' não encontrado.");
+        if (headerIndex === -1) return alert("ERRO: Cabeçalho 'PRGER-CCUS' ou 'PRMAT-CCUS' não encontrado.");
 
         const parsed = [];
+        
+        // 2. Processamento das Linhas
         for(let i = headerIndex + 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            const cleanLine = line.replace(/"/g, ''); 
+            const cleanLine = line.replace(/"/g, '');
             const cols = cleanLine.split(';');
+            
+            // Identifica se é Saída
+            const reportType = cols[colMap['PRGER-TPLC']]?.trim();
+            const isOutputReport = reportType === 'Saída' || reportType === 'SAIDA';
+
+            // ------------------------------------------------------------------
+            // CENÁRIO A: RELATÓRIO DE SAÍDA (MOVIMENTAÇÃO DE ESTOQUE)
+            // ------------------------------------------------------------------
+            if (isOutputReport) {
+                const ccCode = cols[colMap['PRMAT-CCUS']]?.trim();       
+                const ccDesc = cols[colMap['PRMAT-NCUS']]?.trim() || ''; 
+                const rawDate = cols[colMap['PRGER-DATA']]?.trim();      
+                const supplier = cols[colMap['PRMAT-NSUB']]?.trim();     // Fornecedor/Sub
+                const description = cols[colMap['PRMAT-NOME']]?.trim();  // Descrição do Item
+                
+                // Colunas numéricas com zeros à esquerda
+                const rawValue = cols[colMap['PRGER-TTEN']]?.trim();     
+                const rawQtd = cols[colMap['PRGER-QTDES']]?.trim();      
+                
+                if (!ccCode || !rawValue) continue;
+
+                // Converte Valor: Remove zeros à esquerda (parseFloat resolve) e divide por 1000
+                let value = parseFloat(rawValue);
+                if (isNaN(value)) value = 0;
+                value = value / 1000;
+
+                // Data
+                let isoDate = new Date().toISOString().split('T')[0];
+                if (rawDate && rawDate.length === 10) {
+                    const parts = rawDate.split('/'); // DD/MM/YYYY
+                    if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                }
+                const safeDateWithTime = `${isoDate}T12:00:00`;
+
+                // Unidade
+                const detectedUnit = getUnitByCostCenter(ccCode);
+                const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
+
+                parsed.push({
+                    id: i,
+                    date: safeDateWithTime,
+                    segment: finalSegment,
+                    costCenter: `${ccCode} - ${ccDesc}`,
+                    accountPlan: 'MOV.EST', // Código fixo
+                    planDescription: 'Movimentação de Estoque', // Descrição fixa
+                    description: supplier || 'Estoque', // Coluna PRMAT-NSUB
+                    materialDescription: description,   // Coluna PRMAT-NOME
+                    value: value,
+                    quantity: parseFloat(rawQtd) / 1000, // Armazena quantidade tratada
+                    type: 'expense', // Saída de estoque tratada como despesa/custo
+                    source: 'automatic_import',
+                    createdAt: new Date().toISOString()
+                });
+                
+                continue; // Pula para a próxima linha
+            }
+
+            // ------------------------------------------------------------------
+            // CENÁRIO B: RELATÓRIO DE ENTRADA (Lógica Original)
+            // ------------------------------------------------------------------
             
             const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
             const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
@@ -351,6 +419,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             if (!ccCode || !rawValue) continue;
             
+            // Valor original: divide por 100
             rawValue = rawValue.replace(/\./g, '').replace(',', '.');
             let value = parseFloat(rawValue) / 100;
 
@@ -362,44 +431,40 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
             const safeDateWithTime = `${isoDate}T12:00:00`;
-
             if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
 
             // ------------------------------------------------------------------
-            // NOVA LÓGICA DE RATEIO (PORTOS E PEDREIRAS)
+            // LÓGICA DE RATEIO (APENAS ENTRADA - PORTOS E PEDREIRAS)
             // ------------------------------------------------------------------
             if (['01087', '1087', '01089', '1089', '99911'].includes(ccCode)) {
-                
                 const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-
                 // O valor total é dividido em 8 cotas "virtuais"
                 const shareValue = value / 8;
-
                 const baseObj = {
                     date: safeDateWithTime, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
                     planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
                     type: currentType, source: 'automatic_import', createdAt: new Date().toISOString()
                 };
-
-                // 1. REGRAS DOS PORTOS (Cota dividida por 2 entre as duas unidades)
+                
+                // 1. REGRAS DOS PORTOS
                 const portoSplit = shareValue / 2;
                 parsed.push({ ...baseObj, id: `${i}_porto1`, value: portoSplit, segment: "Porto de Areia Saara - Mira Estrela" });
                 parsed.push({ ...baseObj, id: `${i}_porto2`, value: portoSplit, segment: "Porto Agua Amarela - Riolândia" });
-
-                // 2. REGRA DAS PEDREIRAS (1 Cota cheia para cada uma das 6 unidades)
-                const pedreiraUnits = BUSINESS_HIERARCHY["Pedreiras"];
+                
+                // 2. REGRA DAS PEDREIRAS
+                const pedreiraUnits = typeof BUSINESS_HIERARCHY !== 'undefined' ? BUSINESS_HIERARCHY["Pedreiras"] : [];
                 if (pedreiraUnits) {
                     pedreiraUnits.forEach((unit, idx) => {
                         parsed.push({ 
                             ...baseObj, 
-                            id: `${i}_ped_${idx}`, // ID único para evitar erros de key
-                            value: shareValue, // Recebe a cota inteira (divisão por 8)
+                            id: `${i}_ped_${idx}`,
+                            value: shareValue, 
                             segment: unit 
                         });
                     });
                 }
                 
-                continue; // Pula o fluxo normal abaixo
+                continue;
             }
             // ------------------------------------------------------------------
 
@@ -435,13 +500,12 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
             // Se alterou o código da conta, atualiza descrição
             if (field === 'accountPlan') {
-                const found = PLANO_CONTAS.find(p => p.code === value);
+                const found = typeof PLANO_CONTAS !== 'undefined' ? PLANO_CONTAS.find(p => p.code === value) : null;
                 if (found) updatedRow.planDescription = found.name;
             }
 
             // Se alterou o Centro de Custo, tenta atualizar a Unidade automaticamente
             if (field === 'costCenter') {
-                // Tenta extrair apenas o número caso o usuário digite texto junto
                 const cleanCode = value.split(' ')[0];
                 const newUnit = getUnitByCostCenter(cleanCode);
                 if (newUnit) updatedRow.segment = newUnit;
@@ -453,10 +517,8 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
 
     const handleConfirmImport = () => {
         if (previewData.length === 0) return alert("Nenhum dado válido.");
-        
-        // --- CORREÇÃO: Remove o 'id' temporário (usado só na tabela) antes de salvar ---
+        // Remove o 'id' temporário antes de salvar
         const dataToImport = previewData.map(({ id, ...rest }) => rest);
-        
         onImport(dataToImport);
         setFileText(''); setPreviewData([]);
     };
@@ -493,7 +555,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                                 const issues = analyzeConsistency(row);
                                 return (
                                     <tr key={row.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                                        <td className="p-2 whitespace-nowrap text-slate-500">{formatDate(row.date)}</td>
+                                        <td className="p-2 whitespace-nowrap text-slate-500">{typeof formatDate === 'function' ? formatDate(row.date) : row.date}</td>
                                         
                                         <td className="p-2">
                                             <div className="font-bold text-slate-700 dark:text-slate-200">{row.description}</div>
@@ -506,7 +568,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                                         </td>
 
                                         <td className="p-2">
-                                            {/* EDIÇÃO DO CENTRO DE CUSTO */}
                                             <input 
                                                 className={`w-full bg-transparent border-b border-dashed outline-none text-xs py-1 ${isProblematic ? 'border-amber-400 focus:border-amber-600' : 'border-slate-300 focus:border-indigo-500'} dark:text-slate-300`}
                                                 value={row.costCenter}
@@ -515,9 +576,8 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                                         </td>
 
                                         <td className="p-2">
-                                            {/* UNIDADE AGORA É APENAS LEITURA (AUTOMÁTICA) */}
                                             <div className="text-slate-600 dark:text-slate-400 italic">
-                                                {row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}
+                                                {row.segment && row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}
                                             </div>
                                         </td>
 
@@ -586,7 +646,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             {previewData.length === 0 && (
                 <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
                     <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
-                    <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT</p>
+                    <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT (Entrada ou Saída)</p>
                     <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
                 </div>
             )}
