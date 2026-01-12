@@ -946,29 +946,37 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
             return;
         }
 
+        // SEGURANÇA ADICIONAL: Garante que transactions seja um array
         const safeTransactions = Array.isArray(transactions) ? transactions : [];
 
         const filtered = safeTransactions.filter(t => {
+            // PROTEÇÃO 1: Se não tiver data, ignora o item
             if (!t || !t.date) return false;
 
-            // Filtro de Data
+            // 1. Filtro de Data (Mês e Ano)
             let tDate;
             try {
+                // Tenta processar a data de forma segura
                 if (typeof t.date === 'string' && t.date.includes('-')) {
                     const parts = t.date.split('-'); 
+                    // Evita erro se o split falhar
                     if(parts.length < 3) return false;
                     tDate = new Date(parts[0], parts[1] - 1, parts[2]);
                 } else {
                     tDate = new Date(t.date);
                 }
+                
+                // Se a data for inválida, ignora
                 if (isNaN(tDate.getTime())) return false;
-            } catch (e) { return false; }
+            } catch (e) {
+                return false;
+            }
 
             const matchDate = tDate.getMonth() === parseInt(selectedMonth) && tDate.getFullYear() === parseInt(selectedYear);
             
-            // Filtro de CC (Usando 'includes' para flexibilidade: '1087' acha '01087')
+            // 2. Filtro de CC
             const tCC = String(t.costCenterCode || '').trim();
-            const matchCC = selectedCCs.some(selected => tCC.includes(selected)); 
+            const matchCC = selectedCCs.some(selected => tCC === selected || tCC.startsWith(selected)); 
             
             return matchDate && matchCC;
         });
@@ -1043,7 +1051,7 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
                                         <td className="p-3 dark:text-slate-300">{row.accountPlan || row.planDescription}</td>
                                         <td className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">{row.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                     </tr>
-                                )) : <tr><td colSpan="6" className="p-8 text-center text-slate-500 italic">Nenhum dado encontrado para os critérios selecionados.</td></tr>}
+                                )) : <tr><td colSpan="6" className="p-8 text-center text-slate-500 italic">Nenhum dado encontrado.</td></tr>}
                             </tbody>
                         </table>
                     )}
