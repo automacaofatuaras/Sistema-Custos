@@ -272,7 +272,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     // Estados para o resumo da importação
     const [stats, setStats] = useState({ total: 0, skipped: 0 });
 
-    // --- FUNÇÕES AUXILIARES (NORMALIZAÇÃO E UNIDADE) ---
+    // --- FUNÇÕES AUXILIARES ---
     const normalize = (str) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim() : '';
 
     const findSegmentByCostCenter = (ccName) => {
@@ -292,27 +292,27 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         }
         // Mapeamentos manuais de segurança
         if (searchName.includes("PORTO")) return "Portos de Areia: Porto Saara";
+        if (searchName.includes("PEDREIRA")) return "Pedreiras: Pedreira Votuporanga";
         
         return 'Geral: Indefinido';
     };
 
-    // --- LÓGICA DE CONSISTÊNCIA (Baseada no seu arquivo automaticimport.txt) ---
+    // --- LÓGICA DE CONSISTÊNCIA (ORIGINAL DO SEU ARQUIVO) ---
     const analyzeConsistency = (row) => {
         const issues = [];
-        const desc = (row.description || "") + " " + (row.materialDescription || "");
-        const descLower = desc.toLowerCase();
-        const plan = (row.accountPlan || "").toLowerCase(); // Usando o nome da conta ou descrição do plano
+        const desc = (row.description || "").toLowerCase();
+        const plan = (row.accountPlan || "").toLowerCase();
         
         // Regra 1: Combustível
-        if (descLower.includes('diesel') || descLower.includes('combustivel')) {
+        if (desc.includes('diesel') || desc.includes('combustivel')) {
             if (!plan.includes('combustível') && !plan.includes('veículos')) issues.push("Item parece Combustível, mas classe difere.");
         }
         // Regra 2: Manutenção
-        if (descLower.includes('pneu') || descLower.includes('manuten') || descLower.includes('peça')) {
+        if (desc.includes('pneu') || desc.includes('manuten') || desc.includes('peça')) {
             if (!plan.includes('manutenção') && !plan.includes('manutencao')) issues.push("Item parece Manutenção, mas classe difere.");
         }
         // Regra 3: Energia
-        if (descLower.includes('energia') || descLower.includes('eletrica')) {
+        if (desc.includes('energia') || desc.includes('eletrica')) {
             if (!plan.includes('energia')) issues.push("Item parece Energia, verifique a classe.");
         }
         
@@ -324,112 +324,126 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
-            if (importMode === 'ENTRADA') processEntrada(ev.target.result);
-            else if (importMode === 'SAIDA') processSaida(ev.target.result);
+            const content = ev.target.result;
+            if (importMode === 'ENTRADA') processEntrada(content);
+            else if (importMode === 'SAIDA') processSaida(content);
         };
-        reader.readAsText(file, 'ISO-8859-1');
-        e.target.value = ''; // Reset input
+        reader.readAsText(file, 'ISO-8859-1'); // Garante leitura de acentos
+        e.target.value = ''; 
     };
 
-    // --- PROCESSAMENTO: ENTRADA (Código Antigo/Consistência) ---
+    // --- PROCESSAMENTO: ENTRADA (BASEADO NO SEU TXT ANTIGO) ---
     const processEntrada = (content) => {
         const lines = content.split('\n');
         if (lines.length < 2) { alert("Arquivo inválido"); return; }
         
+        // Limpa aspas e espaços dos cabeçalhos
         const headers = lines[0].split(';').map(h => h.trim().replace(/"/g, ''));
+        
         const idx = {
             DATA: headers.indexOf('PRGER-DATA'),
-            VREN: headers.indexOf('PRGER-VREN'),
-            TTEN: headers.indexOf('PRGER-TTEN'),
-            NOME: headers.indexOf('PRMAT-NOME'),
-            CCUS: headers.indexOf('PRMAT-NCUS'), // Nome do CC
-            CONTA: headers.indexOf('PRMAT-NGRU') // Nome do Grupo/Conta (ajuste conforme seu TXT entrada)
+            VREN: headers.indexOf('PRGER-VREN'), // Valor Entrada (Prioritário)
+            TTEN: headers.indexOf('PRGER-TTEN'), // Valor Total (Fallback)
+            NOME: headers.indexOf('PRMAT-NOME'), // Descrição
+            CCUS: headers.indexOf('PRMAT-NCUS'), // Centro de Custo (Nome)
+            CONTA: headers.indexOf('PRMAT-NGRU') // Grupo/Conta
         };
 
         const parsed = [];
         let skipped = 0;
 
         for (let i = 1; i < lines.length; i++) {
-            const cols = lines[i].split(';').map(c => c.trim().replace(/"/g, ''));
-            if (cols.length < headers.length || !cols[idx.DATA]) continue;
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const cols = line.split(';').map(c => c.trim().replace(/"/g, ''));
+            
+            // Validação mínima: precisa ter Data e Nome
+            if (!cols[idx.DATA] || !cols[idx.NOME]) { skipped++; continue; }
 
             // Tratamento Data
             const dRaw = cols[idx.DATA];
             let dateIso = '';
             if (dRaw.length === 10) { const p = dRaw.split('/'); dateIso = `${p[2]}-${p[1]}-${p[0]}`; }
+            
             if (!dateIso) { skipped++; continue; }
 
-            // Tratamento Valor (Entrada geralmente já vem certo ou divide por 1000 dependendo da config, mantendo padrão antigo)
+            // Tratamento Valor (Entrada): Tenta VREN, se for 0 ou vazio, tenta TTEN
             let val = 0;
-            // Tenta VREN, se não TTEN
-            const valRaw = idx.VREN !== -1 ? cols[idx.VREN] : cols[idx.TTEN];
-            if (valRaw) val = Math.abs(parseFloat(valRaw) / 1000); 
+            if (idx.VREN !== -1 && cols[idx.VREN]) val = Math.abs(parseFloat(cols[idx.VREN]) / 1000);
+            
+            // Se VREN falhou, tenta TTEN
+            if (val === 0 && idx.TTEN !== -1 && cols[idx.TTEN]) val = Math.abs(parseFloat(cols[idx.TTEN]) / 1000);
 
-            if (val === 0) { skipped++; continue; }
+            if (val === 0 || isNaN(val)) { skipped++; continue; }
 
+            // Monta objeto
             const row = {
                 id: Math.random().toString(36).substr(2,9),
                 date: dateIso,
-                description: cols[idx.NOME] || 'Item',
+                description: cols[idx.NOME],
                 value: val,
                 segment: findSegmentByCostCenter(cols[idx.CCUS]),
-                accountPlan: cols[idx.CONTA] || 'Compra Materiais', // Nome da conta vindo do TXT
+                accountPlan: cols[idx.CONTA] || 'Compra de Materiais',
                 planDescription: 'Custos Diretos',
                 type: 'expense',
                 status: 'pending',
                 paymentMethod: 'Boleto',
                 importSource: 'TXT_ENTRADA',
-                issues: [] // Para análise
+                issues: []
             };
 
-            // Aplica análise de consistência
             row.issues = analyzeConsistency(row);
             parsed.push(row);
         }
         
+        if (parsed.length === 0) alert("Nenhum dado encontrado. Verifique se o arquivo é do tipo Entrada (colunas PRGER-DATA, PRGER-VREN).");
         setPreviewData(parsed);
         setStats({ total: parsed.length, skipped });
     };
 
-    // --- PROCESSAMENTO: SAÍDA (Novas Regras) ---
+    // --- PROCESSAMENTO: SAÍDA (NOVA LÓGICA DE ESTOQUE) ---
     const processSaida = (content) => {
         const lines = content.split('\n');
         const headers = lines[0].split(';').map(h => h.trim().replace(/"/g, ''));
         
         const idx = {
             DATA: headers.indexOf('PRGER-DATA'),
-            TTEN: headers.indexOf('PRGER-TTEN'), // Valor
-            QTDES: headers.indexOf('PRGER-QTDES'), // Qtd
-            NOME: headers.indexOf('PRMAT-NOME'),
-            NSUB: headers.indexOf('PRMAT-NSUB'), // Fornecedor
-            NCUS: headers.indexOf('PRMAT-NCUS')  // CC
+            TTEN: headers.indexOf('PRGER-TTEN'), // Valor Saída
+            QTDES: headers.indexOf('PRGER-QTDES'), // Quantidade
+            NOME: headers.indexOf('PRMAT-NOME'),   // Item
+            NSUB: headers.indexOf('PRMAT-NSUB'),   // Fornecedor
+            NCUS: headers.indexOf('PRMAT-NCUS')    // Centro de Custo
         };
 
         const parsed = [];
         let skipped = 0;
 
         for (let i = 1; i < lines.length; i++) {
-            const cols = lines[i].split(';').map(c => c.trim().replace(/"/g, ''));
-            if (!cols[idx.DATA]) continue; // Validação mínima
+            const line = lines[i].trim();
+            if (!line) continue;
+            
+            const cols = line.split(';').map(c => c.trim().replace(/"/g, ''));
+            if (!cols[idx.DATA]) { skipped++; continue; }
 
             // Data
             const dRaw = cols[idx.DATA];
             let dateIso = '';
-            if (dRaw && dRaw.length === 10) { const p = dRaw.split('/'); dateIso = `${p[2]}-${p[1]}-${p[0]}`; }
+            if (dRaw.length === 10) { const p = dRaw.split('/'); dateIso = `${p[2]}-${p[1]}-${p[0]}`; }
             if (!dateIso) { skipped++; continue; }
 
-            // Regra Saída: Valor TTEN / 1000 (Absoluto)
+            // Valor
             let val = 0;
             if (cols[idx.TTEN]) val = Math.abs(parseFloat(cols[idx.TTEN]) / 1000);
             
-            // Regra Saída: Qtd / 1000
+            // Qtd
             let qtd = 0;
             if (cols[idx.QTDES]) qtd = parseFloat(cols[idx.QTDES]) / 1000;
 
-            if (val === 0) { skipped++; continue; }
+            if (val === 0 || isNaN(val)) { skipped++; continue; }
 
-            // Regra Saída: Descrição = Fornecedor - Item
-            const fornec = cols[idx.NSUB] || 'Div.';
+            // Descrição (Fornecedor - Item)
+            const fornec = (idx.NSUB !== -1 && cols[idx.NSUB]) ? cols[idx.NSUB] : 'Interno';
             const item = cols[idx.NOME] || 'Item';
             const desc = `${fornec} - ${item}`;
 
@@ -440,22 +454,23 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 value: val,
                 quantity: qtd,
                 segment: findSegmentByCostCenter(cols[idx.NCUS]),
-                accountPlan: 'Movimentação de Estoque', // Fixo
-                planDescription: 'Custos Variáveis', // Fixo
+                accountPlan: 'Movimentação de Estoque',
+                planDescription: 'Custos Variáveis',
                 type: 'expense',
-                status: 'paid', // Saída de estoque já foi paga
+                status: 'paid',
                 paymentMethod: 'Estoque',
                 importSource: 'TXT_SAIDA',
-                issues: [] // Saída não tem verificação de consistência de plano
+                issues: []
             });
         }
 
+        if (parsed.length === 0) alert("Nenhum dado encontrado. Verifique se o arquivo é do tipo Saída.");
         setPreviewData(parsed);
         setStats({ total: parsed.length, skipped });
     };
 
     const handleConfirm = () => {
-        // Limpa propriedade temporária 'issues' antes de subir
+        // Remove 'issues' antes de salvar
         const cleanData = previewData.map(({issues, id, ...rest}) => rest);
         onImport(cleanData);
         setPreviewData([]);
@@ -465,9 +480,10 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const handleCancel = () => {
         setPreviewData([]);
         setImportMode(null);
+        if (fileRef.current) fileRef.current.value = '';
     };
 
-    // --- SUB-COMPONENTE PARA TABELAS (Visual do automaticimport.txt) ---
+    // --- TABELA DE EXIBIÇÃO ---
     const TableBlock = ({ title, rows, isProblematic }) => {
         if (!rows || rows.length === 0) return null;
         return (
@@ -511,7 +527,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         );
     };
 
-    // Separar dados para exibição (apenas Entrada usa issues)
     const problematicRows = previewData.filter(r => r.issues && r.issues.length > 0);
     const cleanRows = previewData.filter(r => !r.issues || r.issues.length === 0);
 
@@ -547,7 +562,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         );
     }
 
-    // 2. TELA DE UPLOAD (APÓS ESCOLHER MODO)
+    // 2. TELA DE UPLOAD
     if (previewData.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 h-[calc(100vh-200px)]">
@@ -561,8 +576,8 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     </h2>
                     <p className="text-sm text-slate-500 mb-8">
                         {importMode === 'ENTRADA' 
-                            ? 'O sistema verificará a consistência entre descrição e conta.' 
-                            : 'O sistema aplicará as regras de estoque (Divisão por 1000, Fornecedor + Item).'}
+                            ? 'O sistema verificará a consistência (Combustível, Pneus, Energia).' 
+                            : 'O sistema aplicará regras de estoque (Divisão por 1000, Fornecedor + Item).'}
                     </p>
 
                     <div 
@@ -578,7 +593,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         );
     }
 
-    // 3. TELA DE VALIDAÇÃO (COM DADOS)
+    // 3. TELA DE VALIDAÇÃO
     return (
         <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 h-full flex flex-col animate-in fade-in duration-300">
             <div className="flex justify-between items-center mb-6 border-b dark:border-slate-700 pb-4">
@@ -607,7 +622,6 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     <TableBlock title="Possíveis Inconsistências (Verifique)" rows={problematicRows} isProblematic={true} />
                 )}
 
-                {/* Itens Válidos ou Saídas (que não usam verificação de inconsistência) */}
                 <TableBlock 
                     title={importMode === 'ENTRADA' ? "Itens Validados" : "Itens para Importação"} 
                     rows={importMode === 'ENTRADA' ? cleanRows : previewData} 
