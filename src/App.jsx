@@ -1007,7 +1007,6 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
 
     if (!isOpen) return null;
 
-    // Adiciona CC à lista ao dar Enter
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && ccInput.trim()) {
             e.preventDefault();
@@ -1032,19 +1031,35 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
             return;
         }
 
-        const filtered = transactions.filter(t => {
+        // SEGURANÇA ADICIONAL: Garante que transactions seja um array
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+
+        const filtered = safeTransactions.filter(t => {
+            // PROTEÇÃO 1: Se não tiver data, ignora o item
+            if (!t || !t.date) return false;
+
             // 1. Filtro de Data (Mês e Ano)
-            let tDate = new Date(t.date);
-            // Ajuste para garantir leitura correta da string YYYY-MM-DD
-            if (typeof t.date === 'string') {
-                const parts = t.date.split('-'); // 2025-12-01
-                tDate = new Date(parts[0], parts[1] - 1, parts[2]);
+            let tDate;
+            try {
+                // Tenta processar a data de forma segura
+                if (typeof t.date === 'string' && t.date.includes('-')) {
+                    const parts = t.date.split('-'); 
+                    // Evita erro se o split falhar
+                    if(parts.length < 3) return false;
+                    tDate = new Date(parts[0], parts[1] - 1, parts[2]);
+                } else {
+                    tDate = new Date(t.date);
+                }
+                
+                // Se a data for inválida, ignora
+                if (isNaN(tDate.getTime())) return false;
+            } catch (e) {
+                return false;
             }
 
             const matchDate = tDate.getMonth() === parseInt(selectedMonth) && tDate.getFullYear() === parseInt(selectedYear);
             
-            // 2. Filtro de CC (Verifica se o CC da transação está na lista selecionada)
-            // Normaliza para string para evitar erro de tipo
+            // 2. Filtro de CC
             const tCC = String(t.costCenterCode || '').trim();
             const matchCC = selectedCCs.some(selected => tCC === selected || tCC.startsWith(selected)); 
             
@@ -1055,13 +1070,11 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
         setHasGenerated(true);
     };
 
-    const totalValue = reportData.reduce((acc, curr) => acc + curr.value, 0);
+    const totalValue = reportData.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0);
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700">
-                
-                {/* Header */}
                 <div className="p-6 border-b dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 rounded-t-2xl">
                     <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
                         <FileText className="text-indigo-500"/> Relatório de Centro de Custo
@@ -1070,120 +1083,68 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
                         <X size={20} className="text-slate-500"/>
                     </button>
                 </div>
-
-                {/* Filtros */}
                 <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-4 border-b dark:border-slate-800">
-                    
-                    {/* Seleção de Data */}
                     <div className="md:col-span-3 flex gap-2">
-                        <select 
-                            value={selectedMonth} 
-                            onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"
-                        >
-                            {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (
-                                <option key={i} value={i}>{m}</option>
-                            ))}
+                        <select value={selectedMonth} onChange={(e) => setSelectedMonth(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none">
+                            {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (<option key={i} value={i}>{m}</option>))}
                         </select>
-                        <select 
-                            value={selectedYear} 
-                            onChange={(e) => setSelectedYear(Number(e.target.value))}
-                            className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"
-                        >
+                        <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none">
                             {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
                         </select>
                     </div>
-
-                    {/* Input de CC */}
                     <div className="md:col-span-7">
                         <div className="relative flex gap-2">
-                            <input 
-                                type="text" 
-                                placeholder="Digite o CC (ex: 1087) e dê Enter..." 
-                                value={ccInput}
-                                onChange={(e) => setCcInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                className="w-full pl-4 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"
-                            />
+                            <input type="text" placeholder="Digite o CC (ex: 1087) e dê Enter..." value={ccInput} onChange={(e) => setCcInput(e.target.value)} onKeyDown={handleKeyDown} className="w-full pl-4 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"/>
                             <button onClick={handleAddCC} className="bg-slate-200 dark:bg-slate-700 p-2 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors">
                                 <PlusCircle size={20} className="text-slate-600 dark:text-slate-300"/>
                             </button>
                         </div>
-                        {/* Lista de Selecionados */}
                         <div className="flex flex-wrap gap-2 mt-2">
                             {selectedCCs.map(cc => (
                                 <span key={cc} className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
-                                    {cc}
-                                    <X size={12} className="cursor-pointer hover:text-indigo-900" onClick={() => handleRemoveCC(cc)}/>
+                                    {cc} <X size={12} className="cursor-pointer hover:text-indigo-900" onClick={() => handleRemoveCC(cc)}/>
                                 </span>
                             ))}
-                            {selectedCCs.length === 0 && <span className="text-xs text-slate-400 italic mt-1">Nenhum CC selecionado</span>}
                         </div>
                     </div>
-
-                    {/* Botão Gerar */}
                     <div className="md:col-span-2">
-                        <button 
-                            onClick={generateReport}
-                            className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-indigo-500/30"
-                        >
-                            Gerar Relatório
-                        </button>
+                        <button onClick={generateReport} className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-indigo-500/30">Gerar</button>
                     </div>
                 </div>
-
-                {/* Resultados - Tabela */}
                 <div className="flex-1 overflow-y-auto p-0 bg-slate-50/50 dark:bg-slate-900/50">
                     {!hasGenerated ? (
-                        <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-                            <Search size={48} className="mb-2 opacity-20"/>
-                            <p>Selecione os filtros e clique em Gerar</p>
-                        </div>
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-400"><Search size={48} className="mb-2 opacity-20"/><p>Selecione os filtros e clique em Gerar</p></div>
                     ) : (
-                        <>
-                            <table className="w-full text-left text-xs border-collapse">
-                                <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 shadow-sm z-10">
-                                    <tr>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Data</th>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Descrição</th>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">CC</th>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Unidade</th>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Conta/Tipo</th>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700 text-right">Valor</th>
+                        <table className="w-full text-left text-xs border-collapse">
+                            <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 shadow-sm z-10">
+                                <tr>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Data</th>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Descrição</th>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">CC</th>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Unidade</th>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Conta</th>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700 text-right">Valor</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y dark:divide-slate-700 bg-white dark:bg-slate-900">
+                                {reportData.length > 0 ? reportData.map((row) => (
+                                    <tr key={row.id} className="hover:bg-indigo-50 dark:hover:bg-slate-800/50 transition-colors">
+                                        <td className="p-3 dark:text-slate-300 whitespace-nowrap">{row.date ? row.date.split('-').reverse().join('/') : '-'}</td>
+                                        <td className="p-3 dark:text-slate-300 truncate max-w-[250px]" title={row.description}>{row.description}</td>
+                                        <td className="p-3 font-mono text-slate-500 dark:text-slate-400">{row.costCenterCode || '-'}</td>
+                                        <td className="p-3 dark:text-slate-300 text-[10px]">{row.segment}</td>
+                                        <td className="p-3 dark:text-slate-300">{row.accountPlan || row.planDescription}</td>
+                                        <td className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">{row.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                     </tr>
-                                </thead>
-                                <tbody className="divide-y dark:divide-slate-700 bg-white dark:bg-slate-900">
-                                    {reportData.length > 0 ? (
-                                        reportData.map((row) => (
-                                            <tr key={row.id} className="hover:bg-indigo-50 dark:hover:bg-slate-800/50 transition-colors">
-                                                <td className="p-3 dark:text-slate-300 whitespace-nowrap">{row.date ? row.date.split('-').reverse().join('/') : '-'}</td>
-                                                <td className="p-3 dark:text-slate-300 truncate max-w-[250px]" title={row.description}>{row.description}</td>
-                                                <td className="p-3 font-mono text-slate-500 dark:text-slate-400">{row.costCenterCode || '-'}</td>
-                                                <td className="p-3 dark:text-slate-300 text-[10px]">{row.segment}</td>
-                                                <td className="p-3 dark:text-slate-300">{row.accountPlan || row.planDescription}</td>
-                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">{row.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan="6" className="p-8 text-center text-slate-500 italic">Nenhum lançamento encontrado para estes critérios.</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </>
+                                )) : <tr><td colSpan="6" className="p-8 text-center text-slate-500 italic">Nenhum dado encontrado.</td></tr>}
+                            </tbody>
+                        </table>
                     )}
                 </div>
-
-                {/* Footer com Totais */}
                 {hasGenerated && (
                     <div className="p-4 bg-white dark:bg-slate-900 border-t dark:border-slate-800 flex justify-between items-center">
-                        <div className="text-sm text-slate-500">
-                            Registros: <strong>{reportData.length}</strong>
-                        </div>
-                        <div className="text-lg font-bold text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-lg border dark:border-slate-700">
-                            Total: <span className="text-indigo-600 dark:text-indigo-400">{totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
-                        </div>
+                        <div className="text-sm text-slate-500">Registros: <strong>{reportData.length}</strong></div>
+                        <div className="text-lg font-bold text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-lg border dark:border-slate-700">Total: <span className="text-indigo-600 dark:text-indigo-400">{totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
                     </div>
                 )}
             </div>
@@ -3341,6 +3302,7 @@ export default function App() {
   const [user, setUser] = useState({ uid: 'admin_master', email: 'admin@noromix.com.br' });
   const [userRole, setUserRole] = useState('admin');
   const [loadingAuth, setLoadingAuth] = useState(false);
+  const [showCCReportModal, setShowCCReportModal] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const [toast, showToast] = useToast();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -3356,7 +3318,6 @@ export default function App() {
   const [editingTx, setEditingTx] = useState(null);
   const [showAIModal, setShowAIModal] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
-  const [showCCReportModal, setShowCCReportModal] = useState(false);
   
   // NOVOS ESTADOS PARA A ABA LANÇAMENTOS
   const [lancamentosSearch, setLancamentosSearch] = useState('');
