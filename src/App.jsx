@@ -269,7 +269,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
     const [previewData, setPreviewData] = useState([]);
     const [stats, setStats] = useState({ total: 0, skipped: 0, type: '' });
 
-    // Função para limpar textos (remover acentos e deixar maiúsculo para comparação)
+    // Função para limpar textos (remover acentos e deixar maiúsculo)
     const normalize = (str) => {
         if (!str) return '';
         return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
@@ -280,24 +280,29 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         if (!ccName) return 'Geral: Indefinido';
         const searchName = normalize(ccName);
 
-        if (typeof BUSINESS_HIERARCHY !== 'undefined') {
-            for (const [group, units] of Object.entries(BUSINESS_HIERARCHY)) {
-                for (const unit of units) {
-                    const unitClean = normalize(unit);
+        // Se a hierarquia não estiver definida, retorna erro
+        if (typeof BUSINESS_HIERARCHY === 'undefined') return 'Geral: Indefinido';
 
-                    // 1. Prioridade para Fábrica (Evita confusão com Votuporanga genérico)
-                    if (searchName.includes("FABRICA") && unitClean.includes("FABRICA")) {
-                        return `${group}: ${unit}`;
-                    }
+        for (const [group, units] of Object.entries(BUSINESS_HIERARCHY)) {
+            for (const unit of units) {
+                const unitClean = normalize(unit);
 
-                    // 2. Comparação Padrão (Nome do CC contem a Unidade ou vice-versa)
-                    // Ex: "INDUSTRIA PORTO SAARA" contém "PORTO SAARA" -> Match!
-                    if (searchName.includes(unitClean) || unitClean.includes(searchName)) {
-                        return `${group}: ${unit}`;
-                    }
+                // 1. Prioridade para Fábrica (Evita confusão com Votuporanga genérico)
+                if (searchName.includes("FABRICA") && unitClean.includes("FABRICA")) {
+                    return `${group}: ${unit}`;
+                }
+
+                // 2. Comparação Padrão
+                if (searchName.includes(unitClean) || unitClean.includes(searchName)) {
+                    return `${group}: ${unit}`;
                 }
             }
         }
+        
+        // Mapeamentos Manuais Comuns (Caso o nome no TXT seja muito diferente)
+        if (searchName.includes("PORTO")) return "Portos de Areia: Porto Saara";
+        if (searchName.includes("PEDREIRA")) return "Pedreiras: Pedreira Votuporanga";
+
         return 'Geral: Indefinido';
     };
 
@@ -309,6 +314,8 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         reader.onload = (e) => {
             const text = e.target.result;
             processTXT(text);
+            // Limpa o input para permitir selecionar o mesmo arquivo novamente se errar
+            event.target.value = ''; 
         };
         reader.readAsText(file, 'ISO-8859-1'); 
     };
@@ -320,103 +327,129 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             return;
         }
 
-        // 1. Mapeamento Dinâmico de Colunas
+        // 1. IDENTIFICAR COLUNAS (Lógica Flexível)
+        // Remove aspas e espaços extras dos cabeçalhos
         const headers = lines[0].split(';').map(h => h.trim().replace(/"/g, ''));
         
+        // Map das colunas essenciais
         const idx = {
-            TPLC: headers.indexOf('PRGER-TPLC'),
-            DATA: headers.indexOf('PRGER-DATA'),
-            TTEN: headers.indexOf('PRGER-TTEN'), // Valor Saída
-            VREN: headers.indexOf('PRGER-VREN'), // Valor Entrada
-            QTDES: headers.indexOf('PRGER-QTDES'),
-            NOME: headers.indexOf('PRMAT-NOME'),
-            NSUB: headers.indexOf('PRMAT-NSUB'), // Fornecedor
-            CCUS: headers.indexOf('PRMAT-CCUS'), // Cód. CC
-            NCUS: headers.indexOf('PRMAT-NCUS')  // Nome CC
+            TPLC: headers.indexOf('PRGER-TPLC'),   // Tipo Lançamento
+            DATA: headers.indexOf('PRGER-DATA'),   // Data
+            TTEN: headers.indexOf('PRGER-TTEN'),   // Valor Total (Para Saída)
+            VREN: headers.indexOf('PRGER-VREN'),   // Valor Entrada (Padrão Entrada)
+            QTDES: headers.indexOf('PRGER-QTDES'), // Qtd Saída
+            NOME: headers.indexOf('PRMAT-NOME'),   // Nome Item
+            NSUB: headers.indexOf('PRMAT-NSUB'),   // Fornecedor
+            CCUS: headers.indexOf('PRMAT-CCUS'),   // Cód. CC
+            NCUS: headers.indexOf('PRMAT-NCUS')    // Nome CC
         };
+
+        // Validação Mínima: Se não achar DATA ou NOME, o arquivo não é compatível
+        if (idx.DATA === -1 || idx.NOME === -1) {
+            alert("Layout do arquivo não reconhecido. Verifique se é o arquivo correto (Colunas PRGER-DATA e PRMAT-NOME obrigatórias).");
+            return;
+        }
 
         const newTransactions = [];
         let skippedCount = 0;
-        let detectedType = 'Indefinido';
+        let detectedType = 'Entrada (Padrão)';
 
+        // 2. PROCESSAR LINHAS
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
 
             const rawCols = line.split(';');
+            // Remove aspas de todas as colunas
             const cols = rawCols.map(c => c.trim().replace(/"/g, ''));
 
-            // Relaxamos a verificação de colunas para evitar bloquear arquivos válidos
-            // Verificamos apenas se existe data para prosseguir
-            if (!cols[idx.DATA]) { 
-                skippedCount++; 
-                continue; 
+            // Se a linha estiver quebrada (menos colunas que o cabeçalho), ignora
+            if (cols.length < headers.length) continue;
+
+            // --- DETECÇÃO DO TIPO (LINHA A LINHA) ---
+            let isSaida = false;
+            
+            // Só verifica Saída se a coluna TPLC existir
+            if (idx.TPLC !== -1) {
+                const tipo = cols[idx.TPLC].toUpperCase();
+                if (tipo.includes('SAIDA') || tipo.includes('SAÍDA')) {
+                    isSaida = true;
+                    detectedType = 'Saída (Estoque)';
+                }
             }
 
-            const tipoLancamento = cols[idx.TPLC] ? cols[idx.TPLC].toUpperCase() : '';
-            const isSaida = tipoLancamento.includes('SAIDA') || tipoLancamento.includes('SAÍDA');
-            
-            if (i === 1) detectedType = isSaida ? 'Saída (Estoque)' : 'Entrada (Padrão)';
-
-            // Tratamento de Data
+            // --- TRATAMENTO DE DATA ---
             const dataRaw = cols[idx.DATA];
             let dateIso = '';
             if (dataRaw && dataRaw.length === 10) {
-                constParts = dataRaw.split('/');
-                if(constParts.length === 3) dateIso = `${constParts[2]}-${constParts[1]}-${constParts[0]}`;
+                // Formato DD/MM/AAAA
+                const parts = dataRaw.split('/');
+                if(parts.length === 3) dateIso = `${parts[2]}-${parts[1]}-${parts[0]}`;
             }
 
-            if (!dateIso) { skippedCount++; continue; }
+            if (!dateIso) {
+                skippedCount++; // Linha sem data válida
+                continue;
+            }
 
+            // --- EXTRAÇÃO DE VALORES ---
             let value = 0;
             let quantity = 0;
             let description = '';
-            let type = 'expense';
             let accountPlan = '';
             let planDescription = '';
 
-            // --- LÓGICA ---
             if (isSaida) {
-                // SAÍDA
-                const valRaw = cols[idx.TTEN];
+                // LÓGICA DE SAÍDA
+                // Valor vem no TTEN (ex: -00024900 -> 24.90)
+                const valRaw = idx.TTEN !== -1 ? cols[idx.TTEN] : '0';
                 if (valRaw) value = Math.abs(parseFloat(valRaw) / 1000);
-                
-                const qtdRaw = cols[idx.QTDES];
+
+                const qtdRaw = idx.QTDES !== -1 ? cols[idx.QTDES] : '0';
                 if (qtdRaw) quantity = parseFloat(qtdRaw) / 1000;
 
                 const item = cols[idx.NOME] || 'Item Desconhecido';
-                const fornecedor = cols[idx.NSUB] || 'Div.';
+                const fornecedor = (idx.NSUB !== -1) ? cols[idx.NSUB] : 'Interno';
                 description = `${fornecedor} - ${item}`;
+                
                 accountPlan = 'Movimentação de Estoque';
                 planDescription = 'Custos Variáveis';
+
             } else {
-                // ENTRADA
-                // Fallback: Se não achar VREN, tenta TTEN
-                let valRaw = idx.VREN !== -1 ? cols[idx.VREN] : cols[idx.TTEN];
+                // LÓGICA DE ENTRADA
+                // Valor vem no VREN. Se não tiver, tenta TTEN.
+                let valRaw = '0';
+                if (idx.VREN !== -1) valRaw = cols[idx.VREN];
+                else if (idx.TTEN !== -1) valRaw = cols[idx.TTEN];
+
+                // Entradas geralmente já vêm formatadas ou divididas por 1000? 
+                // Assumindo o padrão do seu TXT anterior (que era /1000 também se for raw)
                 if (valRaw) value = Math.abs(parseFloat(valRaw) / 1000);
 
                 const item = cols[idx.NOME] || 'Item';
                 description = item;
+                
                 accountPlan = 'Compra de Materiais';
                 planDescription = 'Custos Diretos';
             }
 
-            // Ignorar apenas se valor for zero absoluto ou NaN
+            // --- FILTRO DE INCONSISTÊNCIA ---
+            // Se valor for 0 ou inválido, ignora
             if (!value || isNaN(value) || value === 0) {
                 skippedCount++;
                 continue;
             }
 
-            // Unidade
-            const ccNome = cols[idx.NCUS];
+            // --- IDENTIFICAÇÃO DE UNIDADE ---
+            const ccNome = (idx.NCUS !== -1) ? cols[idx.NCUS] : '';
             const segment = findSegmentByCostCenter(ccNome);
 
             newTransactions.push({
-                id: Math.random().toString(36).substr(2, 9), // ID temporário para a tabela
+                id: Math.random().toString(36).substr(2, 9),
                 date: dateIso,
                 description: description.trim(),
                 value: value,
-                type: type,
+                type: 'expense', // Tanto compra quanto saída de estoque são custos
                 segment: segment,
                 accountPlan: accountPlan,
                 planDescription: planDescription,
@@ -424,7 +457,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                 status: isSaida ? 'paid' : 'pending',
                 quantity: quantity,
                 importSource: isSaida ? 'TXT_SAIDA' : 'TXT_ENTRADA',
-                originalCC: ccNome // Apenas para debug visual se necessário
+                originalCC: ccNome
             });
         }
 
@@ -432,36 +465,38 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             setStats({ total: newTransactions.length, skipped: skippedCount, type: detectedType });
             setPreviewData(newTransactions);
         } else {
-            alert("Nenhum dado válido encontrado.");
+            alert(`Nenhum lançamento válido encontrado.\nLinhas ignoradas: ${skippedCount}.\nVerifique se o arquivo possui valores maiores que zero.`);
         }
     };
 
     const confirmImport = () => {
-        // Remove campos temporários antes de enviar
+        // Limpa dados auxiliares antes de enviar
         const finalData = previewData.map(({ id, originalCC, ...rest }) => rest);
         onImport(finalData);
         setPreviewData([]);
+        setStats({ total: 0, skipped: 0, type: '' });
     };
 
     const cancelImport = () => {
         setPreviewData([]);
+        setStats({ total: 0, skipped: 0, type: '' });
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    // --- TELA DE PRÉ-VISUALIZAÇÃO ---
+    // --- TELA DE PRÉ-VISUALIZAÇÃO (TABELA) ---
     if (previewData.length > 0) {
         return (
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 h-full flex flex-col">
-                <div className="flex justify-between items-center mb-4">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 h-full flex flex-col animate-in fade-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-center mb-4 border-b dark:border-slate-700 pb-4">
                     <div>
                         <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
                             <CheckCircle className="text-emerald-500"/> Validar Importação
                         </h2>
-                        <p className="text-sm text-slate-500">
-                            Tipo detectado: <strong>{stats.type}</strong> | 
-                            Itens válidos: <strong>{stats.total}</strong> | 
-                            Ignorados (Zero/Erro): <strong>{stats.skipped}</strong>
-                        </p>
+                        <div className="flex gap-4 mt-2 text-sm text-slate-500">
+                             <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">Tipo: <strong>{stats.type}</strong></span>
+                             <span className="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 px-2 py-1 rounded">Válidos: <strong>{stats.total}</strong></span>
+                             <span className="bg-rose-50 dark:bg-rose-900/30 text-rose-500 px-2 py-1 rounded">Ignorados: <strong>{stats.skipped}</strong></span>
+                        </div>
                     </div>
                     <div className="flex gap-3">
                         <button onClick={cancelImport} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-bold border border-slate-300 transition-colors">
@@ -474,25 +509,25 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-auto border rounded-lg dark:border-slate-700">
+                <div className="flex-1 overflow-auto border rounded-lg dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
                     <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50 dark:bg-slate-900 sticky top-0 z-10">
+                        <thead className="bg-slate-100 dark:bg-slate-800 sticky top-0 z-10 shadow-sm">
                             <tr>
-                                <th className="p-3 text-slate-500 font-bold border-b dark:border-slate-700">Data</th>
-                                <th className="p-3 text-slate-500 font-bold border-b dark:border-slate-700">Descrição</th>
-                                <th className="p-3 text-slate-500 font-bold border-b dark:border-slate-700">Unidade (Identificada)</th>
-                                <th className="p-3 text-slate-500 font-bold border-b dark:border-slate-700">Conta</th>
-                                <th className="p-3 text-slate-500 font-bold border-b dark:border-slate-700 text-right">Valor</th>
+                                <th className="p-3 text-slate-500 font-bold">Data</th>
+                                <th className="p-3 text-slate-500 font-bold">Descrição (Fornecedor / Item)</th>
+                                <th className="p-3 text-slate-500 font-bold">Unidade Identificada</th>
+                                <th className="p-3 text-slate-500 font-bold">Conta</th>
+                                <th className="p-3 text-slate-500 font-bold text-right">Valor</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y dark:divide-slate-700">
-                            {previewData.slice(0, 100).map((row) => (
-                                <tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                    <tr className="p-3 dark:text-slate-300">{row.date}</tr>
+                        <tbody className="divide-y dark:divide-slate-700 bg-white dark:bg-slate-900">
+                            {previewData.slice(0, 200).map((row) => (
+                                <tr key={row.id} className="hover:bg-indigo-50 dark:hover:bg-slate-800 transition-colors">
+                                    <td className="p-3 dark:text-slate-300 font-mono">{row.date.split('-').reverse().join('/')}</td>
                                     <td className="p-3 dark:text-slate-300 truncate max-w-[300px]" title={row.description}>{row.description}</td>
-                                    <td className={`p-3 font-medium ${row.segment.includes('Indefinido') ? 'text-rose-500' : 'text-emerald-600'}`}>
+                                    <td className={`p-3 font-medium ${row.segment.includes('Indefinido') ? 'text-rose-500 bg-rose-50 dark:bg-rose-900/20' : 'text-emerald-600'}`}>
                                         {row.segment}
-                                        {row.segment.includes('Indefinido') && <span className="block text-[9px] text-slate-400">CC: {row.originalCC}</span>}
+                                        {row.segment.includes('Indefinido') && <div className="text-[9px] text-slate-400 mt-1">CC: {row.originalCC}</div>}
                                     </td>
                                     <td className="p-3 dark:text-slate-300">{row.accountPlan}</td>
                                     <td className="p-3 text-right font-bold dark:text-slate-200">{row.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
@@ -500,9 +535,9 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
                             ))}
                         </tbody>
                     </table>
-                    {previewData.length > 100 && (
-                        <div className="p-4 text-center text-slate-500 text-xs italic bg-slate-50 dark:bg-slate-900">
-                            Exibindo apenas os primeiros 100 itens de {previewData.length}...
+                    {previewData.length > 200 && (
+                        <div className="p-3 text-center text-slate-500 text-xs border-t dark:border-slate-700">
+                            ... e mais {previewData.length - 200} itens.
                         </div>
                     )}
                 </div>
@@ -510,16 +545,16 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         );
     }
 
-    // --- TELA DE UPLOAD (ESTADO INICIAL) ---
+    // --- TELA DE UPLOAD (INICIAL) ---
     return (
         <div className="flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 h-[calc(100vh-200px)]">
             <div className="bg-indigo-50 dark:bg-slate-900/50 p-6 rounded-full mb-6">
                 <UploadCloud size={64} className="text-indigo-500" />
             </div>
-            <h2 className="text-2xl font-bold mb-2 dark:text-white">Importação de Arquivos</h2>
+            <h2 className="text-2xl font-bold mb-2 dark:text-white">Importação Inteligente</h2>
             <p className="text-slate-500 dark:text-slate-400 text-center max-w-md mb-8">
-                Selecione o arquivo TXT (Entrada ou Saída). <br/>
-                O sistema fará uma pré-visualização antes de salvar.
+                Arraste ou selecione seu arquivo TXT (Entrada ou Saída).<br/>
+                O sistema detectará o formato e validará os dados.
             </p>
             
             <input 
@@ -533,7 +568,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
             <button 
                 onClick={() => fileInputRef.current.click()} 
                 disabled={isProcessing}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-xl font-bold text-lg flex items-center gap-3 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-4 rounded-xl font-bold text-lg flex items-center gap-3 transition-all transform hover:scale-105 shadow-lg shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
             >
                 {isProcessing ? <Loader2 className="animate-spin"/> : <FileText />}
                 {isProcessing ? 'Processando...' : 'Selecionar Arquivo TXT'}
