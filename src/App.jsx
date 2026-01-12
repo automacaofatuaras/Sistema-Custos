@@ -3717,7 +3717,7 @@ export default function App() {
                     </div>
                  </div>
              </div>
-      );
+      )}
              <div className="overflow-x-auto">
                  <table className="w-full text-left text-sm">
                      <thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400">
