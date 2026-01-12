@@ -3824,6 +3824,11 @@ export default function App() {
 
       {showEntryModal && user && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={segments} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
       {showAIModal && user && <AIReportModal onClose={() => setShowAIModal(false)} transactions={filteredData} period={`${filter.month+1}/${filter.year}`} />}
+      {showCCReportModal && (
+    <CostCenterReportModal 
+        isOpen={showCCReportModal} 
+        onClose={() => setShowCCReportModal(false)} 
+        transactions={transactions} />}
     </div>
   );
 }
