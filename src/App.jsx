@@ -265,342 +265,240 @@ const KpiCard = ({ title, value, icon: Icon, color, trend, reverseColor = false 
 };
 
 const AutomaticImportComponent = ({ onImport, isProcessing }) => {
-    const [fileText, setFileText] = useState('');
-    const [previewData, setPreviewData] = useState([]);
     const fileRef = useRef(null);
+    const [importMode, setImportMode] = useState(null); 
+    const [previewData, setPreviewData] = useState([]);
+    const [stats, setStats] = useState({ total: 0, skipped: 0 });
 
-    // --- REGRAS DE INCONSISTÊNCIA ---
+    const normalize = (str) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim() : '';
+
+    const findSegmentByCostCenter = (ccName) => {
+        if (!ccName) return 'Geral: Indefinido';
+        const searchName = normalize(ccName);
+
+        if (typeof BUSINESS_HIERARCHY !== 'undefined') {
+            for (const [group, units] of Object.entries(BUSINESS_HIERARCHY)) {
+                for (const unit of units) {
+                    const unitClean = normalize(unit);
+                    if (searchName.includes("FABRICA") && unitClean.includes("FABRICA")) return `${group}: ${unit}`;
+                    if (searchName.includes(unitClean) || unitClean.includes(searchName)) return `${group}: ${unit}`;
+                }
+            }
+        }
+        if (searchName.includes("PORTO")) return "Portos de Areia: Porto Saara";
+        if (searchName.includes("PEDREIRA")) return "Pedreiras: Pedreira Votuporanga";
+        return 'Geral: Indefinido';
+    };
+
     const analyzeConsistency = (row) => {
-        // Ignora validações para Movimentação de Estoque
-        if (row.accountPlan === 'MOV.EST') return [];
-
         const issues = [];
-        const desc = (row.description || "") + " " + (row.materialDescription || "");
-        const descLower = desc.toLowerCase();
-        const plan = (row.planDescription || "").toLowerCase();
-        const code = row.accountPlan || "";
-
-        // Regra 1: Palavras-chave vs Classe
-        if (descLower.includes('diesel') || descLower.includes('combustivel')) {
-            if (!plan.includes('combustível') && !plan.includes('veículos') && !code.includes('03.07')) issues.push("Item parece Combustível, mas classe difere.");
+        const desc = (row.description || "").toLowerCase();
+        const plan = (row.accountPlan || "").toLowerCase();
+        
+        if (desc.includes('diesel') || desc.includes('combustivel')) {
+            if (!plan.includes('combustível') && !plan.includes('veículos')) issues.push("Item parece Combustível, mas classe difere.");
         }
-        if (descLower.includes('pneu') || descLower.includes('manuten') || descLower.includes('peça')) {
-            if (!plan.includes('manutenção') && !code.includes('03.05')) issues.push("Item parece Manutenção, mas classe difere.");
+        if (desc.includes('pneu') || desc.includes('manuten') || desc.includes('peça')) {
+            if (!plan.includes('manutenção') && !plan.includes('manutencao')) issues.push("Item parece Manutenção, mas classe difere.");
         }
-        if (descLower.includes('energia') || descLower.includes('eletrica')) {
-            if (!plan.includes('energia') && !plan.includes('administrativa')) issues.push("Item parece Energia, verifique a classe.");
-        }
-
-        // Regra 2: Coerência CC (Local) vs Classe (Tipo)
-        const ccCodeStr = row.costCenter ? row.costCenter.split(' ')[0] : '0';
-        const ccCode = parseInt(ccCodeStr);
-        const isAdminCC = typeof ADMIN_CC_CODES !== 'undefined' ? ADMIN_CC_CODES.includes(ccCode) : false;
-        const isCostClass = code.startsWith('03'); 
-        const isExpClass = code.startsWith('04');
-
-        if (isAdminCC && isCostClass) {
-            issues.push("Alerta: Custo Operacional lançado em Centro de Custo Administrativo.");
-        }
-        if (!isAdminCC && isExpClass && !plan.includes('rateio')) {
-            issues.push("Alerta: Despesa Administrativa lançada em Centro de Custo Operacional.");
-        }
-
         return issues;
     };
 
-    const handleFile = (e) => {
+    const handleFileSelect = (e) => {
         const file = e.target.files[0];
         if (!file) return;
-
         const reader = new FileReader();
-        reader.onload = (evt) => {
-            const text = evt.target.result;
-            setFileText(text);
-            parseAndPreview(text);
+        reader.onload = (ev) => {
+            const content = ev.target.result;
+            if (importMode === 'ENTRADA') processEntrada(content);
+            else if (importMode === 'SAIDA') processSaida(content);
         };
         reader.readAsText(file, 'ISO-8859-1'); 
+        e.target.value = ''; 
     };
 
-    const parseAndPreview = (text) => {
-        const lines = text.split('\n');
-        let headerIndex = -1;
-        let colMap = {};
+    // --- PROCESSAMENTO ENTRADA (AGORA SALVANDO CÓDIGO DO CC) ---
+    const processEntrada = (content) => {
+        const lines = content.split('\n');
+        if (lines.length < 2) { alert("Arquivo inválido"); return; }
         
-        // 1. Identificação do Cabeçalho
-        for(let i=0; i < lines.length; i++) {
-            // Procura por colunas chave de Entrada ou Saída
-            if (lines[i].includes('PRGER-CCUS') || lines[i].includes('PRMAT-CCUS')) {
-                headerIndex = i;
-                // Remove aspas do cabeçalho para garantir match limpo das chaves
-                const cleanHeader = lines[i].replace(/"/g, '');
-                const cols = cleanHeader.split(';');
-                cols.forEach((col, idx) => { colMap[col.trim()] = idx; });
-                break;
-            }
-        }
+        const headers = lines[0].split(';').map(h => h.trim().replace(/"/g, ''));
+        
+        let layout = 'PADRAO'; 
+        if (headers.includes('PRPRO-NOME')) layout = 'SAE134'; 
 
-        if (headerIndex === -1) return alert("ERRO: Cabeçalho não identificado (PRGER-CCUS ou PRMAT-CCUS não encontrados).");
+        const idx = {
+            DATA: layout === 'SAE134' ? headers.indexOf('PRGER-EMIS') : headers.indexOf('PRGER-DATA'),
+            VALOR: layout === 'SAE134' ? headers.indexOf('PRGER-TOTA') : (headers.indexOf('PRGER-VREN') !== -1 ? headers.indexOf('PRGER-VREN') : headers.indexOf('PRGER-TTEN')),
+            NOME: layout === 'SAE134' ? headers.indexOf('PRPRO-NOME') : headers.indexOf('PRMAT-NOME'),
+            // Aqui capturamos o CÓDIGO e o NOME separadamente
+            CC_CODE: layout === 'SAE134' ? headers.indexOf('PRGER-CCUS') : headers.indexOf('PRMAT-CCUS'),
+            CC_NAME: layout === 'SAE134' ? headers.indexOf('PRGER-NCCU') : headers.indexOf('PRMAT-NCUS'),
+            CONTA: layout === 'SAE134' ? headers.indexOf('PRGER-NPLC') : headers.indexOf('PRMAT-NGRU')
+        };
 
         const parsed = [];
-        
-        // Verifica quais colunas essenciais existem no mapeamento
-        const hasSaidaColumns = colMap.hasOwnProperty('PRMAT-CCUS');
-        const hasEntradaColumns = colMap.hasOwnProperty('PRGER-CCUS');
-        const hasTypeColumn = colMap.hasOwnProperty('PRGER-TPLC');
+        let skipped = 0;
 
-        for(let i = headerIndex + 1; i < lines.length; i++) {
+        for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
+            const cols = line.split(';').map(c => c.trim().replace(/"/g, ''));
             
-            // Limpeza da linha: remove todas as aspas para evitar problemas no split
-            const cleanLine = line.replace(/"/g, '');
-            const cols = cleanLine.split(';');
+            if (!cols[idx.DATA] || !cols[idx.NOME]) { skipped++; continue; }
 
-            // Tenta identificar o tipo pela coluna TPLC (se existir)
-            let isOutputRow = false;
+            const dRaw = cols[idx.DATA].trim();
+            let dateIso = '';
             
-            if (hasTypeColumn) {
-                const typeVal = cols[colMap['PRGER-TPLC']]?.trim().toUpperCase() || '';
-                if (typeVal.includes('SAIDA') || typeVal.includes('SAÍDA')) {
-                    isOutputRow = true;
-                }
-            } else if (hasSaidaColumns && !hasEntradaColumns) {
-                // Se só tem colunas de saída e não tem coluna de tipo, assume saída
-                isOutputRow = true;
+            if (layout === 'SAE134' && dRaw.length === 8) {
+                const y = dRaw.substring(0, 4);
+                const m = dRaw.substring(4, 6);
+                const d = dRaw.substring(6, 8);
+                dateIso = `${y}-${m}-${d}`;
+            } else if (dRaw.length >= 10) {
+                const p = dRaw.split('/');
+                if (p.length === 3) dateIso = `${p[2]}-${p[1]}-${p[0]}`;
             }
+            
+            if (!dateIso) { skipped++; continue; }
 
-            // --- LÓGICA A: SAÍDA (MOVIMENTAÇÃO DE ESTOQUE) ---
-            if (isOutputRow && hasSaidaColumns) {
-                const ccCode = cols[colMap['PRMAT-CCUS']]?.trim();       
-                const ccDesc = cols[colMap['PRMAT-NCUS']]?.trim() || ''; 
-                const rawDate = cols[colMap['PRGER-DATA']]?.trim();      
-                const supplier = cols[colMap['PRMAT-NSUB']]?.trim();
-                const description = cols[colMap['PRMAT-NOME']]?.trim();
-                
-                // Valores
-                const rawValue = cols[colMap['PRGER-TTEN']]?.trim();     
-                const rawQtd = cols[colMap['PRGER-QTDES']]?.trim();      
-                
-                if (!ccCode || !rawValue) continue;
+            let val = 0;
+            if (cols[idx.VALOR]) val = Math.abs(parseFloat(cols[idx.VALOR]) / 1000);
+            if (val === 0 || isNaN(val)) { skipped++; continue; }
 
-                // Converte Valor (Remove zeros, divide por 1000, absoluto)
-                let value = parseFloat(rawValue);
-                if (isNaN(value)) value = 0;
-                value = Math.abs(value / 1000);
+            const row = {
+                id: Math.random().toString(36).substr(2,9),
+                date: dateIso,
+                description: cols[idx.NOME],
+                value: val,
+                segment: findSegmentByCostCenter(cols[idx.CC_NAME]), // Usa nome para achar unidade
+                costCenterCode: cols[idx.CC_CODE] ? cols[idx.CC_CODE].trim() : '', // SALVA O CÓDIGO (IMPORTANTE!)
+                accountPlan: cols[idx.CONTA] || 'Compra de Materiais',
+                planDescription: 'Custos Diretos',
+                type: 'expense',
+                status: 'pending',
+                paymentMethod: 'Boleto',
+                importSource: 'TXT_ENTRADA',
+                issues: []
+            };
 
-                let isoDate = new Date().toISOString().split('T')[0];
-                if (rawDate && rawDate.length === 10) {
-                    const parts = rawDate.split('/'); 
-                    if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-                }
-                const safeDateWithTime = `${isoDate}T12:00:00`;
-
-                const detectedUnit = getUnitByCostCenter(ccCode);
-                const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
-
-                parsed.push({
-                    id: i,
-                    date: safeDateWithTime,
-                    segment: finalSegment,
-                    costCenter: `${ccCode} - ${ccDesc}`,
-                    accountPlan: 'MOV.EST',
-                    planDescription: 'Movimentação de Estoque',
-                    description: supplier || 'Estoque',
-                    materialDescription: description,
-                    value: value,
-                    quantity: parseFloat(rawQtd) / 1000,
-                    type: 'expense',
-                    source: 'automatic_import',
-                    createdAt: new Date().toISOString()
-                });
-
-            } 
-            // --- LÓGICA B: ENTRADA (PADRÃO) ---
-            else if (hasEntradaColumns) {
-                const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
-                
-                if (!ccCode) continue;
-
-                const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
-                const planCode = cols[colMap['PRGER-PLAN']]?.trim();
-                const planDesc = cols[colMap['PRGER-NPLC']]?.trim();
-                const supplier = cols[colMap['PRGER-NFOR']]?.trim() || 'Diversos';
-                let rawValue = cols[colMap['PRGER-TOTA']]?.trim();
-                const ccDesc = cols[colMap['PRGER-NCCU']]?.trim() || '';
-                let sortDesc = cols[colMap['PR-SORT']]?.trim();
-
-                if (!rawValue) continue;
-                
-                // Formatação padrão de Entrada (Remove pontos, troca vírgula por ponto, divide por 100)
-                rawValue = rawValue.replace(/\./g, '').replace(',', '.');
-                let value = parseFloat(rawValue) / 100;
-
-                if (isNaN(value) || value === 0) continue;
-
-                let isoDate = new Date().toISOString().split('T')[0];
-                if (dateStr && dateStr.length === 10) {
-                    const parts = dateStr.split('/');
-                    if(parts.length === 3) isoDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-                }
-                const safeDateWithTime = `${isoDate}T12:00:00`;
-                if (!sortDesc || /^0+$/.test(sortDesc)) { sortDesc = "Lançamento SAF"; }
-
-                // Lógica de Rateio (Portos/Pedreiras)
-                if (['01087', '1087', '01089', '1089', '99911'].includes(ccCode)) {
-                    const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-                    const shareValue = value / 8;
-                    const baseObj = {
-                        date: safeDateWithTime, costCenter: `${ccCode} - ${ccDesc}`, accountPlan: planCode || '00.00',
-                        planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
-                        type: currentType, source: 'automatic_import', createdAt: new Date().toISOString()
-                    };
-                    
-                    const portoSplit = shareValue / 2;
-                    parsed.push({ ...baseObj, id: `${i}_porto1`, value: portoSplit, segment: "Porto de Areia Saara - Mira Estrela" });
-                    parsed.push({ ...baseObj, id: `${i}_porto2`, value: portoSplit, segment: "Porto Agua Amarela - Riolândia" });
-                    
-                    const pedreiraUnits = typeof BUSINESS_HIERARCHY !== 'undefined' ? BUSINESS_HIERARCHY["Pedreiras"] : [];
-                    if (pedreiraUnits) {
-                        pedreiraUnits.forEach((unit, idx) => {
-                            parsed.push({ ...baseObj, id: `${i}_ped_${idx}`, value: shareValue, segment: unit });
-                        });
-                    }
-                    continue;
-                }
-
-                const type = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
-                const detectedUnit = getUnitByCostCenter(ccCode);
-                const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
-
-                parsed.push({
-                    id: i,
-                    date: safeDateWithTime,
-                    segment: finalSegment,
-                    costCenter: `${ccCode} - ${ccDesc}`,
-                    accountPlan: planCode || '00.00',
-                    planDescription: planDesc || 'Indefinido',
-                    description: supplier, 
-                    materialDescription: sortDesc, 
-                    value: value,
-                    type: type,
-                    source: 'automatic_import',
-                    createdAt: new Date().toISOString()
-                });
-            }
+            row.issues = analyzeConsistency(row);
+            parsed.push(row);
         }
         
-        if (parsed.length === 0) {
-            alert("Nenhum dado importado. Verifique se o arquivo corresponde ao leiaute de Entrada ou Saída.");
-        }
-        
+        if (parsed.length === 0) alert(`Nenhum dado válido encontrado.`);
         setPreviewData(parsed);
+        setStats({ total: parsed.length, skipped });
     };
 
-    // Função para alterar dados na tabela
-    const handleEditRow = (id, field, value) => {
-        setPreviewData(prev => prev.map(row => {
-            if (row.id !== id) return row;
+    // --- PROCESSAMENTO SAÍDA (AGORA SALVANDO CÓDIGO DO CC) ---
+    const processSaida = (content) => {
+        const lines = content.split('\n');
+        const headers = lines[0].split(';').map(h => h.trim().replace(/"/g, ''));
+        
+        const idx = {
+            DATA: headers.indexOf('PRGER-DATA'),
+            TTEN: headers.indexOf('PRGER-TTEN'),
+            QTDES: headers.indexOf('PRGER-QTDES'),
+            NOME: headers.indexOf('PRMAT-NOME'),
+            NSUB: headers.indexOf('PRMAT-NSUB'),
+            CC_CODE: headers.indexOf('PRMAT-CCUS'), // Código
+            CC_NAME: headers.indexOf('PRMAT-NCUS')  // Nome
+        };
+
+        const parsed = [];
+        let skipped = 0;
+
+        for (let i = 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            const cols = line.split(';').map(c => c.trim().replace(/"/g, ''));
             
-            const updatedRow = { ...row, [field]: value };
+            if (!cols[idx.DATA]) { skipped++; continue; }
 
-            if (field === 'accountPlan') {
-                const found = typeof PLANO_CONTAS !== 'undefined' ? PLANO_CONTAS.find(p => p.code === value) : null;
-                if (found) updatedRow.planDescription = found.name;
-            }
+            const dRaw = cols[idx.DATA];
+            let dateIso = '';
+            if (dRaw.length >= 10) { const p = dRaw.split('/'); dateIso = `${p[2]}-${p[1]}-${p[0]}`; }
+            if (!dateIso) { skipped++; continue; }
 
-            if (field === 'costCenter') {
-                const cleanCode = value.split(' ')[0];
-                const newUnit = getUnitByCostCenter(cleanCode);
-                if (newUnit) updatedRow.segment = newUnit;
-            }
+            let val = 0;
+            if (cols[idx.TTEN]) val = Math.abs(parseFloat(cols[idx.TTEN]) / 1000);
+            
+            let qtd = 0;
+            if (cols[idx.QTDES]) qtd = parseFloat(cols[idx.QTDES]) / 1000;
 
-            return updatedRow;
-        }));
+            if (val === 0 || isNaN(val)) { skipped++; continue; }
+
+            const fornec = (idx.NSUB !== -1 && cols[idx.NSUB]) ? cols[idx.NSUB] : 'Interno';
+            const item = cols[idx.NOME] || 'Item';
+
+            parsed.push({
+                id: Math.random().toString(36).substr(2,9),
+                date: dateIso,
+                description: `${fornec} - ${item}`,
+                value: val,
+                quantity: qtd,
+                segment: findSegmentByCostCenter(cols[idx.CC_NAME]),
+                costCenterCode: cols[idx.CC_CODE] ? cols[idx.CC_CODE].trim() : '', // SALVA O CÓDIGO
+                accountPlan: 'Movimentação de Estoque',
+                planDescription: 'Custos Variáveis',
+                type: 'expense',
+                status: 'paid',
+                paymentMethod: 'Estoque',
+                importSource: 'TXT_SAIDA',
+                issues: []
+            });
+        }
+
+        if (parsed.length === 0) alert("Nenhum dado encontrado no arquivo de Saída.");
+        setPreviewData(parsed);
+        setStats({ total: parsed.length, skipped });
     };
 
-    const handleConfirmImport = () => {
-        if (previewData.length === 0) return alert("Nenhum dado válido.");
-        const dataToImport = previewData.map(({ id, ...rest }) => rest);
-        onImport(dataToImport);
-        setFileText(''); setPreviewData([]);
+    const handleConfirm = () => {
+        const cleanData = previewData.map(({issues, id, ...rest}) => rest);
+        onImport(cleanData);
+        setPreviewData([]);
+        setImportMode(null);
     };
 
-    const problematicRows = previewData.filter(row => analyzeConsistency(row).length > 0);
-    const cleanRows = previewData.filter(row => analyzeConsistency(row).length === 0);
+    const handleCancel = () => {
+        setPreviewData([]);
+        setImportMode(null);
+        if (fileRef.current) fileRef.current.value = '';
+    };
 
     const TableBlock = ({ title, rows, isProblematic }) => {
-        if (rows.length === 0) return null;
+        if (!rows || rows.length === 0) return null;
         return (
-            <div className={`mb-8 rounded-xl border overflow-hidden ${isProblematic ? 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/10' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800'}`}>
-                <div className={`p-4 font-bold flex items-center justify-between ${isProblematic ? 'text-amber-700 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-500' : 'text-slate-700 bg-slate-50 dark:bg-slate-900 dark:text-slate-300'}`}>
-                    <div className="flex items-center gap-2">
-                        {isProblematic ? <AlertTriangle size={20}/> : <CheckCircle size={20}/>}
-                        {title}
-                    </div>
-                    <span className="text-xs px-2 py-1 rounded bg-white/50">{rows.length} itens</span>
+            <div className={`rounded-xl border overflow-hidden mb-6 ${isProblematic ? 'border-amber-200 bg-amber-50 dark:bg-amber-900/10' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'}`}>
+                <div className={`px-4 py-3 font-bold text-sm flex items-center gap-2 ${isProblematic ? 'text-amber-700 dark:text-amber-500 bg-amber-100 dark:bg-amber-900/30' : 'text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-700'}`}>
+                    {isProblematic ? <AlertTriangle size={16}/> : <CheckCircle size={16}/>}
+                    {title} ({rows.length})
                 </div>
-                <div className="overflow-x-auto max-h-[400px]">
-                    <table className="w-full text-xs text-left">
-                        <thead className={`sticky top-0 z-10 ${isProblematic ? 'bg-amber-100/50' : 'bg-slate-100 dark:bg-slate-900'}`}>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                        <thead className="border-b dark:border-slate-700">
                             <tr>
-                                <th className="p-3">Data</th>
-                                <th className="p-3 w-1/4">Descrição</th>
-                                <th className="p-3">Centro de Custo (Editável)</th>
-                                <th className="p-3">Unidade (Automático)</th>
-                                <th className="p-3">Conta (Editável)</th>
-                                <th className="p-3 text-right">Valor</th>
+                                <th className="p-3 text-slate-500">Data</th>
+                                <th className="p-3 text-slate-500">Descrição</th>
+                                <th className="p-3 text-slate-500">CC (Cód)</th>
+                                <th className="p-3 text-slate-500">Conta</th>
+                                <th className="p-3 text-slate-500 text-right">Valor</th>
+                                {isProblematic && <th className="p-3 text-amber-600 font-bold">Inconsistência</th>}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                            {rows.map((row) => {
-                                const issues = analyzeConsistency(row);
-                                return (
-                                    <tr key={row.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                                        <td className="p-2 whitespace-nowrap text-slate-500">{typeof formatDate === 'function' ? formatDate(row.date) : row.date}</td>
-                                        
-                                        <td className="p-2">
-                                            <div className="font-bold text-slate-700 dark:text-slate-200">{row.description}</div>
-                                            <div className="text-[10px] text-slate-400">{row.materialDescription}</div>
-                                            {isProblematic && issues.map((issue, idx) => (
-                                                <div key={idx} className="mt-1 text-[10px] font-bold text-amber-600 flex items-center gap-1">
-                                                    <AlertTriangle size={10}/> {issue}
-                                                </div>
-                                            ))}
-                                        </td>
-
-                                        <td className="p-2">
-                                            <input 
-                                                className={`w-full bg-transparent border-b border-dashed outline-none text-xs py-1 ${isProblematic ? 'border-amber-400 focus:border-amber-600' : 'border-slate-300 focus:border-indigo-500'} dark:text-slate-300`}
-                                                value={row.costCenter}
-                                                onChange={(e) => handleEditRow(row.id, 'costCenter', e.target.value)}
-                                            />
-                                        </td>
-
-                                        <td className="p-2">
-                                            <div className="text-slate-600 dark:text-slate-400 italic">
-                                                {row.segment && row.segment.includes(':') ? row.segment.split(':')[1] : row.segment}
-                                            </div>
-                                        </td>
-
-                                        <td className="p-2">
-                                            <select 
-                                                className={`w-full bg-transparent border rounded px-1 py-1 text-xs outline-none cursor-pointer ${issues.length > 0 ? 'border-amber-400 text-amber-700 font-bold' : 'border-slate-200 text-slate-600 dark:text-slate-300 dark:border-slate-600'}`}
-                                                value={row.accountPlan}
-                                                onChange={(e) => handleEditRow(row.id, 'accountPlan', e.target.value)}
-                                            >
-                                                <option value={row.accountPlan}>{row.accountPlan} - {row.planDescription} (Original)</option>
-                                                {typeof PLANO_CONTAS !== 'undefined' && PLANO_CONTAS.map(p => (
-                                                    <option key={p.code} value={p.code}>{p.code} - {p.name}</option>
-                                                ))}
-                                            </select>
-                                        </td>
-
-                                        <td className={`p-2 text-right font-bold whitespace-nowrap ${row.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                            {row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                        <tbody className="divide-y dark:divide-slate-700">
+                            {rows.slice(0, 100).map(row => (
+                                <tr key={row.id} className="hover:bg-black/5 dark:hover:bg-white/5">
+                                    <td className="p-3 dark:text-slate-300 whitespace-nowrap">{row.date.split('-').reverse().join('/')}</td>
+                                    <td className="p-3 dark:text-slate-300 max-w-[200px] truncate" title={row.description}>{row.description}</td>
+                                    <td className="p-3 font-mono text-slate-500">{row.costCenterCode}</td>
+                                    <td className="p-3 dark:text-slate-300">{row.accountPlan}</td>
+                                    <td className="p-3 text-right font-bold dark:text-slate-200">{row.value.toLocaleString('pt-BR', {style:'currency', currency:'BRL'})}</td>
+                                    {isProblematic && <td className="p-3 text-amber-600 font-bold bg-amber-50 dark:bg-amber-900/20">{row.issues.join(', ')}</td>}
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
@@ -608,61 +506,65 @@ const AutomaticImportComponent = ({ onImport, isProcessing }) => {
         );
     };
 
-    return (
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="font-bold text-lg dark:text-white">Auditoria e Importação</h3>
-                
-                {previewData.length > 0 && (
-                    <div className="flex gap-3">
-                        <button 
-                            onClick={() => { setPreviewData([]); setFileText(''); }}
-                            className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-colors"
-                        >
-                            Cancelar
-                        </button>
+    const problematicRows = previewData.filter(r => r.issues && r.issues.length > 0);
+    const cleanRows = previewData.filter(r => !r.issues || r.issues.length === 0);
 
-                        <button 
-                            onClick={handleConfirmImport} 
-                            disabled={isProcessing} 
-                            className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all text-white
-                                ${problematicRows.length > 0 
-                                    ? 'bg-amber-500 hover:bg-amber-600' 
-                                    : 'bg-emerald-600 hover:bg-emerald-700'
-                                }`}
-                        >
-                            {isProcessing ? <Loader2 className="animate-spin"/> : (problematicRows.length > 0 ? <AlertTriangle size={18}/> : <CheckCircle size={18}/>)} 
-                            
-                            {problematicRows.length > 0 
-                                ? `Importar com ${problematicRows.length} Avisos` 
-                                : 'Confirmar Importação'}
-                        </button>
+    if (!importMode) {
+        return (
+            <div className="flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 h-[calc(100vh-200px)]">
+                <div className="bg-indigo-50 dark:bg-slate-900/50 p-6 rounded-full mb-6">
+                    <UploadCloud size={64} className="text-indigo-500" />
+                </div>
+                <h2 className="text-2xl font-bold mb-6 dark:text-white">Selecione o Tipo de Arquivo</h2>
+                <div className="flex gap-4">
+                    <button onClick={() => setImportMode('ENTRADA')} className="flex flex-col items-center justify-center w-48 h-32 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 border-2 border-emerald-200 dark:border-emerald-700 rounded-2xl transition-all gap-3 group">
+                        <FileUp className="text-emerald-600 group-hover:scale-110 transition-transform" size={32} />
+                        <span className="font-bold text-emerald-700 dark:text-emerald-400">Importar Entrada</span>
+                    </button>
+                    <button onClick={() => setImportMode('SAIDA')} className="flex flex-col items-center justify-center w-48 h-32 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 border-2 border-blue-200 dark:border-blue-700 rounded-2xl transition-all gap-3 group">
+                        <Package className="text-blue-600 group-hover:scale-110 transition-transform" size={32} />
+                        <span className="font-bold text-blue-700 dark:text-blue-400">Importar Saída</span>
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (previewData.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 h-[calc(100vh-200px)]">
+                <div className="w-full max-w-2xl text-center">
+                    <button onClick={() => setImportMode(null)} className="mb-4 text-sm text-slate-400 hover:text-indigo-500 flex items-center justify-center gap-1 mx-auto">
+                        <ChevronLeft size={14}/> Voltar
+                    </button>
+                    <h2 className="text-xl font-bold mb-2 dark:text-white">Importar Arquivo de {importMode === 'ENTRADA' ? 'Entradas' : 'Saídas'}</h2>
+                    <p className="text-sm text-slate-500 mb-8">{importMode === 'ENTRADA' ? 'O sistema verificará consistência.' : 'O sistema aplicará regras de estoque.'}</p>
+                    <div onClick={() => fileRef.current?.click()} className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-10 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                        <UploadCloud className="mx-auto text-indigo-500 mb-4" size={48} />
+                        <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o TXT</p>
+                        <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFileSelect} />
                     </div>
-                )}
-            </div> 
-
-            {previewData.length === 0 && (
-                <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
-                    <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
-                    <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT (Entrada ou Saída)</p>
-                    <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
                 </div>
-            )}
+            </div>
+        );
+    }
 
-            {previewData.length > 0 && (
-                <div className="animate-in fade-in space-y-6">
-                    <TableBlock 
-                        title="Inconsistências Encontradas (Verifique C. Custo e Conta)" 
-                        rows={problematicRows} 
-                        isProblematic={true} 
-                    />
-                    <TableBlock 
-                        title="Itens Validados" 
-                        rows={cleanRows} 
-                        isProblematic={false} 
-                    />
+    return (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 h-full flex flex-col animate-in fade-in duration-300">
+            <div className="flex justify-between items-center mb-6 border-b dark:border-slate-700 pb-4">
+                <div>
+                    <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">{importMode === 'ENTRADA' ? 'Validar Entradas' : 'Validar Saídas de Estoque'}</h2>
+                    <p className="text-sm text-slate-500 mt-1">Total: <strong>{stats.total}</strong> | Ignorados: <strong>{stats.skipped}</strong></p>
                 </div>
-            )}
+                <div className="flex gap-3">
+                    <button onClick={handleCancel} className="px-4 py-2 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors text-slate-600 dark:text-slate-300 font-medium">Cancelar</button>
+                    <button onClick={handleConfirm} disabled={isProcessing} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/20">{isProcessing ? <Loader2 className="animate-spin"/> : <Save size={18}/>} Confirmar</button>
+                </div>
+            </div>
+            <div className="flex-1 overflow-y-auto pr-2">
+                {importMode === 'ENTRADA' && problematicRows.length > 0 && <TableBlock title="Inconsistências (Verifique)" rows={problematicRows} isProblematic={true} />}
+                <TableBlock title={importMode === 'ENTRADA' ? "Itens Validados" : "Itens para Importação"} rows={importMode === 'ENTRADA' ? cleanRows : previewData} isProblematic={false} />
+            </div>
         </div>
     );
 };
@@ -1007,7 +909,6 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
 
     if (!isOpen) return null;
 
-    // Adiciona CC à lista ao dar Enter
     const handleKeyDown = (e) => {
         if (e.key === 'Enter' && ccInput.trim()) {
             e.preventDefault();
@@ -1032,21 +933,29 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
             return;
         }
 
-        const filtered = transactions.filter(t => {
-            // 1. Filtro de Data (Mês e Ano)
-            let tDate = new Date(t.date);
-            // Ajuste para garantir leitura correta da string YYYY-MM-DD
-            if (typeof t.date === 'string') {
-                const parts = t.date.split('-'); // 2025-12-01
-                tDate = new Date(parts[0], parts[1] - 1, parts[2]);
-            }
+        const safeTransactions = Array.isArray(transactions) ? transactions : [];
+
+        const filtered = safeTransactions.filter(t => {
+            if (!t || !t.date) return false;
+
+            // Filtro de Data
+            let tDate;
+            try {
+                if (typeof t.date === 'string' && t.date.includes('-')) {
+                    const parts = t.date.split('-'); 
+                    if(parts.length < 3) return false;
+                    tDate = new Date(parts[0], parts[1] - 1, parts[2]);
+                } else {
+                    tDate = new Date(t.date);
+                }
+                if (isNaN(tDate.getTime())) return false;
+            } catch (e) { return false; }
 
             const matchDate = tDate.getMonth() === parseInt(selectedMonth) && tDate.getFullYear() === parseInt(selectedYear);
             
-            // 2. Filtro de CC (Verifica se o CC da transação está na lista selecionada)
-            // Normaliza para string para evitar erro de tipo
+            // Filtro de CC (Usando 'includes' para flexibilidade: '1087' acha '01087')
             const tCC = String(t.costCenterCode || '').trim();
-            const matchCC = selectedCCs.some(selected => tCC === selected || tCC.startsWith(selected)); 
+            const matchCC = selectedCCs.some(selected => tCC.includes(selected)); 
             
             return matchDate && matchCC;
         });
@@ -1055,13 +964,11 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
         setHasGenerated(true);
     };
 
-    const totalValue = reportData.reduce((acc, curr) => acc + curr.value, 0);
+    const totalValue = reportData.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0);
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700">
-                
-                {/* Header */}
                 <div className="p-6 border-b dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-950/50 rounded-t-2xl">
                     <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
                         <FileText className="text-indigo-500"/> Relatório de Centro de Custo
@@ -1070,120 +977,68 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
                         <X size={20} className="text-slate-500"/>
                     </button>
                 </div>
-
-                {/* Filtros */}
                 <div className="p-6 grid grid-cols-1 md:grid-cols-12 gap-4 border-b dark:border-slate-800">
-                    
-                    {/* Seleção de Data */}
                     <div className="md:col-span-3 flex gap-2">
-                        <select 
-                            value={selectedMonth} 
-                            onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"
-                        >
-                            {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (
-                                <option key={i} value={i}>{m}</option>
-                            ))}
+                        <select value={selectedMonth} onChange={(e) => setSelectedMonth(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none">
+                            {['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'].map((m, i) => (<option key={i} value={i}>{m}</option>))}
                         </select>
-                        <select 
-                            value={selectedYear} 
-                            onChange={(e) => setSelectedYear(Number(e.target.value))}
-                            className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"
-                        >
+                        <select value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))} className="w-24 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none">
                             {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
                         </select>
                     </div>
-
-                    {/* Input de CC */}
                     <div className="md:col-span-7">
                         <div className="relative flex gap-2">
-                            <input 
-                                type="text" 
-                                placeholder="Digite o CC (ex: 1087) e dê Enter..." 
-                                value={ccInput}
-                                onChange={(e) => setCcInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                                className="w-full pl-4 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"
-                            />
+                            <input type="text" placeholder="Digite o CC (ex: 1087) e dê Enter..." value={ccInput} onChange={(e) => setCcInput(e.target.value)} onKeyDown={handleKeyDown} className="w-full pl-4 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm dark:text-white focus:ring-2 ring-indigo-500 outline-none"/>
                             <button onClick={handleAddCC} className="bg-slate-200 dark:bg-slate-700 p-2 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors">
                                 <PlusCircle size={20} className="text-slate-600 dark:text-slate-300"/>
                             </button>
                         </div>
-                        {/* Lista de Selecionados */}
                         <div className="flex flex-wrap gap-2 mt-2">
                             {selectedCCs.map(cc => (
                                 <span key={cc} className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded text-xs font-bold flex items-center gap-1">
-                                    {cc}
-                                    <X size={12} className="cursor-pointer hover:text-indigo-900" onClick={() => handleRemoveCC(cc)}/>
+                                    {cc} <X size={12} className="cursor-pointer hover:text-indigo-900" onClick={() => handleRemoveCC(cc)}/>
                                 </span>
                             ))}
-                            {selectedCCs.length === 0 && <span className="text-xs text-slate-400 italic mt-1">Nenhum CC selecionado</span>}
                         </div>
                     </div>
-
-                    {/* Botão Gerar */}
                     <div className="md:col-span-2">
-                        <button 
-                            onClick={generateReport}
-                            className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-indigo-500/30"
-                        >
-                            Gerar Relatório
-                        </button>
+                        <button onClick={generateReport} className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm transition-colors shadow-lg shadow-indigo-500/30">Gerar</button>
                     </div>
                 </div>
-
-                {/* Resultados - Tabela */}
                 <div className="flex-1 overflow-y-auto p-0 bg-slate-50/50 dark:bg-slate-900/50">
                     {!hasGenerated ? (
-                        <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-                            <Search size={48} className="mb-2 opacity-20"/>
-                            <p>Selecione os filtros e clique em Gerar</p>
-                        </div>
+                        <div className="flex flex-col items-center justify-center h-48 text-slate-400"><Search size={48} className="mb-2 opacity-20"/><p>Selecione os filtros e clique em Gerar</p></div>
                     ) : (
-                        <>
-                            <table className="w-full text-left text-xs border-collapse">
-                                <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 shadow-sm z-10">
-                                    <tr>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Data</th>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Descrição</th>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">CC</th>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Unidade</th>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Conta/Tipo</th>
-                                        <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700 text-right">Valor</th>
+                        <table className="w-full text-left text-xs border-collapse">
+                            <thead className="sticky top-0 bg-slate-100 dark:bg-slate-800 shadow-sm z-10">
+                                <tr>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Data</th>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Descrição</th>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">CC</th>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Unidade</th>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700">Conta</th>
+                                    <th className="p-3 font-bold text-slate-600 dark:text-slate-300 border-b dark:border-slate-700 text-right">Valor</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y dark:divide-slate-700 bg-white dark:bg-slate-900">
+                                {reportData.length > 0 ? reportData.map((row) => (
+                                    <tr key={row.id} className="hover:bg-indigo-50 dark:hover:bg-slate-800/50 transition-colors">
+                                        <td className="p-3 dark:text-slate-300 whitespace-nowrap">{row.date ? row.date.split('-').reverse().join('/') : '-'}</td>
+                                        <td className="p-3 dark:text-slate-300 truncate max-w-[250px]" title={row.description}>{row.description}</td>
+                                        <td className="p-3 font-mono text-slate-500 dark:text-slate-400">{row.costCenterCode || '-'}</td>
+                                        <td className="p-3 dark:text-slate-300 text-[10px]">{row.segment}</td>
+                                        <td className="p-3 dark:text-slate-300">{row.accountPlan || row.planDescription}</td>
+                                        <td className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">{row.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
                                     </tr>
-                                </thead>
-                                <tbody className="divide-y dark:divide-slate-700 bg-white dark:bg-slate-900">
-                                    {reportData.length > 0 ? (
-                                        reportData.map((row) => (
-                                            <tr key={row.id} className="hover:bg-indigo-50 dark:hover:bg-slate-800/50 transition-colors">
-                                                <td className="p-3 dark:text-slate-300 whitespace-nowrap">{row.date ? row.date.split('-').reverse().join('/') : '-'}</td>
-                                                <td className="p-3 dark:text-slate-300 truncate max-w-[250px]" title={row.description}>{row.description}</td>
-                                                <td className="p-3 font-mono text-slate-500 dark:text-slate-400">{row.costCenterCode || '-'}</td>
-                                                <td className="p-3 dark:text-slate-300 text-[10px]">{row.segment}</td>
-                                                <td className="p-3 dark:text-slate-300">{row.accountPlan || row.planDescription}</td>
-                                                <td className="p-3 text-right font-bold text-slate-700 dark:text-slate-200">{row.value.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr>
-                                            <td colSpan="6" className="p-8 text-center text-slate-500 italic">Nenhum lançamento encontrado para estes critérios.</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </>
+                                )) : <tr><td colSpan="6" className="p-8 text-center text-slate-500 italic">Nenhum dado encontrado para os critérios selecionados.</td></tr>}
+                            </tbody>
+                        </table>
                     )}
                 </div>
-
-                {/* Footer com Totais */}
                 {hasGenerated && (
                     <div className="p-4 bg-white dark:bg-slate-900 border-t dark:border-slate-800 flex justify-between items-center">
-                        <div className="text-sm text-slate-500">
-                            Registros: <strong>{reportData.length}</strong>
-                        </div>
-                        <div className="text-lg font-bold text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-lg border dark:border-slate-700">
-                            Total: <span className="text-indigo-600 dark:text-indigo-400">{totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span>
-                        </div>
+                        <div className="text-sm text-slate-500">Registros: <strong>{reportData.length}</strong></div>
+                        <div className="text-lg font-bold text-slate-800 dark:text-white bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-lg border dark:border-slate-700">Total: <span className="text-indigo-600 dark:text-indigo-400">{totalValue.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'})}</span></div>
                     </div>
                 )}
             </div>
