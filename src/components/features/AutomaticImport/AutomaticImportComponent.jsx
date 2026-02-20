@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
 import { ADMIN_CC_CODES } from '../../../constants/business';
-import { PLANO_CONTAS } from '../../../planoContas';
+import { PLANO_CONTAS } from '../../../constants/planoContas';
 import { getUnitByCostCenter } from '../../../utils/helpers';
 import { formatDate } from '../../../utils/formatters';
 
