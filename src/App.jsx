@@ -160,7 +160,7 @@ export default function App() {
                 <div className="p-6 flex items-center justify-between overflow-hidden">
                     {sidebarOpen && (
                         <div className="animate-in fade-in slide-in-from-left-4 duration-500">
-                            <h1 className="text-xl font-black tracking-tighter text-white">Noromix<span className="text-indigo-400">Custos</span></h1>
+                            <h1 className="text-xl font-black tracking-tighter text-white">Scamatti<span className="text-indigo-400">Custos</span></h1>
                             <p className="text-[10px] font-bold text-slate-500 tracking-widest uppercase">Sistema de Gestão</p>
                         </div>
                     )}
