@@ -47,3 +47,5 @@ export const dbService = {
 };
 
 export const aiService = { analyze: async () => "IA Placeholder" };
+
+export default dbService;

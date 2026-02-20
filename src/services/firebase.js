@@ -1,8 +1,8 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 
-const firebaseConfig = {
-    apiKey: "AIzaSyBmgCmtJnVRkmO2SzvyVmG5e7QCEhxDcy4",
+export const firebaseConfig = {
+    apiKey: "[GCP_API_KEY]",
     authDomain: "sistema-custos.firebaseapp.com",
     projectId: "sistema-custos",
     storageBucket: "sistema-custos.firebasestorage.app",
@@ -13,4 +13,4 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const db = getFirestore(app);
 export const appId = 'financial-saas-production';
-export const GEMINI_API_KEY = "AIzaSyA6feDMeD7YNNQf40q2ALOvwPnfCDa7Pw4"; 
+export const GEMINI_API_KEY = "[ENCRYPTION_KEY]";

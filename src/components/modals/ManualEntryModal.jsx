@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import dbService from '../../../services/dbService';
-import { PLANO_CONTAS } from '../../../constants/costCenterRules';
+import dbService from '../../services/dbService';
+import { PLANO_CONTAS } from '../../constants/planoContas';
 
 const ManualEntryModal = ({ onClose, segments, onSave, user, initialData, showToast }) => {
     const [form, setForm] = useState({
