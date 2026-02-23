@@ -3,7 +3,7 @@ import {
     LayoutDashboard, List, DollarSign, Share2, Package,
     BarChart3 as BarChartIcon, FileUp, TrendingUp, Globe,
     UploadCloud, Users, Sparkles, Sun, Moon, LogOut, UserCircle,
-    ChevronRight, TrendingDown, Factory, ShoppingCart, Search, FileText, PlusCircle, Edit2
+    ChevronRight, TrendingDown, Factory, ShoppingCart, Search, FileText, PlusCircle, Edit2, Briefcase
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -33,6 +33,7 @@ import StockComponent from './components/features/Stock/StockComponent';
 import InvestimentosReportComponent from './components/features/Investimentos/InvestimentosReportComponent';
 import GlobalComponent from './components/features/Global/GlobalComponent';
 import RateiosComponent from './components/features/Rateios/RateiosComponent';
+import RateioAdmCentral from './components/features/RateioAdministrativo/RateioAdmCentral';
 import UsersScreen from './components/features/Users/UsersScreen';
 
 // Modals
@@ -175,6 +176,7 @@ export default function App() {
                         { id: 'lancamentos', icon: List, label: 'Lançamentos' },
                         { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
                         { id: 'rateios', icon: Share2, label: 'Rateios' },
+                        { id: 'rateio_adm_avancado', icon: Briefcase, label: 'Rateio Adm Geral' },
                         { id: 'estoque', icon: Package, label: 'Estoque' },
                         { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
                         { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
@@ -210,7 +212,7 @@ export default function App() {
             {/* Main Content */}
             <main className="flex-1 overflow-y-auto p-4 lg:p-8">
                 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 sticky top-0 z-40 bg-slate-100 dark:bg-slate-900 py-2">
-                    {!['global', 'rateios'].includes(activeTab) && (
+                    {!['global', 'rateios', 'rateio_adm_avancado'].includes(activeTab) && (
                         <div className="flex gap-2 w-full md:w-auto items-center flex-wrap">
                             <PeriodSelector filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />
                             <HierarchicalSelect
@@ -309,6 +311,7 @@ export default function App() {
                 {/* Feature Component Renderers */}
                 {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />}
                 {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />}
+                {activeTab === 'rateio_adm_avancado' && <RateioAdmCentral filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />}
                 {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
                 {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
                 {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} />}
