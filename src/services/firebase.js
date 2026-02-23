@@ -2,15 +2,15 @@ import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 
 export const firebaseConfig = {
-    apiKey: "[GCP_API_KEY]",
-    authDomain: "sistema-custos.firebaseapp.com",
-    projectId: "sistema-custos",
-    storageBucket: "sistema-custos.firebasestorage.app",
-    messagingSenderId: "693431907072",
-    appId: "1:693431907072:web:2dbc529e5ef65476feb9e5"
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const db = getFirestore(app);
-export const appId = 'financial-saas-production';
-export const GEMINI_API_KEY = "[ENCRYPTION_KEY]";
+export const appId = import.meta.env.VITE_APP_ID;
+export const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
