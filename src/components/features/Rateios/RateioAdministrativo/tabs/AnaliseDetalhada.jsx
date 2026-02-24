@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Loader2, Download, Filter, BarChart2 } from 'lucide-react';
-import dbService from '../../../../services/dbService';
-import { fetchConsolidatedTransactions } from '../../../../utils/rateioTransactions';
+import dbService from '../../../../../services/dbService';
+import { fetchConsolidatedTransactions } from '../../../../../utils/rateioTransactions';
 
 export default function AnaliseDetalhada({ filter, user }) {
     const [transactions, setTransactions] = useState([]);

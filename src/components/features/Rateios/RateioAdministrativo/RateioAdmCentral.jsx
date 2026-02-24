@@ -7,7 +7,7 @@ import AnaliseDetalhada from './tabs/AnaliseDetalhada';
 import CadastroConfig from './tabs/CadastroConfig';
 import ImportacaoTXT from './tabs/ImportacaoTXT';
 import LancamentosManuais from './tabs/LancamentosManuais';
-import PeriodSelector from '../../common/PeriodSelector';
+import PeriodSelector from '../../../common/PeriodSelector';
 
 const tabs = [
     { id: 'dashboard', label: 'Dashboard Geral', icon: LayoutDashboard },

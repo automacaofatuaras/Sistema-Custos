@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { PlusCircle, Search, Edit2, Trash2 } from 'lucide-react';
-import { formatDate } from '../../../../utils/formatters';
-import RateioManualEntryModal from '../../../modals/RateioManualEntryModal';
-import dbService from '../../../../services/dbService';
+import { formatDate } from '../../../../../utils/formatters';
+import RateioManualEntryModal from '../../../../modals/RateioManualEntryModal';
+import dbService from '../../../../../services/dbService';
 
 export default function LancamentosManuais({ filter, user, showToast }) {
     const [transactions, setTransactions] = useState([]);

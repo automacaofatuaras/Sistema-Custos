@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Layers, Loader2, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
-import dbService from '../../../../services/dbService';
-import { fetchConsolidatedTransactions } from '../../../../utils/rateioTransactions';
+import dbService from '../../../../../services/dbService';
+import { fetchConsolidatedTransactions } from '../../../../../utils/rateioTransactions';
 
 export default function ResumoSegmento({ filter, user }) {
     const [transactions, setTransactions] = useState([]);

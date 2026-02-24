@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, Save, Loader2, Briefcase, Users, Building, Tag, Hash, UploadCloud, Edit2, X, Search } from 'lucide-react';
-import dbService from '../../../../services/dbService';
+import dbService from '../../../../../services/dbService';
 
 const TABS = [
     { id: 'diretos', label: 'CC Diretos', icon: Building, col: 'rateio_adm_cc_diretos', fields: [{ name: 'code', label: 'Código CC' }, { name: 'name', label: 'Nome CC' }, { name: 'segment', label: 'Segmento' }] },

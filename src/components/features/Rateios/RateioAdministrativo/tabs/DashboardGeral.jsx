@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { DollarSign, AlertTriangle, TrendingUp, TrendingDown, Layers, Building, Loader2, Send } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
-import dbService from '../../../../services/dbService';
-import reportService from '../../../../services/reportService';
-import { fetchConsolidatedTransactions } from '../../../../utils/rateioTransactions';
+import dbService from '../../../../../services/dbService';
+import reportService from '../../../../../services/reportService';
+import { fetchConsolidatedTransactions } from '../../../../../utils/rateioTransactions';
 
 const COLORS = ['#6366f1', '#10b981', '#f43f5e', '#f59e0b', '#8b5cf6', '#06b6d4'];
 

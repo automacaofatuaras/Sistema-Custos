@@ -32,8 +32,8 @@ import FechamentoComponent from './components/features/Fechamento/FechamentoComp
 import StockComponent from './components/features/Stock/StockComponent';
 import InvestimentosReportComponent from './components/features/Investimentos/InvestimentosReportComponent';
 import GlobalComponent from './components/features/Global/GlobalComponent';
-import RateiosComponent from './components/features/Rateios/RateiosComponent';
-import RateioAdmCentral from './components/features/RateioAdministrativo/RateioAdmCentral';
+import RateioUnidadesCentral from './components/features/Rateios/RateioUnidades/RateioUnidadesCentral';
+import RateioAdmCentral from './components/features/Rateios/RateioAdministrativo/RateioAdmCentral';
 import UsersScreen from './components/features/Users/UsersScreen';
 
 // Modals
@@ -61,6 +61,9 @@ export default function App() {
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [transactions, setTransactions] = useState([]);
     const [isProcessing, setIsProcessing] = useState(false);
+
+    // Sub-Module State
+    const [activeRateioModule, setActiveRateioModule] = useState('adm_geral'); // 'adm_geral' ou 'unidades'
 
     // Filters
     const [filter, setFilter] = useState({ month: new Date().getMonth(), year: new Date().getFullYear(), type: 'month' });
@@ -176,7 +179,6 @@ export default function App() {
                         { id: 'lancamentos', icon: List, label: 'Lançamentos' },
                         { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
                         { id: 'rateios', icon: Share2, label: 'Rateios' },
-                        { id: 'rateio_adm_avancado', icon: Briefcase, label: 'Rateio Adm Geral' },
                         { id: 'estoque', icon: Package, label: 'Estoque' },
                         { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
                         { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
@@ -212,7 +214,7 @@ export default function App() {
             {/* Main Content */}
             <main className="flex-1 overflow-y-auto p-4 lg:p-8">
                 <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 sticky top-0 z-40 bg-slate-100 dark:bg-slate-900 py-2">
-                    {!['global', 'rateios', 'rateio_adm_avancado'].includes(activeTab) && (
+                    {!['global', 'rateios'].includes(activeTab) && (
                         <div className="flex gap-2 w-full md:w-auto items-center flex-wrap">
                             <PeriodSelector filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />
                             <HierarchicalSelect
@@ -310,8 +312,37 @@ export default function App() {
 
                 {/* Feature Component Renderers */}
                 {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />}
-                {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />}
-                {activeTab === 'rateio_adm_avancado' && <RateioAdmCentral filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} showToast={showToast} />}
+
+                {/* Rateios unificados */}
+                {activeTab === 'rateios' && (
+                    <div className="space-y-6 animate-in fade-in">
+                        {/* Sub-menu de navegação de Rateios */}
+                        <div className="flex p-1 bg-slate-200 dark:bg-slate-800 rounded-xl w-fit sm:w-auto overflow-x-auto shadow-inner">
+                            <button
+                                onClick={() => setActiveRateioModule('adm_geral')}
+                                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap
+                                    ${activeRateioModule === 'adm_geral' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                            >
+                                <Briefcase size={16} /> Rateio Adm Geral
+                            </button>
+                            <button
+                                onClick={() => setActiveRateioModule('unidades')}
+                                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap
+                                    ${activeRateioModule === 'unidades' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                            >
+                                <Share2 size={16} /> Rateio Unidades
+                            </button>
+                        </div>
+
+                        {activeRateioModule === 'adm_geral' && (
+                            <RateioAdmCentral filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} showToast={showToast} />
+                        )}
+                        {activeRateioModule === 'unidades' && (
+                            <RateioUnidadesCentral transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} />
+                        )}
+                    </div>
+                )}
+
                 {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
                 {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
                 {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} />}
