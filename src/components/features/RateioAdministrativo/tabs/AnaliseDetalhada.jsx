@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Loader2, Download, Filter, BarChart2 } from 'lucide-react';
 import dbService from '../../../../services/dbService';
+import { fetchConsolidatedTransactions } from '../../../../utils/rateioTransactions';
 
-export default function AnaliseDetalhada({ filter }) {
+export default function AnaliseDetalhada({ filter, user }) {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -12,7 +13,7 @@ export default function AnaliseDetalhada({ filter }) {
         const fetchData = async () => {
             setLoading(true);
             try {
-                const data = await dbService.getAll(null, 'rateio_adm_transactions');
+                const data = await fetchConsolidatedTransactions(user);
                 setTransactions(data || []);
             } catch (err) {
                 console.error('Erro ao buscar rateios:', err);
@@ -70,7 +71,7 @@ export default function AnaliseDetalhada({ filter }) {
             name: k,
             total: groups[k].total,
             count: groups[k].items.length,
-            items: groups[k].items
+            items: groups[k].items.sort((a, b) => b.value - a.value)
         })).sort((a, b) => b.total - a.total);
     }, [filteredData, groupBy]);
 

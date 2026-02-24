@@ -180,6 +180,11 @@ export default function CadastroConfig() {
                         if (val.startsWith('"') && val.endsWith('"')) {
                             val = val.substring(1, val.length - 1);
                         }
+
+                        if (field.type === 'multi-select') {
+                            val = val ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
+                        }
+
                         item[field.name] = val;
                     });
                     return item;
@@ -342,15 +347,21 @@ export default function CadastroConfig() {
                                                     <td key={field.name} className="p-4 py-3 dark:text-slate-300 font-medium">
                                                         {field.type === 'multi-select' ? (
                                                             <div className="max-w-[300px] flex flex-wrap gap-1">
-                                                                {(item[field.name] || []).length > 0 ? (
-                                                                    (item[field.name] || []).map(code => (
-                                                                        <span key={code} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300" title={costCenterOptions.find(c => c.code === code)?.name || code}>
-                                                                            {code}
-                                                                        </span>
-                                                                    ))
-                                                                ) : (
-                                                                    <span className="text-slate-400 italic text-xs">Nenhum vínculo</span>
-                                                                )}
+                                                                {(() => {
+                                                                    let tags = item[field.name] || [];
+                                                                    if (typeof tags === 'string') tags = tags.split(',').map(t => t.trim()).filter(Boolean);
+                                                                    if (!Array.isArray(tags)) tags = [];
+
+                                                                    return tags.length > 0 ? (
+                                                                        tags.map(code => (
+                                                                            <span key={code} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300" title={costCenterOptions.find(c => c.code === code)?.name || code}>
+                                                                                {code}
+                                                                            </span>
+                                                                        ))
+                                                                    ) : (
+                                                                        <span className="text-slate-400 text-xs italic">Nenhum vínculo</span>
+                                                                    )
+                                                                })()}
                                                             </div>
                                                         ) : (
                                                             item[field.name]

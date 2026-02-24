@@ -132,6 +132,10 @@ export default function ImportacaoTXT() {
         }));
     };
 
+    const handleDeleteRow = (id) => {
+        setParsedData(prev => prev.filter(row => row.id !== id));
+    };
+
     const handleFileSelect = (e) => {
         const selectedFile = e.target.files[0];
         if (!selectedFile) return;
@@ -139,6 +143,19 @@ export default function ImportacaoTXT() {
         setError(null);
         setSuccessMessage(null);
         setParsedData([]);
+    };
+
+    // Mapeamento estático para reclassificação forçada de CCs na importação
+    const RECLASSIFICACAO_CC = {
+        // Grupo que vai para 1105
+        '27123': '1105', '10123': '1105', '22123': '1105', '25123': '1105',
+        '34123': '1105', '33123': '1105', '38123': '1105', '29123': '1105',
+        '9123': '1105', '28123': '1105', '8123': '1105',
+        // Grupo que vai para 1104
+        '20223': '1104', '5223': '1104', '2323': '1104', '26323': '1104',
+        '4223': '1104', '3123': '1104', '13123': '1104', '14123': '1104',
+        '32123': '1104', '21123': '1104', '17123': '1104', '6123': '1104',
+        '31123': '1104', '7123': '1104'
     };
 
     const handleParse = () => {
@@ -196,8 +213,18 @@ export default function ImportacaoTXT() {
                     }
 
                     if (isOutputRow && hasSaidaColumns) {
-                        const ccCode = cols[colMap['PRMAT-CCUS']]?.trim();
-                        const ccDesc = cols[colMap['PRMAT-NCUS']]?.trim() || '';
+                        let originalCcCode = cols[colMap['PRMAT-CCUS']]?.trim();
+                        let ccCode = originalCcCode;
+                        let ccDesc = cols[colMap['PRMAT-NCUS']]?.trim() || '';
+
+                        // Aplicar Reclassificação, se aplicável
+                        if (RECLASSIFICACAO_CC[ccCode]) {
+                            ccCode = RECLASSIFICACAO_CC[ccCode];
+                            // Tentativa de buscar o descritivo oficial da tabela de configs
+                            const configMatch = [...configData.ccDiretos, ...configData.ccIndiretos].find(c => c.code.toString() === ccCode);
+                            ccDesc = configMatch && configMatch.name ? configMatch.name : (ccCode === '1105' ? 'Reclassificado 1105' : 'Reclassificado 1104');
+                        }
+
                         const rawDate = cols[colMap['PRGER-DATA']]?.trim();
                         const supplier = cols[colMap['PRMAT-NSUB']]?.trim() || 'Estoque';
                         const description = cols[colMap['PRMAT-NOME']]?.trim();
@@ -249,8 +276,19 @@ export default function ImportacaoTXT() {
                         });
 
                     } else if (hasEntradaColumns) {
-                        const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
-                        if (!ccCode) continue;
+                        let originalCcCode = cols[colMap['PRGER-CCUS']]?.trim();
+                        if (!originalCcCode) continue;
+
+                        let ccCode = originalCcCode;
+                        let ccDesc = cols[colMap['PRGER-NCCU']]?.trim() || '';
+
+                        // Aplicar Reclassificação de CC
+                        if (RECLASSIFICACAO_CC[ccCode]) {
+                            ccCode = RECLASSIFICACAO_CC[ccCode];
+                            // Tentar mesclar com nome oficial
+                            const configMatch = [...configData.ccDiretos, ...configData.ccIndiretos].find(c => c.code.toString() === ccCode);
+                            ccDesc = configMatch && configMatch.name ? configMatch.name : (ccCode === '1105' ? 'Reclassificado 1105' : 'Reclassificado 1104');
+                        }
 
                         const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
                         const planCode = cols[colMap['PRGER-PLAN']]?.trim() || '00.00';
@@ -262,7 +300,6 @@ export default function ImportacaoTXT() {
 
                         const supplier = cols[colMap['PRGER-NFOR']]?.trim() || 'Diversos';
                         let rawValue = cols[colMap['PRGER-TOTA']]?.trim();
-                        const ccDesc = cols[colMap['PRGER-NCCU']]?.trim() || '';
                         let sortDesc = cols[colMap['PR-SORT']]?.trim();
 
                         if (!rawValue) continue;
@@ -548,6 +585,7 @@ export default function ImportacaoTXT() {
                                                         <th className="px-3 py-2">Unidade</th>
                                                         <th className="px-3 py-2">Classe / Conta</th>
                                                         <th className="px-3 py-2 text-right">Valor</th>
+                                                        <th className="px-3 py-2 text-center">Ações</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -589,6 +627,15 @@ export default function ImportacaoTXT() {
                                                                 </td>
                                                                 <td className="px-3 py-2 text-right font-black text-rose-500">
                                                                     {row.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                                </td>
+                                                                <td className="px-3 py-2 text-center">
+                                                                    <button
+                                                                        onClick={() => handleDeleteRow(row.id)}
+                                                                        className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded transition-colors"
+                                                                        title="Excluir este lançamento"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                    </button>
                                                                 </td>
                                                             </tr>
                                                         );

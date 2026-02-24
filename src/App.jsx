@@ -311,7 +311,7 @@ export default function App() {
                 {/* Feature Component Renderers */}
                 {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />}
                 {activeTab === 'rateios' && <RateiosComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />}
-                {activeTab === 'rateio_adm_avancado' && <RateioAdmCentral filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />}
+                {activeTab === 'rateio_adm_avancado' && <RateioAdmCentral filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} showToast={showToast} />}
                 {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
                 {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
                 {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} />}

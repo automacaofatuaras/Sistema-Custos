@@ -3,6 +3,7 @@ import { DollarSign, AlertTriangle, TrendingUp, TrendingDown, Layers, Building, 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import dbService from '../../../../services/dbService';
 import reportService from '../../../../services/reportService';
+import { fetchConsolidatedTransactions } from '../../../../utils/rateioTransactions';
 
 const COLORS = ['#6366f1', '#10b981', '#f43f5e', '#f59e0b', '#8b5cf6', '#06b6d4'];
 
@@ -19,7 +20,7 @@ const KpiCard = ({ title, value, icon: Icon, colorClass, subtitle }) => (
     </div>
 );
 
-export default function DashboardGeral({ filter }) {
+export default function DashboardGeral({ filter, user }) {
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [sending, setSending] = useState(false);
@@ -28,7 +29,7 @@ export default function DashboardGeral({ filter }) {
         const fetchData = async () => {
             setLoading(true);
             try {
-                const data = await dbService.getAll(null, 'rateio_adm_transactions');
+                const data = await fetchConsolidatedTransactions(user);
                 setTransactions(data || []);
             } catch (err) {
                 console.error('Erro ao buscar rateios:', err);
@@ -97,12 +98,14 @@ export default function DashboardGeral({ filter }) {
     const formatterCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
     const handleSendReport = async () => {
+        if (!window.confirm("Você tem certeza que deseja disparar estes relatórios para o e-mail oficial dos Gestores?")) return;
+
         setSending(true);
         try {
-            const summary = reportService.generateExecutiveSummary(filter, KPIs);
-            const resEmail = await reportService.sendEmailReport(summary);
-            const resWpp = await reportService.sendWhatsAppReport(summary);
-            alert(`Envio Concluído!\n${resEmail.message}\n${resWpp.message}`);
+            // Em vez de global KPIs, enviamos a lista crua de transações para que
+            // o reportService possa filtrar e compor individualmente o KPI de cada gestor.
+            const resEmail = await reportService.sendEmailReport('viaDashboard', filter, KPIs, filteredData);
+            alert(`Processamento Concluído!\n${resEmail.message}`);
         } catch (e) {
             alert('Erro ao enviar relatório.');
         } finally {
@@ -145,7 +148,7 @@ export default function DashboardGeral({ filter }) {
             {/* KPI Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <KpiCard
-                    title="Custo Total Rateado"
+                    title="Custo Total"
                     value={formatterCurrency(KPIs.total)}
                     icon={DollarSign}
                     colorClass="bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400"
