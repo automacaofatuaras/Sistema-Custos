@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Settings, Edit2, Save, Loader2, Calculator, FileText } from 'lucide-react';
+import { Settings, Edit2, Save, Loader2, Calculator, FileText, Share2, Factory } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, appId } from '../../../services/firebase';
 import { BUSINESS_HIERARCHY } from '../../../constants/business';
 import CurrencyInput from '../../common/CurrencyInput';
+import PeriodSelector from '../../common/PeriodSelector';
+import { formatDate } from '../../../utils/formatters';
 
 const RateiosComponent = ({ transactions, filter, setFilter, years, segmentsList }) => {
     // Estado local
