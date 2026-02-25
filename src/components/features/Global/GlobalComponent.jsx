@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Globe, X } from 'lucide-react';
 import { BUSINESS_HIERARCHY, SEGMENT_CONFIG } from '../../../constants/business';
 import { getParentSegment } from '../../../utils/helpers';
-import PeriodSelector from '../../common/PeriodSelector';
+
 
 const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
     const [selectedSegment, setSelectedSegment] = useState(null);
@@ -277,7 +277,6 @@ const GlobalComponent = ({ transactions, filter, setFilter, years }) => {
                 <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
                     <Globe className="text-indigo-500" /> Consolidação Global
                 </h3>
-                <PeriodSelector filter={filter} setFilter={setFilter} years={years} />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
                 {consolidatedData['Total Global'] && (

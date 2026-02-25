@@ -7,7 +7,7 @@ import AnaliseDetalhada from './tabs/AnaliseDetalhada';
 import CadastroConfig from './tabs/CadastroConfig';
 import ImportacaoTXT from './tabs/ImportacaoTXT';
 import LancamentosManuais from './tabs/LancamentosManuais';
-import PeriodSelector from '../../../common/PeriodSelector';
+
 
 const tabs = [
     { id: 'dashboard', label: 'Dashboard Geral', icon: LayoutDashboard },
@@ -25,9 +25,6 @@ export default function RateioAdmCentral({ filter, setFilter, years, user, showT
         <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <h2 className="text-2xl font-black text-slate-900 dark:text-white">Rateio Administrativo Geral</h2>
-                <div className="flex gap-2">
-                    <PeriodSelector filter={filter} setFilter={setFilter} years={years} />
-                </div>
             </div>
 
             <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl overflow-x-auto space-x-1">

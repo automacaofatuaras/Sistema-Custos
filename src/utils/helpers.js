@@ -19,10 +19,9 @@ export const getUnitByCostCenter = (ccCode) => {
     const cc = parseInt(ccCode, 10);
     if (isNaN(cc)) return null;
 
-    if (cc === 1087 || cc === 1089 || cc === 1042) return "Porto de Areia Saara - Mira Estrela";
-
     if (cc >= 13000 && cc <= 13999) return "Porto de Areia Saara - Mira Estrela";
     if (cc >= 14000 && cc <= 14999) return "Porto Agua Amarela - Riolândia";
+    if (cc >= 28000 && cc <= 28999) return "Noromix Concreto S/A - Andradina";
     if (cc >= 27000 && cc <= 27999) return "Noromix Concreto S/A - Fernandópolis";
     if (cc >= 22000 && cc <= 22999) return "Noromix Concreto S/A - Ilha Solteira";
     if (cc >= 25000 && cc <= 25999) return "Noromix Concreto S/A - Jales";

@@ -50,7 +50,13 @@ const CustosComponent = ({ transactions, showToast, measureUnit, totalProduction
             let targetSub = 'Geral';
             let matched = false;
 
-            if (rules) {
+            if (t.grupo) {
+                targetRoot = t.grupo.toUpperCase();
+                targetSub = (t.subgrupo || 'Geral').toUpperCase();
+                matched = true;
+            }
+
+            if (!matched && rules) {
                 for (const [rootGroup, subGroups] of Object.entries(rules)) {
                     for (const [subGroup, ccList] of Object.entries(subGroups)) {
                         if (ccList.includes(ccCode)) {

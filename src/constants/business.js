@@ -1,6 +1,6 @@
 export const BUSINESS_HIERARCHY = {
     "Portos de Areia": ["Porto de Areia Saara - Mira Estrela", "Porto Agua Amarela - Riolândia"],
-    "Noromix Concreteiras": ["Noromix Concreto S/A - Andradina", "Noromix Concreto S/A - Fernandópolis", "Noromix Concreto S/A - Ilha Solteira", "Noromix Concreto S/A - Jales", "Noromix Concreto S/A - Ouroeste", "Noromix Concreto S/A - Paranaíba", "Noromix Concreto S/A - Monções", "Noromix Concreto S/A - Pereira Barreto", "Noromix Concreto S/A - Três Fronteiras", "Noromix Concreto S/A - Votuporanga"],
+    "Concreteiras": ["Noromix Concreto S/A - Andradina", "Noromix Concreto S/A - Fernandópolis", "Noromix Concreto S/A - Ilha Solteira", "Noromix Concreto S/A - Jales", "Noromix Concreto S/A - Ouroeste", "Noromix Concreto S/A - Paranaíba", "Noromix Concreto S/A - Monções", "Noromix Concreto S/A - Pereira Barreto", "Noromix Concreto S/A - Três Fronteiras", "Noromix Concreto S/A - Votuporanga"],
     "Fábrica de Tubos": ["Noromix Concreto S/A - Votuporanga (Fábrica)"],
     "Pedreiras": ["Mineração Grandes Lagos - Icém", "Mineração Grandes Lagos - Itapura", "Mineração Grandes Lagos - Riolândia", "Mineração Grandes Lagos - Três Fronteiras", "Noromix Concreto S/A - Rinópolis", "Mineração Noroeste Paulista - Monções"],
     "Usinas de Asfalto": ["Noromix Concreto S/A - Assis", "Noromix Concreto S/A - Monções (Usina)", "Noromix Concreto S/A - Itapura (Usina)", "Noromix Concreto S/A - Rinópolis (Usina)", "Demop Participações LTDA - Três Fronteiras", "Mineração Grandes Lagos - Icém (Usina)"],
@@ -10,7 +10,7 @@ export const BUSINESS_HIERARCHY = {
 export const SEED_UNITS = Object.values(BUSINESS_HIERARCHY).flat();
 
 export const SEGMENT_CONFIG = {
-    "Construtora": "ton", "Fábrica de Tubos": "m³", "Noromix Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "ton", "Usinas de Asfalto": "ton"
+    "Construtora": "ton", "Fábrica de Tubos": "m³", "Concreteiras": "m³", "Pedreiras": "ton", "Portos de Areia": "tonelada", "Usinas de Asfalto": "ton"
 };
 
 export const ADMIN_CC_CODES = [

@@ -32,17 +32,22 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
         const filtered = transactions.filter(t => {
             if (!t || !t.date) return false;
             let tDate;
-            if (typeof t.date === 'string' && t.date.includes('-')) {
-                const parts = t.date.split('-');
-                if (parts.length < 2) return false;
-                tDate = new Date(parts[0], parts[1] - 1, parts[2] || 1);
-            } else {
-                tDate = new Date(t.date);
-            }
-            if (isNaN(tDate.getTime())) return false;
+            try {
+                if (typeof t.date === 'string' && t.date.includes('-')) {
+                    const parts = t.date.split('-');
+                    if (parts.length < 2) return false;
+                    tDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2] || 1));
+                } else if (t.date instanceof Date) {
+                    tDate = t.date;
+                } else {
+                    tDate = new Date(t.date);
+                }
+            } catch (e) { return false; }
 
-            const matchDate = tDate.getMonth() === parseInt(selectedMonth) && tDate.getFullYear() === parseInt(selectedYear);
-            const tCC = String(t.costCenterCode || (t.costCenter && t.costCenter.split(' ')[0]) || '').trim();
+            if (!tDate || isNaN(tDate.getTime())) return false;
+
+            const matchDate = tDate.getMonth() === Number(selectedMonth) && tDate.getFullYear() === Number(selectedYear);
+            const tCC = String(t.costCenterCode || (t.costCenter && t.costCenter.toString().split(' ')[0]) || '').trim();
             const matchCC = selectedCCs.some(selected => tCC === selected || tCC.startsWith(selected));
             return matchDate && matchCC;
         });
@@ -124,8 +129,12 @@ const CostCenterReportModal = ({ isOpen, onClose, transactions }) => {
                                             <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                                 <td className="p-3 pl-6 text-slate-400 font-mono text-xs">{formatDate(t.date)}</td>
                                                 <td className="p-3">
-                                                    <div className="font-bold text-slate-700 dark:text-slate-200">{t.segment.includes(':') ? t.segment.split(':')[1] : t.segment}</div>
-                                                    <div className="text-[10px] text-slate-400 uppercase truncate max-w-[150px]">{t.costCenter}</div>
+                                                    <div className="font-bold text-slate-700 dark:text-slate-200">
+                                                        {t.segment && typeof t.segment === 'string' && t.segment.includes(':')
+                                                            ? t.segment.split(':')[1]
+                                                            : (t.segment || 'Sem Unidade')}
+                                                    </div>
+                                                    <div className="text-[10px] text-slate-400 uppercase truncate max-w-[150px]">{t.costCenter || 'CC Indefinido'}</div>
                                                 </td>
                                                 <td className="p-3">
                                                     <div className="font-medium text-slate-800 dark:text-slate-300">{t.description}</div>

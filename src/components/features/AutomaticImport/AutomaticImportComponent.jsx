@@ -1,14 +1,105 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
+import { UploadCloud, AlertTriangle, CheckCircle, Loader2, Trash2 } from 'lucide-react';
 import { ADMIN_CC_CODES } from '../../../constants/business';
 import { PLANO_CONTAS } from '../../../constants/planoContas';
 import { getUnitByCostCenter } from '../../../utils/helpers';
 import { formatDate } from '../../../utils/formatters';
+import dbService from '../../../services/dbService';
 
-const AutomaticImportComponent = ({ onImport, isProcessing, BUSINESS_HIERARCHY }) => {
+const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, BUSINESS_HIERARCHY, selectedUnit }) => {
     const [fileText, setFileText] = useState('');
     const [previewData, setPreviewData] = useState([]);
+    const [importHistory, setImportHistory] = useState([]);
+    const [isDeleting, setIsDeleting] = useState(false);
     const fileRef = useRef(null);
+
+    React.useEffect(() => {
+        loadHistory();
+    }, [transactions]); // React to outer changes
+
+    const loadHistory = async () => {
+        try {
+            const txList = transactions || [];
+            if (!txList.length) {
+                setImportHistory([]);
+                return;
+            }
+
+            // Compute import history from unique sources
+            const historyMap = {};
+            txList.forEach(tx => {
+                // Focus only on automatic imports
+                if (tx.source !== 'automatic_import') return;
+
+                let batchId = tx.importBatchId || tx.sourceFile;
+                let filename = tx.sourceFile;
+
+                // Handle legacy imports (lacking batchId) by grouping them by their creation minute
+                if (!batchId) {
+                    if (tx.createdAt) {
+                        const minutePrefix = tx.createdAt.substring(0, 16); // e.g., "2024-02-25T16:30"
+                        batchId = `legacy_${minutePrefix}`;
+
+                        const dateObj = new Date(tx.createdAt);
+                        const formattedDate = dateObj.toLocaleDateString('pt-BR');
+                        const formattedTime = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                        filename = `Importação Manual - ${formattedDate} às ${formattedTime}`;
+                    } else {
+                        batchId = 'legacy_imports';
+                        filename = 'Importações Antigas (Sem Arquivo)';
+                    }
+                } else {
+                    filename = filename || batchId;
+                }
+
+                if (!historyMap[batchId]) {
+                    historyMap[batchId] = {
+                        batchId,
+                        filename: filename,
+                        count: 0,
+                        totalValue: 0,
+                        importDate: tx.createdAt || new Date(0).toISOString(),
+                        type: tx.type
+                    };
+                }
+                historyMap[batchId].count += 1;
+                historyMap[batchId].totalValue += Math.abs(tx.value || 0);
+            });
+            setImportHistory(Object.values(historyMap).sort((a, b) => new Date(b.importDate) - new Date(a.importDate)));
+        } catch (err) {
+            console.error("Erro ao processar histórico de importações:", err);
+        }
+    };
+
+    const handleDeleteBatch = async (batchId) => {
+        if (!window.confirm("Deseja realmente excluir todos os itens importados neste lote? Isso afetará os Lançamentos globais da a aplicação.")) return;
+        setIsDeleting(true);
+        try {
+            const toDelete = transactions.filter(t => {
+                if (t.source !== 'automatic_import') return false;
+
+                if (batchId.startsWith('legacy_')) {
+                    if (t.importBatchId || t.sourceFile) return false;
+                    const minPrefix = t.createdAt ? t.createdAt.substring(0, 16) : 'imports';
+                    const targetPrefix = batchId.replace('legacy_', '');
+                    return (minPrefix === targetPrefix || targetPrefix === 'imports');
+                }
+
+                return t.importBatchId === batchId || t.sourceFile === batchId;
+            }).map(t => t.id);
+
+            await dbService.deleteBulk(null, 'transactions', toDelete);
+
+            alert(`Lote excluído com sucesso (${toDelete.length} itens removidos).`);
+        } catch (error) {
+            console.error("Erro ao deletar lote:", error);
+            alert("Erro ao excluir lote de importação.");
+        } finally {
+            setIsDeleting(false);
+            // Refresh onImport to update main table if needed
+            if (onImport) onImport([]); // trigger refresh if onImport handles empty array as refresh
+        }
+    };
 
     const analyzeConsistency = (row) => {
         if (row.accountPlan === 'MOV.EST') return [];
@@ -40,6 +131,13 @@ const AutomaticImportComponent = ({ onImport, isProcessing, BUSINESS_HIERARCHY }
         }
         if (!isAdminCC && isExpClass && !plan.includes('rateio')) {
             issues.push("Alerta: Despesa Administrativa lançada em Centro de Custo Operacional.");
+        }
+
+        if (selectedUnit) {
+            const cleanDetectedUnit = row.segment && row.segment.includes(':') ? row.segment.split(':')[1].trim() : (row.segment || "").trim();
+            if (cleanDetectedUnit !== selectedUnit && !cleanDetectedUnit.includes('DESCONHECIDO')) {
+                issues.push(`Aviso: Este item pertence à unidade "${cleanDetectedUnit}", mas você está na unidade "${selectedUnit}".`);
+            }
         }
 
         return issues;
@@ -101,6 +199,9 @@ const AutomaticImportComponent = ({ onImport, isProcessing, BUSINESS_HIERARCHY }
             if (isOutputRow && hasSaidaColumns) {
                 const ccCode = cols[colMap['PRMAT-CCUS']]?.trim();
                 const ccDesc = cols[colMap['PRMAT-NCUS']]?.trim() || '';
+
+                if (!ccCode || ['1087', '01087', '1089', '01089', '1042', '01042'].includes(ccCode)) continue;
+
                 const rawDate = cols[colMap['PRGER-DATA']]?.trim();
                 const supplier = cols[colMap['PRMAT-NSUB']]?.trim();
                 const description = cols[colMap['PRMAT-NOME']]?.trim();
@@ -137,12 +238,13 @@ const AutomaticImportComponent = ({ onImport, isProcessing, BUSINESS_HIERARCHY }
                     quantity: parseFloat(rawQtd) / 1000,
                     type: 'expense',
                     source: 'automatic_import',
-                    createdAt: new Date().toISOString()
+                    createdAt: new Date().toISOString(),
+                    importBatchId: file.name
                 });
 
             } else if (hasEntradaColumns) {
                 const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
-                if (!ccCode) continue;
+                if (!ccCode || ['1087', '01087', '1089', '01089', '1042', '01042'].includes(ccCode)) continue;
 
                 const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
                 const planCode = cols[colMap['PRGER-PLAN']]?.trim();
@@ -169,27 +271,7 @@ const AutomaticImportComponent = ({ onImport, isProcessing, BUSINESS_HIERARCHY }
 
                 const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
 
-                if (['01087', '1087', '01089', '1089', '99911'].includes(ccCode)) {
-                    const shareValue = value / 8;
-                    const baseObj = {
-                        date: safeDateWithTime,
-                        costCenter: `${ccCode} - ${ccDesc}`,
-                        costCenterCode: ccCode,
-                        accountPlan: planCode || '00.00',
-                        planDescription: planDesc || 'Indefinido', description: supplier, materialDescription: sortDesc,
-                        type: currentType, source: 'automatic_import', createdAt: new Date().toISOString()
-                    };
 
-                    const portoSplit = shareValue / 2;
-                    parsed.push({ ...baseObj, id: `${i}_porto1`, value: portoSplit, segment: "Porto de Areia Saara - Mira Estrela" });
-                    parsed.push({ ...baseObj, id: `${i}_porto2`, value: portoSplit, segment: "Porto Agua Amarela - Riolândia" });
-
-                    const pedreiraUnits = BUSINESS_HIERARCHY["Pedreiras"] || [];
-                    pedreiraUnits.forEach((unit, idx) => {
-                        parsed.push({ ...baseObj, id: `${i}_ped_${idx}`, value: shareValue, segment: unit });
-                    });
-                    continue;
-                }
 
                 const detectedUnit = getUnitByCostCenter(ccCode);
                 const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
@@ -207,7 +289,8 @@ const AutomaticImportComponent = ({ onImport, isProcessing, BUSINESS_HIERARCHY }
                     value: value,
                     type: currentType,
                     source: 'automatic_import',
-                    createdAt: new Date().toISOString()
+                    createdAt: new Date().toISOString(),
+                    importBatchId: file.name
                 });
             }
         }
@@ -232,9 +315,17 @@ const AutomaticImportComponent = ({ onImport, isProcessing, BUSINESS_HIERARCHY }
         }));
     };
 
-    const handleConfirmImport = () => {
+    const handleConfirmImport = (onlyClean = false) => {
         if (previewData.length === 0) return alert("Nenhum dado válido.");
-        const dataToImport = previewData.map(({ id, ...rest }) => rest);
+
+        let dataToProcess = previewData;
+        if (onlyClean) {
+            dataToProcess = previewData.filter(row => analyzeConsistency(row).length === 0);
+        }
+
+        if (dataToProcess.length === 0) return alert("Nenhum item válido para importar com esse filtro.");
+
+        const dataToImport = dataToProcess.map(({ id, ...rest }) => rest);
         onImport(dataToImport);
         setFileText(''); setPreviewData([]);
     };
@@ -318,13 +409,32 @@ const AutomaticImportComponent = ({ onImport, isProcessing, BUSINESS_HIERARCHY }
     return (
         <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700">
             <div className="flex justify-between items-center mb-6">
-                <h3 className="font-bold text-lg dark:text-white">Auditoria e Importação</h3>
+                <div className="flex flex-col">
+                    <h3 className="font-bold text-lg dark:text-white">Auditoria e Importação</h3>
+                    {selectedUnit && <p className="text-xs text-indigo-500 font-bold uppercase tracking-wider">Unidade Atual: {selectedUnit}</p>}
+                </div>
                 {previewData.length > 0 && (
                     <div className="flex gap-3">
                         <button onClick={() => { setPreviewData([]); setFileText(''); }} className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100 border border-slate-200 transition-colors">Cancelar</button>
-                        <button onClick={handleConfirmImport} disabled={isProcessing} className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all text-white ${problematicRows.length > 0 ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
-                            {isProcessing ? <Loader2 className="animate-spin" /> : (problematicRows.length > 0 ? <AlertTriangle size={18} /> : <CheckCircle size={18} />)}
-                            {problematicRows.length > 0 ? `Importar com ${problematicRows.length} Avisos` : 'Confirmar Importação'}
+
+                        {problematicRows.length > 0 && (
+                            <button
+                                onClick={() => handleConfirmImport(true)}
+                                disabled={isProcessing}
+                                className="px-4 py-2 rounded-lg font-bold flex items-center gap-2 bg-white dark:bg-slate-800 text-emerald-600 border border-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all shadow-sm"
+                            >
+                                {isProcessing ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />}
+                                Importar apenas itens validados ({cleanRows.length})
+                            </button>
+                        )}
+
+                        <button
+                            onClick={() => handleConfirmImport(false)}
+                            disabled={isProcessing}
+                            className={`px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all text-white ${problematicRows.length > 0 ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                        >
+                            {isProcessing ? <Loader2 className="animate-spin" size={18} /> : (problematicRows.length > 0 ? <AlertTriangle size={18} /> : <CheckCircle size={18} />)}
+                            {problematicRows.length > 0 ? `Importar Tudo (${previewData.length} itens)` : 'Confirmar Importação'}
                         </button>
                     </div>
                 )}
@@ -342,6 +452,58 @@ const AutomaticImportComponent = ({ onImport, isProcessing, BUSINESS_HIERARCHY }
                     <TableBlock title="Itens Validados" rows={cleanRows} isProblematic={false} />
                 </div>
             )}
+
+            {/* History Section */}
+            <div className="mt-8 pt-8 border-t dark:border-slate-700">
+                <h4 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4 flex items-center gap-2">
+                    <UploadCloud className="text-indigo-500" size={20} /> Histórico de Arquivos Importados
+                </h4>
+
+                {importHistory.length === 0 ? (
+                    <div className="text-slate-400 font-medium text-sm">Nenhum histórico de importação encontrado para esta unidade.</div>
+                ) : (
+                    <div className="overflow-x-auto bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-50 dark:bg-slate-900/80 text-slate-500 font-bold uppercase text-[10px]">
+                                <tr>
+                                    <th className="px-4 py-3">Arquivo Original</th>
+                                    <th className="px-4 py-3">Data da Importação</th>
+                                    <th className="px-4 py-3 text-center">Nº Lançamentos</th>
+                                    <th className="px-4 py-3 text-right">Valor Total Estimado (R$)</th>
+                                    <th className="px-4 py-3 text-center">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y dark:divide-slate-700">
+                                {importHistory.map(hist => (
+                                    <tr key={hist.batchId} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                                        <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">
+                                            {hist.filename}
+                                            {hist.batchId === 'legacy_imports' && <span className="ml-2 px-2 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-500">Antigo</span>}
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-500">{new Date(hist.importDate).toLocaleString()}</td>
+                                        <td className="px-4 py-3 text-center font-bold text-slate-600 dark:text-slate-400">
+                                            {hist.count}
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">
+                                            {hist.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <button
+                                                onClick={() => handleDeleteBatch(hist.batchId)}
+                                                disabled={isDeleting}
+                                                className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors disabled:opacity-50"
+                                                title="Excluir lançamentos deste lote"
+                                            >
+                                                {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

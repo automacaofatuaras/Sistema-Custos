@@ -3,7 +3,8 @@ import {
     LayoutDashboard, List, DollarSign, Share2, Package,
     BarChart3 as BarChartIcon, FileUp, TrendingUp, Globe,
     UploadCloud, Users, Sparkles, Sun, Moon, LogOut, UserCircle,
-    ChevronRight, TrendingDown, Factory, ShoppingCart, Search, FileText, PlusCircle, Edit2, Briefcase
+    ChevronRight, TrendingDown, Factory, ShoppingCart, Search, FileText, PlusCircle, Edit2, Briefcase, FolderClosed,
+    ShieldCheck, Trash2, Eye, X
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -11,6 +12,9 @@ import {
 
 // Services
 import dbService from './services/dbService';
+import { auth, db } from './services/firebase';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
 // Constants
 import { BUSINESS_HIERARCHY, SEGMENT_CONFIG } from './constants/business';
@@ -32,12 +36,15 @@ import FechamentoComponent from './components/features/Fechamento/FechamentoComp
 import StockComponent from './components/features/Stock/StockComponent';
 import InvestimentosReportComponent from './components/features/Investimentos/InvestimentosReportComponent';
 import GlobalComponent from './components/features/Global/GlobalComponent';
+import TransactionDetailModal from './components/features/TransactionDetailModal';
 import RateioUnidadesCentral from './components/features/Rateios/RateioUnidades/RateioUnidadesCentral';
 import RateioAdmCentral from './components/features/Rateios/RateioAdministrativo/RateioAdmCentral';
 import UsersScreen from './components/features/Users/UsersScreen';
+import SegmentDashboard from './components/features/SegmentDashboard';
+import WelcomeDashboard from './components/features/WelcomeDashboard';
 
-// Modals
-import ManualEntryModal from './components/modals/ManualEntryModal';
+// Feature Components
+import ManualEntryForm from './components/features/ManualEntryForm';
 import AIReportModal from './components/modals/AIReportModal';
 import CostCenterReportModal from './components/modals/CostCenterReportModal';
 
@@ -51,30 +58,108 @@ export default function App() {
     }, [theme]);
     const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
-    // Auth Mock (Login removed as per original request)
-    const [user] = useState({ email: 'admin@sistema.com' });
-    const [userRole] = useState('admin');
-    const handleLogout = () => alert('Logout simulado');
+    // Auth State
+    const [user, setUser] = useState(null);
+    const [userRole, setUserRole] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [showManualLogin, setShowManualLogin] = useState(false);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [authError, setAuthError] = useState('');
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            if (currentUser) {
+                try {
+                    const docRef = doc(db, "usuarios", currentUser.uid);
+                    const docSnap = await getDoc(docRef);
+
+                    if (docSnap.exists()) {
+                        setUser(currentUser);
+                        const data = docSnap.data();
+                        setUserRole(data.permissao ? data.permissao.toLowerCase().trim() : 'leitor');
+                    } else {
+                        console.warn("Acesso negado: Usuário não cadastrado neste sistema.");
+                        await signOut(auth);
+                        setUser(null);
+                        setUserRole(null);
+                        setAuthError("Acesso negado. Solicite permissão para este sistema.");
+                    }
+                } catch (error) {
+                    console.error("Erro ao verificar permissão:", error);
+                    setUserRole('leitor');
+                }
+            } else {
+                setUser(null);
+                setUserRole(null);
+            }
+            setLoading(false);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const handleLogin = async (e) => {
+        e.preventDefault();
+        setAuthError('');
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+        } catch (error) {
+            setAuthError("Email ou senha incorretos.");
+        }
+    };
+
+    const handleLogout = async () => {
+        await signOut(auth);
+        window.location.reload();
+    };
 
     // Global State
     const [activeTab, setActiveTab] = useState('dashboard');
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [transactions, setTransactions] = useState([]);
     const [isProcessing, setIsProcessing] = useState(false);
+    // Navegação por Segmento/Unidade
+    const [selectedSegment, setSelectedSegment] = useState(null);
+    const [selectedUnit, setSelectedUnit] = useState(null);
+    const [expandedSegments, setExpandedSegments] = useState({});
+
+    const toggleSegment = (seg) => {
+        setExpandedSegments(prev => ({ ...prev, [seg]: !prev[seg] }));
+        setSelectedSegment(seg);
+        setSelectedUnit(null);
+        if (['rateios', 'global', 'users'].includes(activeTab)) {
+            setActiveTab('dashboard');
+        }
+    };
+
+    const handleSelectUnit = (seg, unit) => {
+        setSelectedSegment(seg);
+        setSelectedUnit(unit);
+        if (['rateios', 'global', 'users'].includes(activeTab)) {
+            setActiveTab('dashboard'); // Volta para o dashboard da unidade se estava em tela global
+        }
+    };
+
+    const handleSelectGlobal = (tabId) => {
+        setActiveTab(tabId);
+        setSelectedUnit(null);
+        setSelectedSegment(null);
+    };
 
     // Sub-Module State
     const [activeRateioModule, setActiveRateioModule] = useState('adm_geral'); // 'adm_geral' ou 'unidades'
 
     // Filters
     const [filter, setFilter] = useState({ month: new Date().getMonth(), year: new Date().getFullYear(), type: 'month' });
-    const [globalUnitFilter, setGlobalUnitFilter] = useState('ALL');
     const [lancamentosSearch, setLancamentosSearch] = useState('');
 
     // Modals Visibility
-    const [showEntryModal, setShowEntryModal] = useState(false);
+    const [showEntryForm, setShowEntryForm] = useState(false);
     const [showAIModal, setShowAIModal] = useState(false);
     const [showCCReportModal, setShowCCReportModal] = useState(false);
     const [editingTx, setEditingTx] = useState(null);
+    const [detailsTx, setDetailsTx] = useState(null);
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
 
     // Toast System
     const [toast, setToast] = useState(null);
@@ -110,8 +195,40 @@ export default function App() {
         }
     };
 
+    const handleDeleteTx = async (id) => {
+        if (!window.confirm('Tem certeza que deseja excluir este lançamento?')) return;
+        try {
+            await dbService.del(user, 'transactions', id);
+            showToast('Lançamento excluído com sucesso!', 'success');
+            loadData();
+        } catch (e) {
+            showToast('Erro ao excluir lançamento', 'error');
+        }
+    };
+
     const handleBatchDelete = async () => {
         // Implement batch delete logic if needed
+    };
+
+    const handleAddMetric = async (metricData) => {
+        setIsProcessing(true);
+        try {
+            const tx = {
+                ...metricData,
+                date: new Date().toISOString(), // Use current date for the adjustment taking place logic
+                segment: selectedUnit || selectedSegment || 'ALL',
+                type: 'metric',
+                source: 'manual',
+                createdAt: new Date().toISOString()
+            };
+            await dbService.add(user, 'transactions', tx);
+            showToast('Estoque atualizado com sucesso!', 'success');
+            loadData();
+        } catch (e) {
+            showToast('Erro ao atualizar estoque', 'error');
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     // Filtered Data Calculations
@@ -128,20 +245,13 @@ export default function App() {
             if (y !== filter.year) return false;
             if (filter.type === 'month' && m !== filter.month) return false;
 
-            if (globalUnitFilter !== 'ALL') {
-                if (BUSINESS_HIERARCHY[globalUnitFilter]) {
-                    const units = BUSINESS_HIERARCHY[globalUnitFilter];
-                    const cleanName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                    return units.includes(cleanName);
-                } else {
-                    const cleanFilter = globalUnitFilter.includes(':') ? globalUnitFilter.split(':')[1].trim() : globalUnitFilter;
-                    const cleanName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                    return cleanName === cleanFilter;
-                }
+            if (selectedUnit) {
+                const cleanName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                return cleanName === selectedUnit;
             }
             return true;
         });
-    }, [transactions, filter, globalUnitFilter]);
+    }, [transactions, filter, selectedUnit]);
 
     // KPI Calculations
     const kpis = useMemo(() => {
@@ -152,15 +262,117 @@ export default function App() {
 
     const totalProduction = useMemo(() => filteredData.filter(t => t.metricType === 'producao').reduce((a, b) => a + b.value, 0), [filteredData]);
     const totalSales = useMemo(() => filteredData.filter(t => t.metricType === 'vendas').reduce((a, b) => a + b.value, 0), [filteredData]);
-    const currentMeasureUnit = useMemo(() => getMeasureUnit(globalUnitFilter), [globalUnitFilter]);
+    const currentMeasureUnit = useMemo(() => getMeasureUnit(selectedSegment || 'ALL'), [selectedSegment]);
     const costPerUnit = totalProduction > 0 ? kpis.expense / totalProduction : 0;
     const resultMargin = kpis.revenue > 0 ? (kpis.balance / kpis.revenue) * 100 : 0;
+
+    // Loading Screen
+    if (loading) {
+        return (
+            <div className="flex flex-col items-center justify-center bg-slate-900 h-screen gap-4 transition-colors duration-300">
+                <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                <div className="text-slate-400 text-sm font-bold tracking-widest uppercase animate-pulse">Carregando Sistema...</div>
+            </div>
+        );
+    }
+
+    // Login / Lock Screen
+    if (!user) {
+        return (
+            <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 px-4 font-sans selection:bg-indigo-500/30">
+                {/* Background Decor */}
+                <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-[120px] animate-pulse"></div>
+                    <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-violet-500/10 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '2s' }}></div>
+                </div>
+
+                <div className="bg-slate-900/50 backdrop-blur-xl p-10 rounded-[32px] text-center max-w-md w-full border border-slate-800 shadow-2xl relative z-10 transition-all duration-500">
+                    <div className="w-20 h-20 bg-indigo-600/10 rounded-2xl flex items-center justify-center mx-auto mb-8 border border-indigo-500/20 shadow-inner">
+                        <ShieldCheck className="text-indigo-500" size={40} />
+                    </div>
+
+                    <h2 className="text-3xl font-black text-white mb-2 tracking-tight">Acesso Restrito</h2>
+                    <p className="text-slate-500 text-sm mb-10 font-medium">Autenticação obrigatória para acesso aos <br /> dados sensíveis da Scamatti Custos.</p>
+
+                    {!showManualLogin ? (
+                        <div className="space-y-4">
+                            <p className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-4">Plataforma Scamatti Hub</p>
+
+                            <a
+                                href="https://portalscamattihub.web.app"
+                                className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-lg shadow-indigo-600/20 active:scale-95"
+                            >
+                                <Globe size={18} /> Voltar ao Portal
+                            </a>
+
+                            <button
+                                onClick={() => setShowManualLogin(true)}
+                                className="w-full py-4 bg-slate-800/50 hover:bg-slate-800 text-slate-400 hover:text-white rounded-2xl font-bold transition-all border border-slate-700/50 text-sm"
+                            >
+                                Login Manual (Admin)
+                            </button>
+                        </div>
+                    ) : (
+                        <form onSubmit={handleLogin} className="flex flex-col gap-4 animate-in slide-in-from-bottom-4 duration-500">
+                            <div className="text-left space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">E-mail Corporativo</label>
+                                    <input
+                                        type="email"
+                                        placeholder="seu@email.com"
+                                        value={email}
+                                        onChange={e => setEmail(e.target.value)}
+                                        className="w-full h-14 px-5 rounded-2xl border border-slate-800 bg-slate-950/50 text-white outline-none focus:ring-2 ring-indigo-500/50 transition-all font-medium placeholder:text-slate-700"
+                                        required
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Senha de Acesso</label>
+                                    <input
+                                        type="password"
+                                        placeholder="••••••••"
+                                        value={password}
+                                        onChange={e => setPassword(e.target.value)}
+                                        className="w-full h-14 px-5 rounded-2xl border border-slate-800 bg-slate-950/50 text-white outline-none focus:ring-2 ring-indigo-500/50 transition-all font-medium placeholder:text-slate-700"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <button
+                                type="submit"
+                                className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-black transition-all shadow-lg shadow-indigo-600/20 active:scale-95 mt-2"
+                            >
+                                Entrar no Sistema
+                            </button>
+
+                            {authError && (
+                                <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold animate-in shake duration-300">
+                                    {authError}
+                                </div>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={() => setShowManualLogin(false)}
+                                className="text-slate-500 hover:text-indigo-400 text-xs font-bold transition-colors mt-2"
+                            >
+                                ← Voltar para opções de acesso
+                            </button>
+                        </form>
+                    )}
+                </div>
+
+                <p className="mt-12 text-slate-600 text-[10px] font-black uppercase tracking-[0.2em]">Scamatti Custos • Todos os direitos reservados</p>
+            </div>
+        );
+    }
 
     // Render
     return (
         <div className={`min-h-screen flex transition-colors duration-300 ${theme === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
             {/* Sidebar */}
-            <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 text-white flex flex-col transition-all duration-300 relative border-r border-slate-800 shrink-0 h-screen sticky top-0`}>
+            <aside className={`${sidebarOpen ? 'w-64' : 'w-20'} bg-slate-900 text-white flex flex-col transition-all duration-300 relative border-r border-slate-800 shrink-0 h-screen sticky top-0 z-50`}>
                 <div className="p-6 flex items-center justify-between overflow-hidden">
                     {sidebarOpen && (
                         <div className="animate-in fade-in slide-in-from-left-4 duration-500">
@@ -173,190 +385,328 @@ export default function App() {
                     </button>
                 </div>
 
-                <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-                    {[
-                        { id: 'dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
-                        { id: 'lancamentos', icon: List, label: 'Lançamentos' },
-                        { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
-                        { id: 'rateios', icon: Share2, label: 'Rateios' },
-                        { id: 'estoque', icon: Package, label: 'Estoque' },
-                        { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
-                        { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
-                        { id: 'investimentos_report', icon: TrendingUp, label: 'Investimentos' },
-                        { id: 'global', icon: Globe, label: 'Global' },
-                        { id: 'ingestion', icon: UploadCloud, label: 'Importar TXT' },
-                        { id: 'users', icon: Users, label: 'Usuários' },
-                    ].map((item) => (
-                        <button
-                            key={item.id}
-                            onClick={() => setActiveTab(item.id)}
-                            className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all ${!sidebarOpen ? 'justify-center' : ''} ${activeTab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
-                            title={!sidebarOpen ? item.label : ''}
-                        >
-                            <item.icon size={20} />
-                            {sidebarOpen && <span className="whitespace-nowrap">{item.label}</span>}
-                        </button>
-                    ))}
+                <nav className="flex-1 p-2 space-y-1 overflow-y-auto custom-scrollbar">
+                    {/* Segmentos e Unidades */}
+                    <div className="mb-4">
+                        {sidebarOpen && <p className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Segmentos</p>}
+                        {Object.entries(BUSINESS_HIERARCHY).map(([seg, units]) => (
+                            <div key={seg} className="space-y-1">
+                                <button
+                                    onClick={() => toggleSegment(seg)}
+                                    className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl transition-all hover:bg-slate-800 group ${!sidebarOpen ? 'justify-center' : ''} ${selectedSegment === seg ? 'text-indigo-400' : 'text-slate-400'}`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <FolderClosed size={18} className={selectedSegment === seg ? 'text-indigo-400' : 'text-slate-500'} />
+                                        {sidebarOpen && <span className="text-sm font-medium truncate">{seg}</span>}
+                                    </div>
+                                    {sidebarOpen && (
+                                        <ChevronRight size={14} className={`transition-transform duration-300 ${expandedSegments[seg] ? 'rotate-90' : ''}`} />
+                                    )}
+                                </button>
+
+                                {sidebarOpen && expandedSegments[seg] && (
+                                    <div className="ml-4 pl-4 border-l border-slate-800 space-y-1 py-1">
+                                        {units.map(unit => (
+                                            <button
+                                                key={unit}
+                                                onClick={() => handleSelectUnit(seg, unit)}
+                                                className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all hover:text-white ${selectedUnit === unit ? 'bg-indigo-600/20 text-indigo-400 font-bold' : 'text-slate-500 hover:bg-slate-800'}`}
+                                            >
+                                                {unit}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Itens Globais */}
+                    <div className="pt-4 border-t border-slate-800">
+                        {sidebarOpen && <p className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Global</p>}
+                        {[
+                            { id: 'rateios', icon: Share2, label: 'Rateios' },
+                            { id: 'global', icon: Globe, label: 'Consolidado Global' },
+                            { id: 'users', icon: Users, label: 'Gerenciar Usuários' },
+                        ].map((item) => (
+                            <button
+                                key={item.id}
+                                onClick={() => handleSelectGlobal(item.id)}
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${!sidebarOpen ? 'justify-center' : ''} ${activeTab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+                                title={!sidebarOpen ? item.label : ''}
+                            >
+                                <item.icon size={18} />
+                                {sidebarOpen && <span className="text-sm font-medium whitespace-nowrap">{item.label}</span>}
+                            </button>
+                        ))}
+                    </div>
                 </nav>
 
-                <div className="p-4 border-t border-slate-800 flex justify-around">
-                    <button onClick={() => setShowAIModal(true)} className="p-2 text-purple-400 hover:bg-slate-800 rounded-lg"><Sparkles size={20} /></button>
-                    <button onClick={toggleTheme} className="p-2 text-slate-400 hover:bg-slate-800 rounded-lg">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</button>
-                    <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-800 rounded-lg"><LogOut size={20} /></button>
-                </div>
+                <div className="p-4 border-t border-slate-800 space-y-4">
+                    <div className={`flex ${sidebarOpen ? 'flex-row justify-around' : 'flex-col items-center gap-2'} bg-slate-800/50 rounded-xl p-2`}>
+                        <button onClick={() => setShowAIModal(true)} className="p-2 text-purple-400 hover:bg-slate-700 rounded-lg transition-colors" title="Análise IA"><Sparkles size={20} /></button>
+                        <button onClick={toggleTheme} className="p-2 text-slate-400 hover:bg-slate-700 rounded-lg transition-colors" title="Alternar Tema">{theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}</button>
+                        <button onClick={handleLogout} className="p-2 text-rose-400 hover:bg-slate-700 rounded-lg transition-colors" title="Sair"><LogOut size={20} /></button>
+                    </div>
 
-                <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex items-center gap-3 overflow-hidden">
-                    <div className="p-1 bg-slate-800 rounded shrink-0"><UserCircle size={20} className="text-slate-400" /></div>
-                    {sidebarOpen && <div className="min-w-0"><p className="truncate font-bold text-sm text-white">Admin</p><p className="text-xs uppercase tracking-wider text-indigo-400">ADMIN</p></div>}
+                    <div className="flex items-center gap-3 overflow-hidden">
+                        <div className="p-2 bg-indigo-600/20 rounded-lg shrink-0"><UserCircle size={20} className="text-indigo-400" /></div>
+                        {sidebarOpen && (
+                            <div className="min-w-0">
+                                <p className="truncate font-bold text-sm text-white">{user?.email?.split('@')[0] || 'Usuário'}</p>
+                                <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">{userRole || 'Leitor'}</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </aside>
 
             {/* Main Content */}
-            <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-                <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 sticky top-0 z-40 bg-slate-100 dark:bg-slate-900 py-2">
-                    {!['global', 'rateios'].includes(activeTab) && (
-                        <div className="flex gap-2 w-full md:w-auto items-center flex-wrap">
+            <main className="flex-1 overflow-y-auto p-4 lg:p-8 bg-slate-100 dark:bg-slate-900 shadow-inner">
+                <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 sticky top-0 z-40 bg-slate-100/80 dark:bg-slate-900/80 backdrop-blur-md py-4 border-b dark:border-slate-800">
+                    <div className="flex flex-col">
+                        <h2 className="text-xl font-bold dark:text-white flex items-center gap-2">
+                            {selectedUnit ? (
+                                <>
+                                    <Factory className="text-indigo-500" size={24} />
+                                    <span>{selectedUnit}</span>
+                                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-full uppercase font-black">{selectedSegment}</span>
+                                </>
+                            ) : null}
+                        </h2>
+                        {selectedUnit && <p className="text-xs text-slate-500 font-medium">Gestão de Custos e Performance</p>}
+                    </div>
+
+                    <div className="flex gap-4 items-center">
+                        {selectedUnit || selectedSegment || ['rateios', 'global', 'users'].includes(activeTab) ? (
                             <PeriodSelector filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />
-                            <HierarchicalSelect
-                                value={globalUnitFilter}
-                                onChange={setGlobalUnitFilter}
-                                options={Object.keys(BUSINESS_HIERARCHY).map(seg => ({ label: seg, value: seg, children: BUSINESS_HIERARCHY[seg].map(u => ({ label: u, value: `${seg}:${u}` })) }))}
-                                isFilter={true}
-                                placeholder="Todas as Unidades"
-                            />
-                        </div>
-                    )}
+                        ) : null}
+                    </div>
                 </header>
 
-                {/* Tab Content */}
-                {activeTab === 'dashboard' && (
-                    <div className="space-y-6 animate-in fade-in duration-500">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" />
-                            <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" reverseColor={true} />
-                            <KpiCard title="Resultado Líquido" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} />
-                            <KpiCard title={`Custo / ${currentMeasureUnit}`} value={costPerUnit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={Factory} color="rose" reverseColor={true} />
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border dark:border-slate-700 flex flex-col justify-center text-center">
-                                <p className="text-xs font-bold text-slate-500 uppercase">Margem Líquida</p>
-                                <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
-                            </div>
-                            {/* Other mini cards... */}
-                        </div>
-
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm h-96 border dark:border-slate-700">
-                            <h3 className="mb-6 font-bold text-lg dark:text-white flex items-center gap-2"><BarChartIcon size={20} /> Performance Financeira</h3>
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={[{ name: 'Período', Receitas: kpis.revenue, Despesas: kpis.expense, Resultado: kpis.balance }]} barSize={80}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                                    <XAxis dataKey="name" />
-                                    <YAxis tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff' }} />
-                                    <Legend />
-                                    <Bar name="Receitas" dataKey="Receitas" fill="#10b981" radius={[6, 6, 0, 0]} />
-                                    <Bar name="Despesas" dataKey="Despesas" fill="#f43f5e" radius={[6, 6, 0, 0]} />
-                                    <Bar name="Resultado" dataKey="Resultado" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'lancamentos' && (
-                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border dark:border-slate-700 overflow-hidden">
-                        <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
-                            <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
-                            <div className="flex gap-2">
-                                <button onClick={() => setShowCCReportModal(true)} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors"><FileText size={18} /> Relatório CC</button>
-                                <button onClick={() => { setEditingTx(null); setShowEntryModal(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors"><PlusCircle size={18} /> Novo Lançamento</button>
-                            </div>
-                        </div>
-                        {/* Search and Table logic... */}
-                        <div className="p-4 bg-slate-50/30 dark:bg-slate-900/30">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-3 text-slate-400" size={16} />
-                                <input type="text" className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg outline-none text-sm" placeholder="Pesquisar..." value={lancamentosSearch} onChange={e => setLancamentosSearch(e.target.value)} />
-                            </div>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-bold uppercase text-[10px]">
-                                    <tr>
-                                        <th className="p-4">Data</th>
-                                        <th className="p-4">Descrição</th>
-                                        <th className="p-4">Unidade</th>
-                                        <th className="p-4 text-right">Valor</th>
-                                        <th className="p-4">Ações</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y dark:divide-slate-700">
-                                    {filteredData.slice(0, 100).map(t => (
-                                        <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                            <td className="p-4 dark:text-white">{formatDate(t.date)}</td>
-                                            <td className="p-4">
-                                                <div className="font-bold">{t.description}</div>
-                                                {t.accountPlan && <div className="text-[10px] text-indigo-500 font-bold">{t.accountPlan} - {t.planDescription}</div>}
-                                            </td>
-                                            <td className="p-4 text-xs">{t.segment.split(':')[1] || t.segment}</td>
-                                            <td className={`p-4 text-right font-black ${t.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>{t.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                            <td className="p-4"><button onClick={() => { setEditingTx(t); setShowEntryModal(true); }} className="text-slate-400 hover:text-indigo-600"><Edit2 size={16} /></button></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
-
-                {/* Feature Component Renderers */}
-                {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />}
-
-                {/* Rateios unificados */}
-                {activeTab === 'rateios' && (
-                    <div className="space-y-6 animate-in fade-in">
-                        {/* Sub-menu de navegação de Rateios */}
-                        <div className="flex p-1 bg-slate-200 dark:bg-slate-800 rounded-xl w-fit sm:w-auto overflow-x-auto shadow-inner">
+                {/* Unidades Menu (Tabs) */}
+                {selectedUnit && (
+                    <div className="flex p-1 bg-white dark:bg-slate-800 rounded-2xl w-full overflow-x-auto shadow-sm mb-8 border dark:border-slate-700 no-scrollbar">
+                        {[
+                            { id: 'dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
+                            { id: 'lancamentos', icon: List, label: 'Lançamentos' },
+                            { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
+                            { id: 'estoque', icon: Package, label: 'Estoque' },
+                            { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
+                            { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
+                            { id: 'investimentos_report', icon: TrendingUp, label: 'Investimentos' },
+                            { id: 'ingestion', icon: UploadCloud, label: 'Importar TXT' },
+                        ].map((item) => (
                             <button
-                                onClick={() => setActiveRateioModule('adm_geral')}
-                                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap
+                                key={item.id}
+                                onClick={() => setActiveTab(item.id)}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap
+                                    ${activeTab === item.id ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                            >
+                                <item.icon size={18} />
+                                {item.label}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                {/* Content Renderer */}
+                {!selectedUnit && !selectedSegment && !['rateios', 'global', 'users'].includes(activeTab) ? (
+                    <WelcomeDashboard />
+                ) : (
+                    <>
+                        {/* Segment Dashboard */}
+                        {selectedSegment && !selectedUnit && !['rateios', 'global', 'users'].includes(activeTab) && (
+                            <SegmentDashboard
+                                transactions={transactions}
+                                segmentName={selectedSegment}
+                                units={BUSINESS_HIERARCHY[selectedSegment] || []}
+                            />
+                        )}
+
+                        {/* Tab Content */}
+                        {activeTab === 'dashboard' && selectedUnit && (
+                            <div className="space-y-6 animate-in fade-in duration-500">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" />
+                                    <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" reverseColor={true} />
+                                    <KpiCard title="Resultado Líquido" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} />
+                                    <KpiCard title={`Custo / ${currentMeasureUnit}`} value={costPerUnit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={Factory} color="rose" reverseColor={true} />
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border dark:border-slate-700 flex flex-col justify-center text-center">
+                                        <p className="text-xs font-bold text-slate-500 uppercase">Margem Líquida</p>
+                                        <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
+                                    </div>
+                                    {/* Other mini cards... */}
+                                </div>
+
+                                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm h-96 border dark:border-slate-700">
+                                    <h3 className="mb-6 font-bold text-lg dark:text-white flex items-center gap-2"><BarChartIcon size={20} /> Performance Financeira</h3>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={[{ name: 'Período', Receitas: kpis.revenue, Despesas: kpis.expense, Resultado: kpis.balance }]} barSize={80}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
+                                            <XAxis dataKey="name" />
+                                            <YAxis tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`} />
+                                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff' }} />
+                                            <Legend />
+                                            <Bar name="Receitas" dataKey="Receitas" fill="#10b981" radius={[6, 6, 0, 0]} />
+                                            <Bar name="Despesas" dataKey="Despesas" fill="#f43f5e" radius={[6, 6, 0, 0]} />
+                                            <Bar name="Resultado" dataKey="Resultado" fill="#6366f1" radius={[6, 6, 0, 0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'lancamentos' && (
+                            <div className="space-y-6">
+                                {showEntryForm ? (
+                                    <ManualEntryForm
+                                        onClose={() => setShowEntryForm(false)}
+                                        segments={Object.values(BUSINESS_HIERARCHY).flat()}
+                                        currentUnit={selectedUnit}
+                                        onSave={loadData}
+                                        user={user}
+                                        initialData={editingTx}
+                                        showToast={showToast}
+                                    />
+                                ) : (
+                                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border dark:border-slate-700 overflow-hidden">
+                                        <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+                                            <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setShowCCReportModal(true)} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors"><FileText size={18} /> Relatório CC</button>
+                                                <button onClick={() => { setEditingTx(null); setShowEntryForm(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors"><PlusCircle size={18} /> Novo Lançamento</button>
+                                            </div>
+                                        </div>
+                                        <div className="p-4 bg-slate-50/30 dark:bg-slate-900/30">
+                                            <div className="relative">
+                                                <Search className="absolute left-3 top-3 text-slate-400" size={16} />
+                                                <input type="text" className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg outline-none text-sm" placeholder="Pesquisar..." value={lancamentosSearch} onChange={e => setLancamentosSearch(e.target.value)} />
+                                            </div>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left text-sm">
+                                                <thead className="bg-slate-50 dark:bg-slate-900 text-slate-500 font-bold uppercase text-[10px]">
+                                                    <tr>
+                                                        <th className="p-4">Data</th>
+                                                        <th className="p-4">Centro de Custo</th>
+                                                        <th className="p-4">Classe</th>
+                                                        <th className="p-4 text-right">Valor</th>
+                                                        <th className="p-4 text-center">Ações</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y dark:divide-slate-700">
+                                                    <tr className="bg-slate-100/50 dark:bg-slate-800/80">
+                                                        <td colSpan="3" className="p-4 text-right font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest text-xs">
+                                                            Total do Período Filtrado:
+                                                        </td>
+                                                        <td className={`p-4 text-right font-black text-lg ${filteredData.filter(t => t.type !== 'metric').reduce((acc, curr) => acc + (curr.type === 'revenue' ? curr.value : -curr.value), 0) >= 0
+                                                            ? 'text-emerald-600 dark:text-emerald-400'
+                                                            : 'text-rose-600 dark:text-rose-400'
+                                                            }`}>
+                                                            {filteredData.filter(t => t.type !== 'metric').reduce((acc, curr) => acc + (curr.type === 'revenue' ? curr.value : -curr.value), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                        </td>
+                                                        <td className="p-4"></td>
+                                                    </tr>
+                                                    {filteredData.filter(t => t.type !== 'metric').slice(0, 100).map(t => (
+                                                        <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                                            <td className="p-4 text-slate-600 dark:text-slate-300 font-medium">{formatDate(t.date)}</td>
+                                                            <td className="p-4">
+                                                                <div className="font-bold text-slate-700 dark:text-slate-200">{t.costCenter || 'N/A'}</div>
+                                                            </td>
+                                                            <td className="p-4">
+                                                                <div className="text-xs text-indigo-500 font-bold">{t.planDescription || 'Sem Classe'}</div>
+                                                                <div className="text-[10px] text-slate-400">{t.description}</div>
+                                                            </td>
+                                                            <td className={`p-4 text-right font-black ${t.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>{t.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                                            <td className="p-4">
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    <button
+                                                                        onClick={() => { setDetailsTx(t); setShowDetailsModal(true); }}
+                                                                        className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                                                        title="Ver Detalhes Auditados"
+                                                                    >
+                                                                        <Eye size={16} />
+                                                                    </button>
+                                                                    <button onClick={() => { setEditingTx(t); setShowEntryForm(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors" title="Editar"><Edit2 size={16} /></button>
+                                                                    <button onClick={() => handleDeleteTx(t.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors" title="Excluir"><Trash2 size={16} /></button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Feature Component Renderers */}
+                        {activeTab === 'global' && <GlobalComponent transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} />}
+
+                        {/* Rateios unificados */}
+                        {activeTab === 'rateios' && (
+                            <div className="space-y-6 animate-in fade-in">
+                                {/* Sub-menu de navegação de Rateios */}
+                                <div className="flex p-1 bg-slate-200 dark:bg-slate-800 rounded-xl w-fit sm:w-auto overflow-x-auto shadow-inner">
+                                    <button
+                                        onClick={() => setActiveRateioModule('adm_geral')}
+                                        className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap
                                     ${activeRateioModule === 'adm_geral' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                            >
-                                <Briefcase size={16} /> Rateio Adm Geral
-                            </button>
-                            <button
-                                onClick={() => setActiveRateioModule('unidades')}
-                                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap
+                                    >
+                                        <Briefcase size={16} /> Rateio Adm Geral
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveRateioModule('unidades')}
+                                        className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-bold transition-all whitespace-nowrap
                                     ${activeRateioModule === 'unidades' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                            >
-                                <Share2 size={16} /> Rateio Unidades
-                            </button>
-                        </div>
+                                    >
+                                        <Share2 size={16} /> Rateio Unidades
+                                    </button>
+                                </div>
 
-                        {activeRateioModule === 'adm_geral' && (
-                            <RateioAdmCentral filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} showToast={showToast} />
+                                {activeRateioModule === 'adm_geral' && (
+                                    <RateioAdmCentral filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} showToast={showToast} />
+                                )}
+                                {activeRateioModule === 'unidades' && (
+                                    <RateioUnidadesCentral transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} />
+                                )}
+                            </div>
                         )}
-                        {activeRateioModule === 'unidades' && (
-                            <RateioUnidadesCentral transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} />
+
+                        {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
+                        {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={selectedUnit} />}
+                        {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} onAddMetric={handleAddMetric} onDeleteMetric={handleDeleteTx} />}
+                        {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} onAddMetric={handleAddMetric} onDeleteMetric={handleDeleteTx} />}
+                        {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
+                        {activeTab === 'ingestion' && (
+                            <AutomaticImportComponent
+                                transactions={transactions}
+                                onImport={handleImport}
+                                isProcessing={isProcessing}
+                                BUSINESS_HIERARCHY={BUSINESS_HIERARCHY}
+                                selectedUnit={selectedUnit}
+                            />
                         )}
-                    </div>
+                        {activeTab === 'investimentos_report' && <InvestimentosReportComponent transactions={filteredData} filter={filter} selectedUnit={selectedUnit} />}
+                    </>
                 )}
-
-                {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
-                {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={globalUnitFilter} />}
-                {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} />}
-                {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} />}
-                {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
-                {activeTab === 'ingestion' && <AutomaticImportComponent onImport={handleImport} isProcessing={isProcessing} />}
-                {activeTab === 'investimentos_report' && <InvestimentosReportComponent transactions={filteredData} filter={filter} selectedUnit={globalUnitFilter} />}
-
             </main>
 
             {/* Modals */}
-            {showEntryModal && <ManualEntryModal onClose={() => setShowEntryModal(false)} segments={Object.values(BUSINESS_HIERARCHY).flat()} onSave={loadData} user={user} initialData={editingTx} showToast={showToast} />}
             {showAIModal && <AIReportModal onClose={() => setShowAIModal(false)} period={`${filter.month + 1}/${filter.year}`} />}
             {showCCReportModal && <CostCenterReportModal isOpen={showCCReportModal} onClose={() => setShowCCReportModal(false)} transactions={transactions} />}
+
+            {showDetailsModal && detailsTx && (
+                <TransactionDetailModal
+                    tx={detailsTx}
+                    onClose={() => setShowDetailsModal(false)}
+                />
+            )}
 
             {/* Toast */}
             {toast && (
@@ -367,3 +717,4 @@ export default function App() {
         </div>
     );
 }
+

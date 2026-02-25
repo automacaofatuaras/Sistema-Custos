@@ -3,7 +3,7 @@ import { Share2 } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, appId } from '../../../../services/firebase';
 import { BUSINESS_HIERARCHY } from '../../../../constants/business';
-import PeriodSelector from '../../../common/PeriodSelector';
+
 import { fetchConsolidatedTransactions } from '../../../../utils/rateioTransactions';
 
 // Importando as Abas Componentizadas
@@ -92,7 +92,7 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
             try {
                 const docSnap = await getDoc(docRefAdm);
                 const allUnits = isNoromix
-                    ? [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]]
+                    ? [...BUSINESS_HIERARCHY["Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]]
                     : [...BUSINESS_HIERARCHY["Pedreiras"], ...BUSINESS_HIERARCHY["Portos de Areia"]];
 
                 if (docSnap.exists()) {
@@ -295,7 +295,7 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
             }, 0);
 
         // 2. VOLUMES MANUAIS/ADULTOS
-        const concreteUnits = BUSINESS_HIERARCHY["Noromix Concreteiras"];
+        const concreteUnits = BUSINESS_HIERARCHY["Concreteiras"];
         const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
         const allRateioUnits = [...concreteUnits, pipeUnit];
 
@@ -355,7 +355,7 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
         // E. Rateio Noromix (CC 1046)
         let noromix1046Data = { units: [], totalExpenses: 0, expenseItems: [] };
         if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
-            const targetUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
+            const targetUnits = [...BUSINESS_HIERARCHY["Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
             const expenses1046 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1046'));
             const totalExp1046 = expenses1046.reduce((acc, t) => acc + t.value, 0);
 
@@ -579,7 +579,6 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
             <div className="flex flex-col md:flex-row justify-between items-center bg-white dark:bg-slate-800 p-4 rounded-xl border dark:border-slate-700 shadow-sm gap-4">
                 <div className="flex items-center gap-2"><Share2 className="text-indigo-500" size={24} /><h3 className="font-bold text-lg dark:text-white">Painel de Rateios</h3></div>
                 <div className="flex gap-2">
-                    <PeriodSelector filter={filter} setFilter={setFilter} years={years} />
                     <select className="bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg px-3 py-2 text-sm dark:text-white outline-none focus:ring-2 ring-indigo-500" value={selectedSegment} onChange={(e) => { setSelectedSegment(e.target.value); setActiveRateioType('ADMINISTRATIVO'); }}>
                         {Object.keys(RATEIO_CONFIG).map(seg => <option key={seg} value={seg}>{seg}</option>)}
                     </select>

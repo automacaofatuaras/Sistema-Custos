@@ -16,7 +16,7 @@ export default function AbaAdministrativo({
 }) {
     if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
         const { table, totalSalariosPot, totalDespesasPot, grandTotalVolume, autoTargetValue } = calculatedData.noromixAdmData;
-        const concreteUnits = BUSINESS_HIERARCHY["Noromix Concreteiras"] || [];
+        const concreteUnits = BUSINESS_HIERARCHY["Concreteiras"] || [];
         const pipeUnits = BUSINESS_HIERARCHY["Fábrica de Tubos"] || [];
         const totalBaseGeral = autoTargetValue > 0 ? autoTargetValue / 0.10 : 0;
 
