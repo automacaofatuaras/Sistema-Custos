@@ -156,7 +156,7 @@ Reporte gerado pelo painel central.
                 </div>
                 `;
 
-                // Tabela Detalhada Original
+                // Tabela Detalhada Original - Agora Unificada
                 let htmlTable = htmlDashboard + `
                     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
                         <h4 style="margin: 30px 0 12px 0; color: #1e293b; font-size: 14px; text-transform: uppercase;">Extrato Analítico Fechado</h4>
@@ -164,32 +164,46 @@ Reporte gerado pelo painel central.
                         <thead>
                             <tr style="background-color: #4f46e5; color: #ffffff; text-align: left;">
                                 <th style="width: 15%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca;">Centro de Custo</th>
-                                <th style="width: 20%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca;">Classe Contábil</th>
-                                <th style="width: 35%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca;">Histórico / Descrição</th>
-                                <th style="width: 15%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca;">Tipo</th>
+                                <th style="width: 25%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca;">Classe Contábil</th>
+                                <th style="width: 45%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca;">Histórico / Descrição</th>
                                 <th style="width: 15%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca; text-align: right;">Valor (R$)</th>
                             </tr>
                         </thead>
                         <tbody style="background-color: #ffffff;">
                 `;
 
-                myTransactions.sort((a, b) => b.value - a.value).forEach((t, index) => {
-                    const rowBg = index % 2 === 0 ? '#f8fafc' : '#ffffff';
+                // Unificação
+                const unifiedTransactionsMap = {};
+                myTransactions.forEach(t => {
                     const classeStr = t.accountPlan ? `${t.accountPlan} - ${t.planDescription || t.classification || ''}` : (t.planDescription || t.classification || '-');
                     const descStr = t.description || '-';
-                    const badgeBg = t.type?.toLowerCase() === 'direto' ? '#dcfce7' : '#f1f5f9';
-                    const badgeColor = t.type?.toLowerCase() === 'direto' ? '#166534' : '#475569';
+                    const itemKey = `${classeStr}|${descStr}`;
+
+                    if (!unifiedTransactionsMap[itemKey]) {
+                        unifiedTransactionsMap[itemKey] = { ...t, _classeStr: classeStr, _descStr: descStr };
+                    } else {
+                        unifiedTransactionsMap[itemKey].value += t.value;
+
+                        const curCC = t.costCenter || t.costCenterCode || '';
+                        const storedCC = unifiedTransactionsMap[itemKey].costCenter || unifiedTransactionsMap[itemKey].costCenterCode || '';
+
+                        if (curCC !== storedCC) {
+                            unifiedTransactionsMap[itemKey].costCenter = 'Diversos';
+                            unifiedTransactionsMap[itemKey].costCenterCode = 'Diversos';
+                        }
+                    }
+                });
+
+                const unifiedTransactionsList = Object.values(unifiedTransactionsMap).sort((a, b) => b.value - a.value);
+
+                unifiedTransactionsList.forEach((t, index) => {
+                    const rowBg = index % 2 === 0 ? '#f8fafc' : '#ffffff';
 
                     htmlTable += `
                         <tr style="background-color: ${rowBg}; border-bottom: 1px solid #e2e8f0;">
                             <td style="padding: 12px 16px; color: #475569; font-weight: 500;">${t.costCenter || t.costCenterCode || ''}</td>
-                            <td style="padding: 12px 16px; color: #64748b; font-size: 12px;">${classeStr}</td>
-                            <td style="padding: 12px 16px; color: #334155;">${descStr}</td>
-                            <td style="padding: 12px 16px;">
-                                <span style="display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; background-color: ${badgeBg}; color: ${badgeColor};">
-                                    ${t.type || '-'}
-                                </span>
-                            </td>
+                            <td style="padding: 12px 16px; color: #64748b; font-size: 12px;">${t._classeStr}</td>
+                            <td style="padding: 12px 16px; color: #334155;">${t._descStr}</td>
                             <td style="padding: 12px 16px; text-align: right; color: #0f172a; font-weight: 600;">${formatBRL(t.value)}</td>
                         </tr>
                     `;
@@ -199,7 +213,7 @@ Reporte gerado pelo painel central.
                         </tbody>
                         <tfoot>
                             <tr style="background-color: #e0e7ff; color: #312e81; font-weight: bold; border-top: 2px solid #c7d2fe;">
-                                <td colspan="4" style="padding: 14px 16px; text-align: right; text-transform: uppercase; font-size: 12px;">Total do Extrato:</td>
+                                <td colspan="3" style="padding: 14px 16px; text-align: right; text-transform: uppercase; font-size: 12px;">Total do Extrato:</td>
                                 <td style="padding: 14px 16px; text-align: right; font-size: 14px;">${formatBRL(total)}</td>
                             </tr>
                         </tfoot>

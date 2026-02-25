@@ -14,7 +14,7 @@ export default function AbaNoromix1046({ calculatedData }) {
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
                     <p className="text-slate-500 text-xs font-bold uppercase mb-1">Qtd. Unidades Rateadas</p>
-                    <h3 className="text-2xl font-bold dark:text-white">10 <span className="text-sm font-normal text-slate-400">unidades</span></h3>
+                    <h3 className="text-2xl font-bold dark:text-white">11 <span className="text-sm font-normal text-slate-400">unidades</span></h3>
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-purple-500 shadow-sm">
                     <p className="text-xs font-bold text-slate-500 uppercase">Valor Fixo por Unidade</p>

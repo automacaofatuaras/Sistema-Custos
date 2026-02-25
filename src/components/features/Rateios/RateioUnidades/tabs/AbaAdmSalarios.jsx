@@ -44,7 +44,7 @@ export default function AbaAdmSalarios({
             <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 p-6 shadow-sm">
                 <div className="flex justify-between items-start mb-6">
                     <div>
-                        <h4 className="font-bold text-lg flex items-center gap-2 dark:text-white"><Settings size={20} className="text-slate-400" /> Parâmetros de Funcionários</h4>
+                        <h4 className="font-bold text-lg flex items-center gap-2 dark:text-white"><Settings size={20} className="text-slate-400" /> Parâmetros de Rateio</h4>
                         <p className="text-xs text-slate-500 mt-1">Defina a quantidade de funcionários para o cálculo do Rateio das Despesas Administrativas.</p>
                     </div>
                     <div className="flex gap-2">

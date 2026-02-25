@@ -67,12 +67,42 @@ export default function AnaliseDetalhada({ filter, user }) {
             groups[key].total += t.value;
         });
 
-        return Object.keys(groups).map(k => ({
-            name: k,
-            total: groups[k].total,
-            count: groups[k].items.length,
-            items: groups[k].items.sort((a, b) => b.value - a.value)
-        })).sort((a, b) => b.total - a.total);
+        return Object.keys(groups).map(k => {
+            if (groupBy === 'costCenter') {
+                const unifiedItemsMap = {};
+                groups[k].items.forEach(item => {
+                    const classe = item.planDescription || item.accountClass || '';
+                    const desc = item.description || '';
+                    const itemKey = `${classe}|${desc}`;
+
+                    if (!unifiedItemsMap[itemKey]) {
+                        unifiedItemsMap[itemKey] = { ...item };
+                    } else {
+                        unifiedItemsMap[itemKey].value += item.value;
+                        if (unifiedItemsMap[itemKey].date !== item.date) {
+                            unifiedItemsMap[itemKey].date = 'Diversas';
+                        }
+                        if (unifiedItemsMap[itemKey].costCenter !== item.costCenter) {
+                            unifiedItemsMap[itemKey].costCenter = 'Diversos';
+                        }
+                    }
+                });
+
+                return {
+                    name: k,
+                    total: groups[k].total,
+                    count: groups[k].items.length,
+                    items: Object.values(unifiedItemsMap).sort((a, b) => b.value - a.value)
+                };
+            }
+
+            return {
+                name: k,
+                total: groups[k].total,
+                count: groups[k].items.length,
+                items: groups[k].items.sort((a, b) => b.value - a.value)
+            };
+        }).sort((a, b) => b.total - a.total);
     }, [filteredData, groupBy]);
 
     const formatterCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);

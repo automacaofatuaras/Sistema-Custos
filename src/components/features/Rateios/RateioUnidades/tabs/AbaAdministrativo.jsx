@@ -15,51 +15,101 @@ export default function AbaAdministrativo({
     BUSINESS_HIERARCHY
 }) {
     if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
-        const { table, totalSalariosPot, totalDespesasPot, grandTotalVolume } = calculatedData.noromixAdmData;
-        const unitsList = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
+        const { table, totalSalariosPot, totalDespesasPot, grandTotalVolume, autoTargetValue } = calculatedData.noromixAdmData;
+        const concreteUnits = BUSINESS_HIERARCHY["Noromix Concreteiras"] || [];
+        const pipeUnits = BUSINESS_HIERARCHY["Fábrica de Tubos"] || [];
+        const totalBaseGeral = autoTargetValue > 0 ? autoTargetValue / 0.10 : 0;
 
         return (
             <div className="space-y-6 animate-in fade-in">
+                {/* Cards de Origem do Valor */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-slate-800 text-white p-6 rounded-xl shadow-lg border-b-4 border-slate-600">
+                        <p className="text-slate-400 text-xs font-bold uppercase mb-1">Base Administrativa Geral (100%)</p>
+                        <h3 className="text-2xl font-black">{totalBaseGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
+                    </div>
+                    <div className="bg-indigo-600 text-white p-6 rounded-xl shadow-lg border-b-4 border-indigo-400">
+                        <p className="text-indigo-200 text-xs font-bold uppercase mb-1">Cota Concreteiras e Fábrica (10%)</p>
+                        <h3 className="text-2xl font-black">{(autoTargetValue || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
+                    </div>
+                </div>
+
+                {/* Parâmetros */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 p-6 shadow-sm relative">
                     <div className="flex justify-between items-start mb-6">
-                        <h4 className="font-bold text-lg flex items-center gap-2 dark:text-white"><Settings size={20} className="text-slate-400" /> Parâmetros do Rateio (Mês Vigente)</h4>
+                        <div>
+                            <h4 className="font-bold text-lg flex items-center gap-2 dark:text-white"><Settings size={20} className="text-slate-400" /> Parâmetros de Rateio</h4>
+                            <p className="text-xs text-slate-500 mt-1">Defina a quantidade de funcionários para o cálculo do Rateio das Despesas Administrativas.</p>
+                        </div>
                         <div className="flex gap-2">
                             {isLocked ? (
                                 <button onClick={() => setIsLocked(false)} className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm">
-                                    <Edit2 size={16} /> Editar Parâmetros
+                                    <Edit2 size={16} /> Editar
                                 </button>
                             ) : (
                                 <button onClick={handleSaveAdmParams} disabled={isSaving} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50">
-                                    {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Salvar Definições
+                                    {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Salvar
                                 </button>
                             )}
                         </div>
                     </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Valor Total Rateio (R$)</label>
-                                <CurrencyInput value={admParams.totalValue} onChange={(val) => handleAdmParamChange('totalValue', val)} disabled={isLocked} className={`w-full border p-3 rounded-lg text-lg font-bold text-indigo-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`} />
-                            </div>
-                            <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Salário Mínimo Base (R$)</label>
-                                <CurrencyInput value={admParams.minWage} onChange={(val) => handleAdmParamChange('minWage', val)} disabled={isLocked} className={`w-full border p-3 rounded-lg text-lg font-bold text-slate-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`} />
+                                <CurrencyInput value={admParams.minWage || 1518} onChange={(val) => handleAdmParamChange('minWage', val)} disabled={isLocked} className={`w-full border p-3 rounded-lg text-lg font-bold text-slate-600 dark:bg-slate-700 dark:text-white dark:border-slate-600 ${isLocked ? 'bg-slate-100 opacity-70' : ''}`} />
                             </div>
-                            <div className="mt-4 bg-slate-100 dark:bg-slate-900 p-4 rounded-lg space-y-2">
-                                <div className="flex justify-between text-sm"><span>Rateio Folha Adm (Cálculo 1)</span><span className="font-bold">{totalSalariosPot.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></div>
-                                <div className="flex justify-between text-sm"><span>Rateio Despesas Adm (Cálculo 2 + Fixo)</span><span className="font-bold">{totalDespesasPot.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></div>
-                                <div className="border-t border-slate-300 pt-2 flex justify-between font-bold text-indigo-600"><span>Total Validado</span><span>{(totalSalariosPot + totalDespesasPot).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></div>
+                            <div className="bg-slate-100 dark:bg-slate-900 p-4 rounded-lg space-y-2 text-sm border dark:border-slate-700">
+                                <div className="flex justify-between"><span>Rateio Folha Adm (Cálculo 1)</span><span className="font-bold">{totalSalariosPot.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></div>
+                                <div className="flex justify-between"><span>Rateio Despesas Adm (Cálculo 2)</span><span className="font-bold">{totalDespesasPot.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></div>
+                                <div className="border-t border-slate-300 dark:border-slate-700 pt-2 flex justify-between font-bold text-indigo-600 dark:text-indigo-400">
+                                    <span>Total Alocado</span>
+                                    <span>{(totalSalariosPot + totalDespesasPot).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                                </div>
                             </div>
                         </div>
-                        <div className={`bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 max-h-80 overflow-y-auto border dark:border-slate-700 ${isLocked ? 'opacity-80' : ''}`}>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-3 sticky top-0 bg-slate-50 dark:bg-slate-900/50 py-2 z-10">Qtd. Funcionários (Cálculo 1)</label>
-                            <div className="space-y-2">
-                                {unitsList.map(u => (
-                                    <div key={u} className="flex justify-between items-center text-sm">
-                                        <span className="dark:text-slate-300 truncate w-48" title={u}>{u.includes('-') ? u.split('-')[1].trim() : u}</span>
-                                        <input type="number" min="0" disabled={isLocked} className={`w-20 p-1 text-center border rounded dark:bg-slate-700 dark:text-white ${isLocked ? 'bg-slate-100' : ''}`} value={admParams.employees[u] || 0} onChange={(e) => handleAdmParamChange('employees', e.target.value, u)} />
+
+                        <div className="grid grid-cols-1 gap-4">
+                            <div className={`bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 max-h-80 overflow-y-auto border dark:border-slate-700 ${isLocked ? 'opacity-80' : ''}`}>
+                                <div className="flex justify-between items-end mb-3 border-b dark:border-slate-700 pb-2">
+                                    <label className="block text-[10px] font-black text-blue-500 uppercase tracking-wider">Rateios - Concreteiras</label>
+                                    <div className="flex gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center">
+                                        <span className="w-16">Func.</span>
+                                        <span className="w-20 text-indigo-400">Vol (m³)</span>
                                     </div>
-                                ))}
+                                </div>
+                                <div className="space-y-2">
+                                    {concreteUnits.map(u => (
+                                        <div key={u} className="flex justify-between items-center text-xs">
+                                            <span className="dark:text-slate-300 truncate w-32 font-medium" title={u}>{u.includes('-') ? u.split('-')[1].trim() : u}</span>
+                                            <div className="flex gap-2">
+                                                <input type="number" min="0" disabled={isLocked} className={`w-16 p-1 text-center border rounded dark:bg-slate-700 dark:text-white dark:border-slate-600 font-bold ${isLocked ? 'bg-slate-100' : ''}`} value={admParams.employees?.[u] || 0} onChange={(e) => handleAdmParamChange('employees', e.target.value, u)} />
+                                                <input type="number" min="0" step="0.01" disabled={isLocked} className={`w-20 p-1 text-center border rounded dark:bg-slate-700 dark:text-white dark:border-slate-600 font-mono text-indigo-600 dark:text-indigo-400 placeholder-slate-300 dark:placeholder-slate-600 ${isLocked ? 'bg-slate-100' : ''}`} value={admParams.volumes?.[u] ?? ''} placeholder="0" onChange={(e) => handleAdmParamChange('volumes', e.target.value, u)} />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className={`bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 max-h-40 overflow-y-auto border dark:border-slate-700 ${isLocked ? 'opacity-80' : ''}`}>
+                                <div className="flex justify-between items-end mb-3 border-b dark:border-slate-700 pb-2">
+                                    <label className="block text-[10px] font-black text-amber-500 uppercase tracking-wider">Rateios - Fábrica</label>
+                                    <div className="flex gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center">
+                                        <span className="w-16">Func.</span>
+                                        <span className="w-20 text-indigo-400">Vol (m³)</span>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    {pipeUnits.map(u => (
+                                        <div key={u} className="flex justify-between items-center text-xs">
+                                            <span className="dark:text-slate-300 truncate w-32 font-medium" title={u}>{u.includes('-') ? u.split('-')[1].trim() : u}</span>
+                                            <div className="flex gap-2">
+                                                <input type="number" min="0" disabled={isLocked} className={`w-16 p-1 text-center border rounded dark:bg-slate-700 dark:text-white dark:border-slate-600 font-bold ${isLocked ? 'bg-slate-100' : ''}`} value={admParams.employees?.[u] || 0} onChange={(e) => handleAdmParamChange('employees', e.target.value, u)} />
+                                                <input type="number" min="0" step="0.01" disabled={isLocked} className={`w-20 p-1 text-center border rounded dark:bg-slate-700 dark:text-white dark:border-slate-600 font-mono text-indigo-600 dark:text-indigo-400 placeholder-slate-300 dark:placeholder-slate-600 ${isLocked ? 'bg-slate-100' : ''}`} value={admParams.volumes?.[u] ?? ''} placeholder="0" onChange={(e) => handleAdmParamChange('volumes', e.target.value, u)} />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -77,7 +127,7 @@ export default function AbaAdministrativo({
                                     <th className="p-3 pl-6">Unidade</th>
                                     <th className="p-3 text-center">Func.</th>
                                     <th className="p-3 text-right">Volume</th>
-                                    <th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Rateio Folha (C3)</th>
+                                    <th className="p-3 text-right text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20">Rateio Folha (C1)</th>
                                     <th className="p-3 text-right text-amber-600 bg-amber-50 dark:bg-amber-900/20">Rateio Despesas (C2)</th>
                                     <th className="p-3 text-right font-bold bg-slate-100 dark:bg-slate-800">TOTAL FINAL</th>
                                 </tr>
@@ -93,14 +143,43 @@ export default function AbaAdministrativo({
                                         <td className="p-3 text-right font-bold bg-slate-100 dark:bg-slate-800">{row.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                                     </tr>
                                 ))}
-                                <tr className="bg-slate-900 text-white font-bold">
-                                    <td colSpan={3} className="p-3 pl-6 text-right uppercase text-xs tracking-wider">Totais Calculados</td>
-                                    <td className="p-3 text-right">{table.reduce((a, b) => a + b.rateioFolha, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                    <td className="p-3 text-right">{table.reduce((a, b) => a + b.rateioDespesas, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                    <td className="p-3 text-right text-emerald-400">{table.reduce((a, b) => a + b.total, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                <tr className="bg-slate-900 text-white font-bold border-t-2 border-indigo-500">
+                                    <td className="p-3 pl-6 text-right uppercase text-[10px] tracking-widest text-indigo-300">Totais Consolidados</td>
+                                    <td className="p-3 text-center text-xs">{table.reduce((a, b) => a + (b.employees || 0), 0)}</td>
+                                    <td className="p-3 text-right text-xs">{table.reduce((a, b) => a + (b.volume || 0), 0).toLocaleString()}</td>
+                                    <td className="p-3 text-right">{table.reduce((a, b) => a + (b.rateioFolha || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    <td className="p-3 text-right">{table.reduce((a, b) => a + (b.rateioDespesas || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    <td className="p-3 text-right text-emerald-400 font-black">{table.reduce((a, b) => a + (b.total || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+
+                {/* Nota Explicativa */}
+                <div className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 p-6 rounded-xl space-y-4">
+                    <h5 className="font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-2 uppercase text-xs tracking-widest">
+                        <Calculator size={16} /> Memória de Cálculo e Regras
+                    </h5>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-indigo-800 dark:text-indigo-400 leading-relaxed">
+                        <div className="space-y-2">
+                            <p><strong>1. Origem dos Valores:</strong> Extraído do <strong>Rateio Administrativo Geral</strong>. As Concreteiras e Fábrica de Tubos recebem uma cota fixa de <strong>10%</strong> do total de despesas gerais.</p>
+                            <p><strong>2. Rateio Folha Adm (Cálculo 1):</strong> Utiliza a quantidade de funcionários por unidade aplicando os fatores:</p>
+                            <ul className="list-disc pl-5 space-y-1">
+                                <li>Até 6 funcionários: <strong>Fator 2</strong></li>
+                                <li>De 7 a 14 funcionários: <strong>Fator 4</strong></li>
+                                <li>15 ou mais funcionários: <strong>Fator 6</strong></li>
+                            </ul>
+                            <p>O subtotal é transformado em proporção sobre o volume total produzido e distribuído.</p>
+                        </div>
+                        <div className="space-y-2">
+                            <p><strong>3. Rateio Despesas Adm (Cálculo 2 + Fixo):</strong> Após subtrair o Rateio Folha do total da cota (10%), o saldo compõe o Rateio de Despesas:</p>
+                            <ul className="list-disc pl-5 space-y-1">
+                                <li><strong>Fábrica de Tubos:</strong> Recebe um repasse fixo estipulado de <strong>R$ 20.000,00</strong>.</li>
+                                <li><strong>Concreteiras:</strong> Rateiam o saldo restante proporcionalmente ao <strong>Volume (m³)</strong> produzido no mês por cada usina.</li>
+                            </ul>
+                            <p><strong>4. Total Final:</strong> Soma (Rateio Folha + Rateio Despesas) cobrado de cada centro de custo.</p>
+                        </div>
                     </div>
                 </div>
             </div>

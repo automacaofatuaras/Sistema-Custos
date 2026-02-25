@@ -13,6 +13,7 @@ import AbaVendedores from './tabs/AbaVendedores';
 import AbaComercialTecnico from './tabs/AbaComercialTecnico';
 import AbaNoromix1046 from './tabs/AbaNoromix1046';
 import AbaAdmSalarios from './tabs/AbaAdmSalarios';
+import AbaLimpeza from './tabs/AbaLimpeza';
 
 const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = { email: 'admin@sistema.com' } }) => {
     // Estado local
@@ -29,11 +30,20 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
     const [admParams, setAdmParams] = useState({
         totalValue: 0,
         minWage: 1518,
-        employees: {}
+        employees: {},
+        volumes: {}
     });
 
     const [isLocked, setIsLocked] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+
+    // --- ESTADOS PARA RATEIO LIMPEZA ---
+    const [limpezaParams, setLimpezaParams] = useState({
+        employeeHours: {},
+        machines: []
+    });
+    const [isLockedLimpeza, setIsLockedLimpeza] = useState(false);
+    const [isSavingLimpeza, setIsSavingLimpeza] = useState(false);
 
     // --- CONFIGURAÇÃO DOS RATEIOS ---
     const RATEIO_CONFIG = {
@@ -47,11 +57,11 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
             { id: 'PERFURATRIZ', label: 'Rateio Perfuratriz' }
         ],
         'Concreteiras e Fábrica de Tubos': [
-            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo (Salários)' },
-            { id: 'COMERCIAL', label: 'Rateio Comercial (Produção)' },
-            { id: 'TECNICO', label: 'Rateio Dep. Técnico (CC 1075)' },
-            { id: 'VENDEDORES', label: 'Rateio Vendedores (CC Específico)' },
-            { id: 'NOROMIX_1046', label: 'Rateio Noromix (CC 1046)' }
+            { id: 'ADMINISTRATIVO', label: 'Rateio Administrativo' },
+            { id: 'COMERCIAL', label: 'Rateio Comercial' },
+            { id: 'TECNICO', label: 'Rateio Dep. Técnico' },
+            { id: 'VENDEDORES', label: 'Rateio Vendedores' },
+            { id: 'NOROMIX_1046', label: 'Rateio Noromix' }
         ]
     };
 
@@ -62,6 +72,7 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
         { cc: 22003, unit: "Noromix Concreto S/A - Ilha Solteira" },
         { cc: 25003, unit: "Noromix Concreto S/A - Jales" },
         { cc: 27003, unit: "Noromix Concreto S/A - Fernandópolis" },
+        { cc: 28003, unit: "Noromix Concreto S/A - Andradina" },
         { cc: 29003, unit: "Noromix Concreto S/A - Pereira Barreto" },
         { cc: 33003, unit: "Noromix Concreto S/A - Ouroeste" },
         { cc: 34003, unit: "Noromix Concreto S/A - Monções" },
@@ -89,13 +100,18 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
                     setAdmParams({
                         totalValue: data.totalValue || 0,
                         minWage: data.minWage || 1518,
-                        employees: data.employees || {}
+                        employees: data.employees || {},
+                        volumes: data.volumes || {}
                     });
                     setIsLocked(true);
                 } else {
                     const initialEmployees = {};
-                    allUnits.forEach(u => initialEmployees[u] = 0);
-                    setAdmParams({ totalValue: 0, minWage: 1518, employees: initialEmployees });
+                    const initialVolumes = {};
+                    allUnits.forEach(u => {
+                        initialEmployees[u] = 0;
+                        initialVolumes[u] = '';
+                    });
+                    setAdmParams({ totalValue: 0, minWage: 1518, employees: initialEmployees, volumes: initialVolumes });
                     setIsLocked(false);
                 }
             } catch (error) {
@@ -134,9 +150,42 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
             }
         };
 
+        // 3. CARREGAR LIMPEZA
+        const loadLimpezaData = async () => {
+            if (activeRateioType !== 'LIMPEZA') return;
+            const docIdLimpeza = `rateio_limpeza_${filter.year}_${filter.month}`;
+            const docRefLimpeza = doc(db, 'artifacts', appId, 'rateio_limpeza_config', docIdLimpeza);
+
+            try {
+                const docSnapLimpeza = await getDoc(docRefLimpeza);
+                if (docSnapLimpeza.exists()) {
+                    setLimpezaParams(docSnapLimpeza.data());
+                    setIsLockedLimpeza(true);
+                } else {
+                    setLimpezaParams({ employeeHours: {}, machines: [] });
+                    setIsLockedLimpeza(false);
+                }
+            } catch (error) {
+                console.error("Erro ao carregar Limpeza:", error);
+            }
+        };
+
         loadSavedData();
         loadAdmGeralTransactions();
+        loadLimpezaData();
     }, [selectedSegment, activeRateioType, filter.month, filter.year, user?.email]);
+
+    // --- FUNÇÃO SALVAR LIMPEZA ---
+    const handleSaveLimpeza = async () => {
+        setIsSavingLimpeza(true);
+        const docId = `rateio_limpeza_${filter.year}_${filter.month}`;
+        const docRef = doc(db, 'artifacts', appId, 'rateio_limpeza_config', docId);
+        try {
+            await setDoc(docRef, { ...limpezaParams, updatedAt: new Date().toISOString(), user: 'system' });
+            setIsLockedLimpeza(true);
+        } catch (error) { alert("Erro ao salvar rateio Limpeza."); }
+        finally { setIsSavingLimpeza(false); }
+    };
 
     // --- FUNÇÃO SALVAR ADM ---
     const handleSaveAdmParams = async () => {
@@ -229,43 +278,69 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
         const totalComercialGen = sumAdmCC([1104]);
         const itemsComercialGen = listAdmItems([1104]).sort((a, b) => b.value - a.value);
 
+        // 5. Rateio Limpeza
+        const itemsLimpeza = listItems([1121]);
+
+        // --- CÁLCULOS GLOBAIS DE BASE ---
+
+        // 1. TOTAL ADM GERAL (100%) - Usado como base para Rateio Admin (10%) e agora Comercial (CC 1105)
+        const totalIndiretoGeral = periodAdmTxs
+            .filter(t => {
+                const seg = (t.segment || '').trim().toUpperCase();
+                return seg === 'GERAL' || seg === 'GERAL / ADMINISTRATIVO' || seg === 'ADMINISTRATIVO GERAL' || seg === 'ADMINISTRATIVO' || seg === 'INDIFERENTE';
+            })
+            .reduce((acc, t) => {
+                if (t.type?.toUpperCase() === 'DIRETO') return acc;
+                return acc + (t.value || 0);
+            }, 0);
+
+        // 2. VOLUMES MANUAIS/ADULTOS
+        const concreteUnits = BUSINESS_HIERARCHY["Noromix Concreteiras"];
+        const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
+        const allRateioUnits = [...concreteUnits, pipeUnit];
+
+        let volConcretoTotal = 0;
+        let volGlobalTotal = 0;
+        const unitVolumes = {};
+
+        allRateioUnits.forEach(u => {
+            const vol = Number(admParams.volumes?.[u] || 0);
+            unitVolumes[u] = vol;
+            volGlobalTotal += vol;
+            if (u !== pipeUnit) volConcretoTotal += vol;
+        });
+
+        // 3. CUSTO DIRETO OPERACIONAL DO SEGMENTO (Usado no Comercial CC 1105)
+        const segmentDiretoItems = periodAdmTxs.filter(t => {
+            if (t.type?.toUpperCase() !== 'DIRETO') return false;
+            const seg = (t.segment || '').trim().toUpperCase();
+            return seg.includes('CONCRE') || seg.includes('FABRICA') || seg.includes('TUBOS');
+        });
+        const totalDiretoSegmento = segmentDiretoItems.reduce((acc, t) => acc + (t.value || 0), 0);
+
         // A. Rateio Comercial e Técnico Noromix
         let noromixComercialData = { units: [], totalProduction: 0, totalExpenses: 0, expenseItems: [] };
         let noromixTecnicoData = { units: [], totalProduction: 0, totalExpenses: 0, expenseItems: [] };
+        let noromixAdmData = { table: [], totalSalariosPot: 0, totalDespesasPot: 0, grandTotalVolume: 0, autoTargetValue: 0 };
 
         if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
-            const targetUnits = [...BUSINESS_HIERARCHY["Noromix Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
+            const targetUnits = allRateioUnits;
 
-            // CÁLCULO COMERCIAL (1104)
-            const expenses1104 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1104'));
-            const totalExp1104 = expenses1104.reduce((acc, t) => acc + t.value, 0);
+            // NOVA REGRA COMERCIAL (CC 1105): Usa o Custo Direto Operacional do Segmento
+            const totalExp1105 = totalDiretoSegmento;
+            const expenses1105 = segmentDiretoItems;
 
-            // CÁLCULO TÉCNICO (1075)
+            // CÁLCULO TÉCNICO (CC 1075): Mantém busca nas transações
             const expenses1075 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1075'));
             const totalExp1075 = expenses1075.reduce((acc, t) => acc + t.value, 0);
 
-            let grandTotalProd = 0;
-            const productionMap = {};
-
-            targetUnits.forEach(u => {
-                const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
-                const prod = periodTxs.filter(t => {
-                    if (t.type !== 'metric' || t.metricType !== 'producao') return false;
-                    const txUnit = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                    return txUnit === targetName;
-                }).reduce((acc, t) => acc + t.value, 0);
-
-                productionMap[u] = prod;
-                grandTotalProd += prod;
-            });
-
             const buildRateioProducao = (totalExpense) => {
                 const result = targetUnits.map(unitName => {
-                    const prod = productionMap[unitName] || 0;
+                    const prod = unitVolumes[unitName] || 0;
                     let percent = 0;
                     let valueToPay = 0;
-                    if (grandTotalProd > 0) {
-                        percent = prod / grandTotalProd;
+                    if (volGlobalTotal > 0) {
+                        percent = prod / volGlobalTotal;
                         valueToPay = totalExpense * percent;
                     }
                     return { name: unitName, production: prod, percent, valueToPay };
@@ -273,8 +348,8 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
                 return result.sort((a, b) => b.production - a.production);
             };
 
-            noromixComercialData = { units: buildRateioProducao(totalExp1104), totalProduction: grandTotalProd, totalExpenses: totalExp1104, expenseItems: expenses1104 };
-            noromixTecnicoData = { units: buildRateioProducao(totalExp1075), totalProduction: grandTotalProd, totalExpenses: totalExp1075, expenseItems: expenses1075 };
+            noromixComercialData = { units: buildRateioProducao(totalExp1105), totalProduction: volGlobalTotal, totalExpenses: totalExp1105, expenseItems: expenses1105 };
+            noromixTecnicoData = { units: buildRateioProducao(totalExp1075), totalProduction: volGlobalTotal, totalExpenses: totalExp1075, expenseItems: expenses1075 };
         }
 
         // E. Rateio Noromix (CC 1046)
@@ -309,31 +384,10 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
             noromixVendedoresData = Object.values(grouped).sort((a, b) => a.cc - b.cc);
         }
 
-        // C. Rateio ADMINISTRATIVO Noromix
-        let noromixAdmData = { table: [], totalSalariosPot: 0, totalDespesasPot: 0, grandTotalVolume: 0 };
         if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
-            const concreteUnits = BUSINESS_HIERARCHY["Noromix Concreteiras"];
-            const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
-            const allUnits = [...concreteUnits, pipeUnit];
+            // (Calculations already performed in global block)
+            const allUnits = allRateioUnits;
 
-            let volConcretoTotal = 0;
-            let volGlobalTotal = 0;
-            const unitVolumes = {};
-
-            allUnits.forEach(u => {
-                const targetName = u.includes(':') ? u.split(':')[1].trim() : u;
-                const vol = periodTxs
-                    .filter(t => {
-                        if (t.type !== 'metric' || t.metricType !== 'producao') return false;
-                        const txUnitName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
-                        return txUnitName === targetName;
-                    })
-                    .reduce((acc, t) => acc + t.value, 0);
-
-                unitVolumes[u] = vol;
-                volGlobalTotal += vol;
-                if (u !== pipeUnit) volConcretoTotal += vol;
-            });
 
             let totalSalariosCalc = 0;
             allUnits.forEach(u => {
@@ -345,7 +399,9 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
                 totalSalariosCalc += (factor * (admParams.minWage || 1518));
             });
 
-            const despesasPot = Math.max(0, admParams.totalValue - totalSalariosCalc - 20000);
+            // NOVA REGRA DE NEGÓCIO: O rateio base para Concreteiras é 10% do Rateio Adm Geral
+            const autoTargetValue = totalIndiretoGeral * 0.10;
+            const despesasPot = Math.max(0, autoTargetValue - totalSalariosCalc - 20000);
 
             const table = allUnits.map(u => {
                 const vol = unitVolumes[u] || 0;
@@ -363,7 +419,7 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
                 return { name: shortName, fullName: u, employees: admParams.employees[u] || 0, volume: vol, rateioFolha, rateioDespesas, total: rateioFolha + rateioDespesas };
             });
             table.sort((a, b) => b.volume - a.volume);
-            noromixAdmData = { table, totalSalariosPot: totalSalariosCalc, totalDespesasPot: despesasPot + 20000, grandTotalVolume: volGlobalTotal };
+            noromixAdmData = { table, totalSalariosPot: totalSalariosCalc, totalDespesasPot: despesasPot + 20000, grandTotalVolume: volGlobalTotal, autoTargetValue };
         }
 
         // D. Rateio ADMINISTRATIVO Pedreiras e Portos (Novo)
@@ -371,19 +427,6 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
         if (selectedSegment === 'Pedreiras e Portos de Areia') {
             const pedreirasUnits = BUSINESS_HIERARCHY["Pedreiras"];
             const portosUnits = BUSINESS_HIERARCHY["Portos de Areia"];
-
-            // 1. Buscar valor total do Segmento GERAL no DB Consolidado (Somando se houver múltiplos)
-            // Somamos tudo que pertencer ao segmento 'Geral', 'GERAL', 'ADMINISTRATIVO' ou similar
-            const totalIndiretoGeral = periodAdmTxs
-                .filter(t => {
-                    const seg = (t.segment || '').trim().toUpperCase();
-                    return seg === 'GERAL' || seg === 'GERAL / ADMINISTRATIVO' || seg === 'ADMINISTRATIVO GERAL' || seg === 'ADMINISTRATIVO' || seg === 'INDIFERENTE';
-                })
-                .reduce((acc, t) => {
-                    // Se for 'Indireto' ou se não for 'Direto' explicitamente, somamos
-                    if (t.type?.toUpperCase() === 'DIRETO') return acc;
-                    return acc + (t.value || 0);
-                }, 0);
 
             const basePedreiras = totalIndiretoGeral * 0.285;
             const basePortos = totalIndiretoGeral * 0.015;
@@ -472,7 +515,7 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
         return {
             totalAdm, itemsAdm, totalProd, itemsProd, totalVend2105, totalVend3105, totalVend5105, totalComercial, activeUnits,
             noromixComercialData, noromixTecnicoData, noromixVendedoresData, noromixAdmData, noromixAdmPedreirasData, noromix1046Data,
-            totalComercialGen, itemsComercialGen, itemsVend
+            totalComercialGen, itemsComercialGen, itemsVend, itemsLimpeza
         };
     }, [transactions, filter, selectedSegment, admParams, admTransactions]);
 
@@ -485,18 +528,28 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
 
     const handleAdmParamChange = (field, val, unit = null) => {
         if (unit) {
+            let parsedVal = val;
+            if (val !== '') {
+                parsedVal = field === 'volumes' ? parseFloat(val) : parseInt(val);
+                if (isNaN(parsedVal)) parsedVal = 0;
+            }
+
             setAdmParams(prev => ({
                 ...prev,
-                employees: { ...(prev.employees || {}), [unit]: parseInt(val) || 0 }
+                [field]: { ...(prev[field] || {}), [unit]: parsedVal }
             }));
         } else {
             setAdmParams(prev => ({ ...prev, [field]: val }));
         }
     };
 
+    const handleLimpezaParamChange = (field, val) => {
+        setLimpezaParams(prev => ({ ...prev, [field]: val }));
+    };
+
     // --- RENDERIZAÇÃO ---
     const renderContent = () => {
-        if (['LIMPEZA', 'PERFURATRIZ'].includes(activeRateioType)) {
+        if (['PERFURATRIZ'].includes(activeRateioType)) {
             return <div className="p-10 text-center text-slate-400 border border-dashed rounded-xl">Módulo em desenvolvimento.</div>;
         }
 
@@ -514,6 +567,8 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
                 return <AbaComercialTecnico selectedSegment={selectedSegment} activeRateioType={activeRateioType} calculatedData={calculatedData} />;
             case 'NOROMIX_1046':
                 return <AbaNoromix1046 calculatedData={calculatedData} />;
+            case 'LIMPEZA':
+                return <AbaLimpeza calculatedData={calculatedData} limpezaParams={limpezaParams} handleLimpezaParamChange={handleLimpezaParamChange} isLockedLimpeza={isLockedLimpeza} setIsLockedLimpeza={setIsLockedLimpeza} isSavingLimpeza={isSavingLimpeza} handleSaveLimpeza={handleSaveLimpeza} BUSINESS_HIERARCHY={BUSINESS_HIERARCHY} />;
             default:
                 return <div className="p-10 text-center text-slate-400">Selecione um tipo de rateio acima.</div>;
         }
