@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
-import { Package, DollarSign, PlusCircle, Save, X, Target, TrendingUp, TrendingDown, Trash2, Calendar, Layout, FileText, CheckCircle } from 'lucide-react';
+import { Package, DollarSign, PlusCircle, Save, X, Target, TrendingUp, TrendingDown, Trash2, Calendar, Layout, FileText, CheckCircle, Edit2 } from 'lucide-react';
+import { formatDate } from '../../../utils/formatters';
 
 const FormItem = ({ label, children, className }) => (
     <div className={`space-y-2 relative ${className || ''}`}>
@@ -13,12 +14,44 @@ const FormItem = ({ label, children, className }) => (
     </div>
 );
 
-const ProductionComponent = ({ transactions, measureUnit, onAddMetric, onDeleteMetric }) => {
+const ProductionComponent = ({ transactions, measureUnit, currentFilter, onAddMetric, onUpdateMetric, onDeleteMetric }) => {
     const [showAdjust, setShowAdjust] = useState(false);
+    const [adjustId, setAdjustId] = useState(null);
     const [adjustDate, setAdjustDate] = useState(new Date().toISOString().slice(0, 10));
     const [adjustType, setAdjustType] = useState('producao'); // producao | vendas
     const [adjustCategory, setAdjustCategory] = useState('Areia Fina');
     const [adjustValue, setAdjustValue] = useState('');
+
+    const getDefaultDate = () => {
+        if (!currentFilter) return new Date().toISOString().slice(0, 10);
+        let y = currentFilter.year || new Date().getFullYear();
+        let m = new Date().getMonth();
+
+        if (currentFilter.type === 'month') {
+            m = currentFilter.month;
+        } else if (currentFilter.type === 'quarter') {
+            m = (currentFilter.quarter - 1) * 3 + 2;
+        } else if (currentFilter.type === 'semester') {
+            m = currentFilter.semester === 1 ? 5 : 11;
+        } else if (currentFilter.type === 'year') {
+            m = 11;
+        }
+
+        const d = new Date(y, m + 1, 0, 12, 0, 0);
+        return d.toISOString().slice(0, 10);
+    };
+
+    const handleEditAdjust = (t) => {
+        setAdjustId(t.id);
+        setAdjustType(t.metricType);
+        setAdjustCategory(t.materialDescription || 'Areia Fina');
+        setAdjustDate(t.date ? new Date(t.date).toISOString().slice(0, 10) : getDefaultDate());
+        setAdjustValue(t.value);
+        setShowAdjust(true);
+        setTimeout(() => {
+            document.getElementById('prod-adjust-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+    };
 
     const handleSaveAdjust = () => {
         if (!adjustValue) return;
@@ -33,11 +66,15 @@ const ProductionComponent = ({ transactions, measureUnit, onAddMetric, onDeleteM
             description: `Lançamento Manual de ${adjustType.replace('_', ' ')}`
         };
 
-        if (onAddMetric) {
+        if (adjustId && onUpdateMetric) {
+            onUpdateMetric(adjustId, metricData);
+        } else if (onAddMetric) {
             onAddMetric(metricData);
-            setAdjustValue('');
-            setShowAdjust(false);
         }
+
+        setAdjustValue('');
+        setAdjustId(null);
+        setShowAdjust(false);
     };
 
     const data = useMemo(() => {
@@ -100,77 +137,34 @@ const ProductionComponent = ({ transactions, measureUnit, onAddMetric, onDeleteM
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-l-4 border-l-indigo-500 dark:border-slate-700">
-                    <div className="flex justify-between items-start mb-2">
-                        <p className="text-slate-500 dark:text-slate-400 font-bold text-sm uppercase">Volume de Produção</p>
-                        <Package className="text-indigo-500" size={20} />
-                    </div>
-                    <h3 className="text-3xl font-bold dark:text-white mb-1">
-                        {kpis.prod.toLocaleString()} <span className="text-lg font-normal text-slate-400">{measureUnit}</span>
-                    </h3>
-                    <div className="flex items-center gap-2 mt-4 pt-4 border-t dark:border-slate-700 border-slate-100 text-sm">
-                        {kpis.metaProd > 0 ? (
-                            <>
-                                <span className={kpis.gapProd >= 0 ? "text-emerald-500 font-bold flex items-center" : "text-rose-500 font-bold flex items-center"}>
-                                    {kpis.gapProd >= 0 ? <TrendingUp size={16} className="mr-1" /> : <TrendingDown size={16} className="mr-1" />}
-                                    {Math.abs(kpis.gapProd).toLocaleString()} {measureUnit} {kpis.gapProd >= 0 ? 'acima' : 'abaixo'} da meta
-                                </span>
-                                <span className="text-slate-400 ml-auto font-bold">Meta: {kpis.metaProd.toLocaleString()}</span>
-                            </>
-                        ) : (
-                            <span className="text-slate-400">Meta não definida no período</span>
-                        )}
-                    </div>
-                </div>
-
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-l-4 border-l-emerald-500 dark:border-slate-700">
-                    <div className="flex justify-between items-start mb-2">
-                        <p className="text-slate-500 dark:text-slate-400 font-bold text-sm uppercase">Volume de Vendas</p>
-                        <Target className="text-emerald-500" size={20} />
-                    </div>
-                    <h3 className="text-3xl font-bold dark:text-white mb-1">
-                        {kpis.vendas.toLocaleString()} <span className="text-lg font-normal text-slate-400">{measureUnit}</span>
-                    </h3>
-                    <div className="flex items-center gap-2 mt-4 pt-4 border-t dark:border-slate-700 border-slate-100 text-sm">
-                        {kpis.metaVendas > 0 ? (
-                            <>
-                                <span className={kpis.gapVendas >= 0 ? "text-emerald-500 font-bold flex items-center" : "text-rose-500 font-bold flex items-center"}>
-                                    {kpis.gapVendas >= 0 ? <TrendingUp size={16} className="mr-1" /> : <TrendingDown size={16} className="mr-1" />}
-                                    {Math.abs(kpis.gapVendas).toLocaleString()} {measureUnit} {kpis.gapVendas >= 0 ? 'acima' : 'abaixo'} da meta
-                                </span>
-                                <span className="text-slate-400 ml-auto font-bold">Meta: {kpis.metaVendas.toLocaleString()}</span>
-                            </>
-                        ) : (
-                            <span className="text-slate-400">Meta não definida no período</span>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            <div className="flex items-center justify-between mb-4 mt-6">
-                <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
-                    <Package className="text-indigo-500" size={20} />
-                    Quantitativo: Produção vs Vendas ({measureUnit})
-                </h3>
+            <div className="flex items-center justify-start mb-4">
                 <button
-                    onClick={() => setShowAdjust(!showAdjust)}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 font-bold rounded-lg hover:bg-indigo-100 transition-colors"
+                    onClick={() => {
+                        if (showAdjust) {
+                            setShowAdjust(false);
+                            setAdjustId(null);
+                        } else {
+                            setAdjustId(null);
+                            setAdjustDate(getDefaultDate());
+                            setAdjustValue('');
+                            setShowAdjust(true);
+                        }
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white font-black rounded-xl hover:bg-indigo-500 transition-all shadow-lg active:scale-95"
                 >
-                    {showAdjust ? <X size={16} /> : <PlusCircle size={16} />}
-                    {showAdjust ? 'Cancelar Lançamento' : 'Lançar Volume'}
+                    {showAdjust ? <X size={20} /> : <PlusCircle size={20} />}
+                    {showAdjust ? 'Cancelar Lançamento' : 'Lançar Volume / Meta'}
                 </button>
             </div>
 
             {showAdjust && (
-                <div className="bg-white dark:bg-slate-900 w-full rounded-[2rem] shadow-[0_15px_60px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500 mb-8 overflow-hidden">
+                <div id="prod-adjust-form" className="bg-white dark:bg-slate-900 w-full rounded-[2rem] shadow-[0_15px_60px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500 mb-8 overflow-hidden">
                     {/* Header Inline Form */}
                     <div className="bg-slate-50 dark:bg-slate-800/50 p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                         <div>
                             <h2 className="text-xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
                                 <Package className="text-indigo-500" size={24} />
-                                Lançamento de Volumes
+                                {adjustId ? 'Editar Lançamento' : 'Lançamento de Volumes'}
                             </h2>
                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">Lançamento local de Realizado e Metas</p>
                         </div>
@@ -237,7 +231,10 @@ const ProductionComponent = ({ transactions, measureUnit, onAddMetric, onDeleteM
                         {/* Footer Ações */}
                         <div className="flex justify-end gap-4 pt-4 border-t dark:border-slate-800">
                             <button
-                                onClick={() => setShowAdjust(false)}
+                                onClick={() => {
+                                    setShowAdjust(false);
+                                    setAdjustId(null);
+                                }}
                                 className="px-8 py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-extrabold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95 uppercase tracking-wider text-sm"
                             >
                                 Cancelar
@@ -255,6 +252,55 @@ const ProductionComponent = ({ transactions, measureUnit, onAddMetric, onDeleteM
                     </div>
                 </div>
             )}
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-l-4 border-l-indigo-500 dark:border-slate-700">
+                    <div className="flex justify-between items-start mb-2">
+                        <p className="text-slate-500 dark:text-slate-400 font-bold text-sm uppercase">Volume de Produção</p>
+                        <Package className="text-indigo-500" size={20} />
+                    </div>
+                    <h3 className="text-3xl font-bold dark:text-white mb-1">
+                        {kpis.prod.toLocaleString()} <span className="text-lg font-normal text-slate-400">{measureUnit}</span>
+                    </h3>
+                    <div className="flex items-center gap-2 mt-4 pt-4 border-t dark:border-slate-700 border-slate-100 text-sm">
+                        {kpis.metaProd > 0 ? (
+                            <>
+                                <span className={kpis.gapProd >= 0 ? "text-emerald-500 font-bold flex items-center" : "text-rose-500 font-bold flex items-center"}>
+                                    {kpis.gapProd >= 0 ? <TrendingUp size={16} className="mr-1" /> : <TrendingDown size={16} className="mr-1" />}
+                                    {Math.abs(kpis.gapProd).toLocaleString()} {measureUnit} {kpis.gapProd >= 0 ? 'acima' : 'abaixo'} da meta
+                                </span>
+                                <span className="text-slate-400 ml-auto font-bold">Meta: {kpis.metaProd.toLocaleString()}</span>
+                            </>
+                        ) : (
+                            <span className="text-slate-400">Meta não definida no período</span>
+                        )}
+                    </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-l-4 border-l-emerald-500 dark:border-slate-700">
+                    <div className="flex justify-between items-start mb-2">
+                        <p className="text-slate-500 dark:text-slate-400 font-bold text-sm uppercase">Volume de Vendas</p>
+                        <Target className="text-emerald-500" size={20} />
+                    </div>
+                    <h3 className="text-3xl font-bold dark:text-white mb-1">
+                        {kpis.vendas.toLocaleString()} <span className="text-lg font-normal text-slate-400">{measureUnit}</span>
+                    </h3>
+                    <div className="flex items-center gap-2 mt-4 pt-4 border-t dark:border-slate-700 border-slate-100 text-sm">
+                        {kpis.metaVendas > 0 ? (
+                            <>
+                                <span className={kpis.gapVendas >= 0 ? "text-emerald-500 font-bold flex items-center" : "text-rose-500 font-bold flex items-center"}>
+                                    {kpis.gapVendas >= 0 ? <TrendingUp size={16} className="mr-1" /> : <TrendingDown size={16} className="mr-1" />}
+                                    {Math.abs(kpis.gapVendas).toLocaleString()} {measureUnit} {kpis.gapVendas >= 0 ? 'acima' : 'abaixo'} da meta
+                                </span>
+                                <span className="text-slate-400 ml-auto font-bold">Meta: {kpis.metaVendas.toLocaleString()}</span>
+                            </>
+                        ) : (
+                            <span className="text-slate-400">Meta não definida no período</span>
+                        )}
+                    </div>
+                </div>
+            </div>
 
             <div className="flex items-center justify-between mb-4 mt-6">
                 <h3 className="font-bold text-lg dark:text-white flex items-center gap-2">
@@ -364,7 +410,7 @@ const ProductionComponent = ({ transactions, measureUnit, onAddMetric, onDeleteM
                                 .map(t => (
                                     <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                         <td className="p-4 text-slate-600 dark:text-slate-300 font-medium">
-                                            {new Date(t.date).toLocaleDateString('pt-BR')}
+                                            {formatDate(t.date)}
                                         </td>
                                         <td className="p-4">
                                             <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider
@@ -379,7 +425,14 @@ const ProductionComponent = ({ transactions, measureUnit, onAddMetric, onDeleteM
                                             {t.value.toLocaleString()} {measureUnit}
                                         </td>
                                         <td className="p-4">
-                                            <div className="flex items-center justify-center">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <button
+                                                    onClick={() => handleEditAdjust(t)}
+                                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                                    title="Editar Lançamento"
+                                                >
+                                                    <Edit2 size={16} />
+                                                </button>
                                                 <button
                                                     onClick={() => onDeleteMetric && onDeleteMetric(t.id)}
                                                     className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"

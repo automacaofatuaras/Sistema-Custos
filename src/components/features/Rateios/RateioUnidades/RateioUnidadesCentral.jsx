@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Share2 } from 'lucide-react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { X } from 'lucide-react';
 import { db, appId } from '../../../../services/firebase';
 import { BUSINESS_HIERARCHY } from '../../../../constants/business';
 
@@ -14,12 +15,14 @@ import AbaComercialTecnico from './tabs/AbaComercialTecnico';
 import AbaNoromix1046 from './tabs/AbaNoromix1046';
 import AbaAdmSalarios from './tabs/AbaAdmSalarios';
 import AbaLimpeza from './tabs/AbaLimpeza';
+import AutomaticImportComponent from '../../AutomaticImport/AutomaticImportComponent';
 
-const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = { email: 'admin@sistema.com' } }) => {
+const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = { email: 'admin@sistema.com' }, onImport, isProcessing }) => {
     // Estado local
     const [selectedSegment, setSelectedSegment] = useState('Pedreiras e Portos de Areia');
     const [activeRateioType, setActiveRateioType] = useState('ADMINISTRATIVO');
     const [admTransactions, setAdmTransactions] = useState([]);
+    const [showImportModal, setShowImportModal] = useState(false);
 
     // Estados para Rateio Vendedores (Manual)
     const [manualPercents, setManualPercents] = useState({});
@@ -82,62 +85,72 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
     // --- EFEITO: CARREGAR DADOS SALVOS (ADM E VENDEDORES) ---
     useEffect(() => {
         const loadSavedData = async () => {
-            if (selectedSegment !== 'Concreteiras e Fábrica de Tubos' && activeRateioType !== 'ADM_SALARIOS') return;
+            const tabsWithConfig = ['ADMINISTRATIVO', 'ADM_SALARIOS', 'VENDEDORES', 'LIMPEZA', 'NOROMIX_1046'];
+            if (!tabsWithConfig.includes(activeRateioType)) return;
 
-            // 1. CARREGAR ADM
-            const isNoromix = selectedSegment === 'Concreteiras e Fábrica de Tubos';
-            const docIdAdm = isNoromix ? `rateio_adm_${filter.year}_${filter.month}` : `rateio_adm_pedreiras_${filter.year}_${filter.month}`;
-            const docRefAdm = doc(db, 'artifacts', appId, 'rateio_adm_config', docIdAdm);
+            // 1. CARREGAR ADM (Faixa Salarial / Parâmetros)
+            if (['ADMINISTRATIVO', 'ADM_SALARIOS'].includes(activeRateioType)) {
+                const isNoromix = selectedSegment === 'Concreteiras e Fábrica de Tubos';
+                const docIdAdm = isNoromix ? `rateio_adm_${filter.year}_${filter.month}` : `rateio_adm_pedreiras_${filter.year}_${filter.month}`;
+                const docRefAdm = doc(db, 'artifacts', appId, 'rateio_adm_config', docIdAdm);
 
-            try {
-                const docSnap = await getDoc(docRefAdm);
-                const allUnits = isNoromix
-                    ? [...BUSINESS_HIERARCHY["Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]]
-                    : [...BUSINESS_HIERARCHY["Pedreiras"], ...BUSINESS_HIERARCHY["Portos de Areia"]];
+                try {
+                    const docSnap = await getDoc(docRefAdm);
+                    const allUnits = isNoromix
+                        ? [...BUSINESS_HIERARCHY["Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]]
+                        : [...BUSINESS_HIERARCHY["Pedreiras"], ...BUSINESS_HIERARCHY["Portos de Areia"]];
 
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    setAdmParams({
-                        totalValue: data.totalValue || 0,
-                        minWage: data.minWage || 1518,
-                        employees: data.employees || {},
-                        volumes: data.volumes || {}
-                    });
-                    setIsLocked(true);
-                } else {
-                    const initialEmployees = {};
-                    const initialVolumes = {};
-                    allUnits.forEach(u => {
-                        initialEmployees[u] = 0;
-                        initialVolumes[u] = '';
-                    });
-                    setAdmParams({ totalValue: 0, minWage: 1518, employees: initialEmployees, volumes: initialVolumes });
-                    setIsLocked(false);
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        setAdmParams({
+                            totalValue: data.totalValue || 0,
+                            minWage: data.minWage || 1518,
+                            employees: data.employees || {},
+                            volumes: data.volumes || {}
+                        });
+                        setIsLocked(true);
+                    } else {
+                        const initialEmployees = {};
+                        const initialVolumes = {};
+                        allUnits.forEach(u => {
+                            initialEmployees[u] = 0;
+                            initialVolumes[u] = '';
+                        });
+                        setAdmParams({ totalValue: 0, minWage: 1518, employees: initialEmployees, volumes: initialVolumes });
+                        setIsLocked(false);
+                    }
+                } catch (error) {
+                    console.error("Erro ao carregar ADM:", error);
                 }
-            } catch (error) {
-                console.error("Erro ao carregar ADM:", error);
             }
 
             // 2. CARREGAR VENDEDORES
-            const docIdVend = `rateio_vendedores_${filter.year}_${filter.month}`;
-            const docRefVend = doc(db, 'artifacts', appId, 'rateio_vendedores_config', docIdVend);
+            if (activeRateioType === 'VENDEDORES') {
+                const docIdVend = `rateio_vendedores_${filter.year}_${filter.month}`;
+                const docRefVend = doc(db, 'artifacts', appId, 'rateio_vendedores_config', docIdVend);
 
-            try {
-                const docSnapVend = await getDoc(docRefVend);
+                try {
+                    const docSnapVend = await getDoc(docRefVend);
 
-                if (docSnapVend.exists()) {
-                    setManualPercents(docSnapVend.data().percents || {});
-                    setIsLockedVend(true);
-                } else {
-                    const initialPercents = {};
-                    VENDEDORES_MAP.forEach(item => {
-                        initialPercents[item.cc] = 100;
-                    });
-                    setManualPercents(initialPercents);
-                    setIsLockedVend(false);
+                    if (docSnapVend.exists()) {
+                        setManualPercents(docSnapVend.data().percents || {});
+                        setIsLockedVend(true);
+                    } else {
+                        const initialPercents = {};
+                        if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
+                            VENDEDORES_MAP.forEach(item => {
+                                initialPercents[item.cc] = 100;
+                            });
+                        } else {
+                            // Para Pedreiras/Portos, inicializa zerado ou vazio para forcing o usuário a definir?
+                            // O usuário quer que carregue o mês. Se não tem, fica limpo.
+                        }
+                        setManualPercents(initialPercents);
+                        setIsLockedVend(false);
+                    }
+                } catch (error) {
+                    console.error("Erro ao carregar Vendedores:", error);
                 }
-            } catch (error) {
-                console.error("Erro ao carregar Vendedores:", error);
             }
         };
 
@@ -241,22 +254,22 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
 
         const sumCC = (codes) => periodTxs
             .filter(t => t.type === 'expense')
-            .filter(t => codes.includes(parseInt(t.costCenter.split(' ')[0])))
+            .filter(t => codes.includes(parseInt((t.costCenter || '').split(' ')[0])))
             .reduce((acc, t) => acc + t.value, 0);
 
         const listItems = (codes) => periodTxs
             .filter(t => t.type === 'expense')
-            .filter(t => codes.includes(parseInt(t.costCenter.split(' ')[0])));
+            .filter(t => codes.includes(parseInt((t.costCenter || '').split(' ')[0])));
 
         // Filtro especial usando transações enriquecidas apenas para as contas Administrativas (1087 e 1089)
         const periodAdmTxs = filterByDate(admTransactions);
 
         const sumAdmCC = (codes) => periodAdmTxs
-            .filter(t => codes.includes(parseInt(t.costCenter.split(' ')[0])))
+            .filter(t => codes.includes(parseInt((t.costCenter || '').split(' ')[0])))
             .reduce((acc, t) => acc + t.value, 0);
 
         const listAdmItems = (codes) => periodAdmTxs
-            .filter(t => codes.includes(parseInt(t.costCenter.split(' ')[0])));
+            .filter(t => codes.includes(parseInt((t.costCenter || '').split(' ')[0])));
 
         // 1. Rateio Administrativo (Genérico) usando base consolidada (Cloud dbService)
         const totalAdm = sumAdmCC([1087, 1089]);
@@ -331,7 +344,7 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
             const expenses1105 = segmentDiretoItems;
 
             // CÁLCULO TÉCNICO (CC 1075): Mantém busca nas transações
-            const expenses1075 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1075'));
+            const expenses1075 = periodTxs.filter(t => t.type === 'expense' && (t.costCenter || '').startsWith('1075'));
             const totalExp1075 = expenses1075.reduce((acc, t) => acc + t.value, 0);
 
             const buildRateioProducao = (totalExpense) => {
@@ -356,7 +369,7 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
         let noromix1046Data = { units: [], totalExpenses: 0, expenseItems: [] };
         if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
             const targetUnits = [...BUSINESS_HIERARCHY["Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
-            const expenses1046 = periodTxs.filter(t => t.type === 'expense' && t.costCenter.startsWith('1046'));
+            const expenses1046 = periodTxs.filter(t => t.type === 'expense' && (t.costCenter || '').startsWith('1046'));
             const totalExp1046 = expenses1046.reduce((acc, t) => acc + t.value, 0);
 
             const shareValue = targetUnits.length > 0 ? totalExp1046 / targetUnits.length : 0;
@@ -369,11 +382,11 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
         let noromixVendedoresData = [];
         if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
             const targetCCs = VENDEDORES_MAP.map(m => m.cc);
-            const vendorTxs = periodTxs.filter(t => targetCCs.includes(parseInt(t.costCenter.split(' ')[0])) && t.type === 'expense');
+            const vendorTxs = periodTxs.filter(t => targetCCs.includes(parseInt((t.costCenter || '').split(' ')[0])) && t.type === 'expense');
 
             const grouped = {};
             vendorTxs.forEach(t => {
-                const cc = parseInt(t.costCenter.split(' ')[0]);
+                const cc = parseInt((t.costCenter || '').split(' ')[0]);
                 const mapInfo = VENDEDORES_MAP.find(m => m.cc === cc);
                 const unitName = mapInfo ? mapInfo.unit : 'Desconhecida';
                 const key = `${cc}-${t.accountPlan}`;
@@ -559,9 +572,9 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
             case 'ADM_SALARIOS':
                 return <AbaAdmSalarios calculatedData={calculatedData} admParams={admParams} handleAdmParamChange={handleAdmParamChange} isLocked={isLocked} setIsLocked={setIsLocked} isSaving={isSaving} handleSaveAdmParams={handleSaveAdmParams} BUSINESS_HIERARCHY={BUSINESS_HIERARCHY} />;
             case 'PRODUCAO':
-                return <AbaProducao calculatedData={calculatedData} />;
+                return <AbaProducao calculatedData={calculatedData} onOpenImport={() => setShowImportModal(true)} />;
             case 'VENDEDORES':
-                return <AbaVendedores selectedSegment={selectedSegment} calculatedData={calculatedData} manualPercents={manualPercents} handlePercChange={handlePercChange} isLockedVend={isLockedVend} setIsLockedVend={setIsLockedVend} isSavingVend={isSavingVend} handleSaveVendedores={handleSaveVendedores} VENDEDORES_MAP={VENDEDORES_MAP} BUSINESS_HIERARCHY={BUSINESS_HIERARCHY} />;
+                return <AbaVendedores selectedSegment={selectedSegment} calculatedData={calculatedData} manualPercents={manualPercents} handlePercChange={handlePercChange} isLockedVend={isLockedVend} setIsLockedVend={setIsLockedVend} isSavingVend={isSavingVend} handleSaveVendedores={handleSaveVendedores} VENDEDORES_MAP={VENDEDORES_MAP} BUSINESS_HIERARCHY={BUSINESS_HIERARCHY} onOpenImport={() => setShowImportModal(true)} />;
             case 'COMERCIAL':
             case 'TECNICO':
                 return <AbaComercialTecnico selectedSegment={selectedSegment} activeRateioType={activeRateioType} calculatedData={calculatedData} />;
@@ -592,6 +605,31 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
                 ))}
             </div>
             {renderContent()}
+
+            {/* Modal de Importação */}
+            {showImportModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border dark:border-slate-700 animate-in zoom-in-95 duration-200">
+                        <div className="p-4 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50">
+                            <h3 className="font-bold text-lg dark:text-white">Importar Lançamentos (Rateio)</h3>
+                            <button onClick={() => setShowImportModal(false)} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors">
+                                <X size={20} className="text-slate-500" />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6">
+                            <AutomaticImportComponent
+                                transactions={transactions}
+                                onImport={(data) => {
+                                    onImport(data);
+                                    if (data && data.length > 0) setShowImportModal(false);
+                                }}
+                                isProcessing={isProcessing}
+                                BUSINESS_HIERARCHY={BUSINESS_HIERARCHY}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

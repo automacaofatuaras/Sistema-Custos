@@ -1,9 +1,9 @@
 import React from 'react';
-import { Share2, FileText } from 'lucide-react';
+import { Share2, FileText, UploadCloud } from 'lucide-react';
 import { formatDate } from '../../../../../utils/formatters';
 import { BUSINESS_HIERARCHY } from '../../../../../constants/business';
 
-export default function AbaProducao({ calculatedData }) {
+export default function AbaProducao({ calculatedData, onOpenImport }) {
     // Filtragem por CC
     const portosItems = calculatedData.itemsProd.filter(t => t.costCenter.startsWith('1042'));
     const pedreirasItems = calculatedData.itemsProd.filter(t => t.costCenter.startsWith('1043'));
@@ -47,6 +47,16 @@ export default function AbaProducao({ calculatedData }) {
                     <p className="text-blue-200 text-xs font-bold uppercase mb-1">Total Despesas Pedreiras e Usinas (CC 1043)</p>
                     <h3 className="text-2xl font-bold">{total1043.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
                 </div>
+            </div>
+
+            <div className="flex justify-end">
+                <button
+                    onClick={onOpenImport}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-sm text-sm"
+                >
+                    <UploadCloud size={18} />
+                    Importar Relatório TXT (CC 1042/1043)
+                </button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

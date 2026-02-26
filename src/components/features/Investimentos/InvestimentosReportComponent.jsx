@@ -1,26 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { TrendingUp, Factory, ChevronDown, CheckCircle, Search, Printer } from 'lucide-react';
+import { TrendingUp, Factory, Search, Printer } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { BUSINESS_HIERARCHY } from '../../../constants/business';
 import { getParentSegment } from '../../../utils/helpers';
 import { formatDate } from '../../../utils/formatters';
+import { FileTextIcon } from 'lucide-react';
 
 const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedUnits, setSelectedUnits] = useState([]);
-    const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const filterRef = useRef(null);
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (filterRef.current && !filterRef.current.contains(event.target)) {
-                setIsFilterOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
 
     const availableUnits = useMemo(() => {
         let invTxs = transactions.filter(t => t.accountPlan && t.accountPlan.startsWith('06'));
@@ -49,21 +38,7 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
         setSelectedUnits(availableUnits);
     }, [availableUnits]);
 
-    const toggleUnit = (unit) => {
-        if (selectedUnits.includes(unit)) {
-            setSelectedUnits(prev => prev.filter(u => u !== unit));
-        } else {
-            setSelectedUnits(prev => [...prev, unit]);
-        }
-    };
 
-    const toggleAll = () => {
-        if (selectedUnits.length === availableUnits.length) {
-            setSelectedUnits([]);
-        } else {
-            setSelectedUnits(availableUnits);
-        }
-    };
 
     const groupedData = useMemo(() => {
         const investments = transactions.filter(t =>
@@ -129,7 +104,9 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
 
         let nomeContexto = "Geral";
 
-        if (selectedUnits.length === 1) {
+        if (selectedUnit && selectedUnit !== 'ALL') {
+            nomeContexto = selectedUnit.includes(':') ? selectedUnit.split(':')[1].trim() : selectedUnit;
+        } else if (selectedUnits.length === 1) {
             nomeContexto = selectedUnits[0].split(':')[1]?.trim() || selectedUnits[0];
         } else if (selectedUnits.length > 1) {
             const primeiroSegmento = getParentSegment(selectedUnits[0]);
@@ -225,7 +202,8 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
         });
 
         const safeName = nomeContexto.replace(/[<>:"/\\|?*]/g, "").trim();
-        doc.save(`Investimentos - ${safeName}.pdf`);
+        const monthYear = `${String(filter.month + 1).padStart(2, '0')}-${filter.year}`;
+        doc.save(`Investimentos - ${safeName} - ${monthYear}.pdf`);
     };
 
     return (
@@ -239,47 +217,6 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
                 </div>
 
                 <div className="flex flex-col md:flex-row gap-2 w-full xl:w-auto">
-                    <div className="relative" ref={filterRef}>
-                        <button
-                            onClick={() => setIsFilterOpen(!isFilterOpen)}
-                            className="w-full md:w-auto px-4 py-2 border dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 dark:text-white flex items-center justify-between gap-2 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors"
-                        >
-                            <span className="flex items-center gap-2">
-                                <Factory size={16} className="text-slate-400" />
-                                {selectedUnits.length === availableUnits.length ? 'Todas as Unidades' : `${selectedUnits.length} Selecionadas`}
-                            </span>
-                            <ChevronDown size={14} className={`transition-transform ${isFilterOpen ? 'rotate-180' : ''}`} />
-                        </button>
-
-                        {isFilterOpen && (
-                            <div className="absolute top-full right-0 mt-2 w-72 bg-white dark:bg-slate-800 border dark:border-slate-600 rounded-xl shadow-xl z-50 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100">
-                                <div className="p-3 border-b dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center">
-                                    <span className="text-xs font-bold uppercase text-slate-500">Filtrar Unidades</span>
-                                    <button onClick={toggleAll} className="text-xs text-indigo-600 hover:underline">
-                                        {selectedUnits.length === availableUnits.length ? 'Desmarcar Tudo' : 'Marcar Tudo'}
-                                    </button>
-                                </div>
-                                <div className="max-h-64 overflow-y-auto p-2 space-y-1">
-                                    {availableUnits.map(unit => {
-                                        const cleanName = unit.split(':')[1]?.trim() || unit;
-                                        const isSelected = selectedUnits.includes(unit);
-                                        return (
-                                            <div key={unit} onClick={() => toggleUnit(unit)} className="flex items-center gap-3 p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg cursor-pointer text-sm">
-                                                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 dark:border-slate-500'}`}>
-                                                    {isSelected && <CheckCircle size={12} className="text-white" />}
-                                                </div>
-                                                <span className={`flex-1 truncate ${isSelected ? 'text-slate-800 dark:text-white font-medium' : 'text-slate-500'}`}>
-                                                    {cleanName}
-                                                </span>
-                                            </div>
-                                        )
-                                    })}
-                                    {availableUnits.length === 0 && <div className="p-4 text-center text-xs text-slate-400">Nenhuma unidade disponível para este filtro.</div>}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
                     <div className="relative flex-1 md:w-64">
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
                         <input
@@ -295,13 +232,13 @@ const InvestimentosReportComponent = ({ transactions, filter, selectedUnit }) =>
                         onClick={generatePDF}
                         className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors shadow-lg"
                     >
-                        <Printer size={18} /> Exportar
+                        <FileTextIcon size={18} /> Exportar
                     </button>
                 </div>
             </div>
 
             <div className="bg-purple-50 dark:bg-slate-900/50 p-4 border-b dark:border-slate-700 flex justify-end items-center px-8">
-                <span className="text-slate-500 font-bold uppercase text-xs mr-4">Total ({selectedUnits.length} un.):</span>
+                <span className="text-slate-500 font-bold uppercase text-xs mr-4">Total:</span>
                 <span className="text-2xl font-bold text-purple-700 dark:text-purple-400">
                     {groupedData.totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </span>

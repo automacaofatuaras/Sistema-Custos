@@ -4,10 +4,10 @@ import {
     BarChart3 as BarChartIcon, FileUp, TrendingUp, Globe,
     UploadCloud, Users, Sparkles, Sun, Moon, LogOut, UserCircle,
     ChevronRight, TrendingDown, Factory, ShoppingCart, Search, FileText, PlusCircle, Edit2, Briefcase, FolderClosed,
-    ShieldCheck, Trash2, Eye, X
+    ShieldCheck, Trash2, Eye, X, Building2
 } from 'lucide-react';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ComposedChart, Line
 } from 'recharts';
 
 // Services
@@ -17,7 +17,8 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebas
 import { doc, getDoc } from 'firebase/firestore';
 
 // Constants
-import { BUSINESS_HIERARCHY, SEGMENT_CONFIG } from './constants/business';
+import { BUSINESS_HIERARCHY, SEGMENT_CONFIG, ADMIN_CC_CODES } from './constants/business';
+import { COST_CENTER_RULES } from './constants/costCenterRules';
 
 // Utils
 import { formatDate } from './utils/formatters';
@@ -40,6 +41,7 @@ import TransactionDetailModal from './components/features/TransactionDetailModal
 import RateioUnidadesCentral from './components/features/Rateios/RateioUnidades/RateioUnidadesCentral';
 import RateioAdmCentral from './components/features/Rateios/RateioAdministrativo/RateioAdmCentral';
 import UsersScreen from './components/features/Users/UsersScreen';
+import CostCenterManager from './components/features/CostCenter/CostCenterManager';
 import SegmentDashboard from './components/features/SegmentDashboard';
 import WelcomeDashboard from './components/features/WelcomeDashboard';
 
@@ -47,6 +49,7 @@ import WelcomeDashboard from './components/features/WelcomeDashboard';
 import ManualEntryForm from './components/features/ManualEntryForm';
 import AIReportModal from './components/modals/AIReportModal';
 import CostCenterReportModal from './components/modals/CostCenterReportModal';
+import RateioUnitSummaryComponent from './components/features/Rateios/RateioUnitSummaryComponent';
 
 export default function App() {
     // Styles & Theme
@@ -135,7 +138,7 @@ export default function App() {
     const handleSelectUnit = (seg, unit) => {
         setSelectedSegment(seg);
         setSelectedUnit(unit);
-        if (['rateios', 'global', 'users'].includes(activeTab)) {
+        if (['rateios', 'global', 'users', 'costcenters'].includes(activeTab)) {
             setActiveTab('dashboard'); // Volta para o dashboard da unidade se estava em tela global
         }
     };
@@ -215,21 +218,45 @@ export default function App() {
         try {
             const tx = {
                 ...metricData,
-                date: new Date().toISOString(), // Use current date for the adjustment taking place logic
+                date: metricData.date || new Date().toISOString(),
                 segment: selectedUnit || selectedSegment || 'ALL',
                 type: 'metric',
                 source: 'manual',
                 createdAt: new Date().toISOString()
             };
             await dbService.add(user, 'transactions', tx);
-            showToast('Estoque atualizado com sucesso!', 'success');
+            showToast('Lançamento registrado com sucesso!', 'success');
             loadData();
         } catch (e) {
-            showToast('Erro ao atualizar estoque', 'error');
+            showToast('Erro ao registrar lançamento', 'error');
         } finally {
             setIsProcessing(false);
         }
     };
+
+    const handleUpdateMetric = async (id, metricData) => {
+        setIsProcessing(true);
+        try {
+            await dbService.update(user, 'transactions', id, metricData);
+            showToast('Lançamento atualizado com sucesso!', 'success');
+            loadData();
+        } catch (e) {
+            showToast('Erro ao atualizar lançamento', 'error');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    // All transactions for the selected unit/segment without date filters
+    const unitTransactions = useMemo(() => {
+        return transactions.filter(t => {
+            if (selectedUnit) {
+                const cleanName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                return cleanName === selectedUnit;
+            }
+            return true;
+        });
+    }, [transactions, selectedUnit]);
 
     // Filtered Data Calculations
     const filteredData = useMemo(() => {
@@ -253,6 +280,46 @@ export default function App() {
         });
     }, [transactions, filter, selectedUnit]);
 
+    const displayLancamentos = useMemo(() => {
+        const base = filteredData.filter(t => t.type !== 'metric');
+        if (!lancamentosSearch) return base;
+        const lower = lancamentosSearch.toLowerCase();
+        return base.filter(t =>
+            (t.description || '').toLowerCase().includes(lower) ||
+            (t.costCenter || '').toLowerCase().includes(lower) ||
+            (t.planDescription || '').toLowerCase().includes(lower) ||
+            (t.materialDescription || '').toLowerCase().includes(lower)
+        );
+    }, [filteredData, lancamentosSearch]);
+
+    // YTD Data Calculation for Average Cost (Custo Médio)
+    const ytdData = useMemo(() => {
+        return transactions.filter(t => {
+            let y, m;
+            if (typeof t.date === 'string' && t.date.length >= 10) {
+                y = parseInt(t.date.substring(0, 4));
+                m = parseInt(t.date.substring(5, 7)) - 1;
+            } else {
+                const d = new Date(t.date); y = d.getFullYear(); m = d.getMonth();
+            }
+
+            if (y !== filter.year) return false;
+
+            let endM = filter.type === 'month' ? filter.month :
+                filter.type === 'quarter' ? (filter.quarter * 3) - 1 :
+                    filter.type === 'semester' ? (filter.semester * 6) - 1 :
+                        11;
+
+            if (m > endM) return false;
+
+            if (selectedUnit) {
+                const cleanName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                return cleanName === selectedUnit;
+            }
+            return true;
+        });
+    }, [transactions, filter, selectedUnit]);
+
     // KPI Calculations
     const kpis = useMemo(() => {
         const rev = filteredData.filter(t => t.type === 'revenue').reduce((a, b) => a + b.value, 0);
@@ -262,9 +329,119 @@ export default function App() {
 
     const totalProduction = useMemo(() => filteredData.filter(t => t.metricType === 'producao').reduce((a, b) => a + b.value, 0), [filteredData]);
     const totalSales = useMemo(() => filteredData.filter(t => t.metricType === 'vendas').reduce((a, b) => a + b.value, 0), [filteredData]);
+
+    const ytdProduction = useMemo(() => ytdData.filter(t => t.metricType === 'producao').reduce((a, b) => a + b.value, 0), [ytdData]);
+    const ytdExpense = useMemo(() => ytdData.filter(t => t.type === 'expense').reduce((a, b) => a + b.value, 0), [ytdData]);
+
     const currentMeasureUnit = useMemo(() => getMeasureUnit(selectedSegment || 'ALL'), [selectedSegment]);
-    const costPerUnit = totalProduction > 0 ? kpis.expense / totalProduction : 0;
+    const costPerUnit = ytdProduction > 0 ? ytdExpense / ytdProduction : 0;
     const resultMargin = kpis.revenue > 0 ? (kpis.balance / kpis.revenue) * 100 : 0;
+
+    // Unidade Dashboard Data
+    const expenseGroupsData = useMemo(() => {
+        if (activeTab !== 'dashboard' || !selectedUnit) return [];
+
+        let totals = {
+            'DESPESAS DA UNIDADE': 0,
+            'TRANSPORTE': 0,
+            'ADMINISTRATIVO': 0,
+            'IMPOSTOS': 0,
+            'INVESTIMENTOS': 0,
+            'OUTROS': 0
+        };
+
+        filteredData.filter(t => t.type === 'expense').forEach(t => {
+            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
+            const segmentName = selectedSegment; // selectedSegment is available
+            const rules = COST_CENTER_RULES?.[segmentName] || {};
+
+            let root = 'OUTROS';
+            let matched = false;
+
+            if (t.grupo) {
+                root = t.grupo.toUpperCase();
+                matched = true;
+            }
+
+            if (!matched && rules) {
+                for (const [rootGroup, subGroups] of Object.entries(rules)) {
+                    for (const [subGroup, ccList] of Object.entries(subGroups)) {
+                        if (ccList.includes(ccCode)) {
+                            root = rootGroup.toUpperCase();
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if (matched) break;
+                }
+            }
+
+            if (!matched) {
+                if (t.accountPlan?.startsWith('06')) root = "INVESTIMENTOS";
+                else if (t.accountPlan === '02.01') root = "IMPOSTOS";
+                else if (ADMIN_CC_CODES?.includes(ccCode)) root = 'ADMINISTRATIVO';
+                else if (t.accountPlan?.startsWith('03') || t.accountPlan?.startsWith('04')) root = 'DESPESAS DA UNIDADE';
+                else root = 'DESPESAS DA UNIDADE';
+            }
+
+            if (!totals[root] && totals[root] !== 0) totals[root] = 0;
+            totals[root] += t.value;
+        });
+
+        return Object.entries(totals)
+            .filter(([_, val]) => val > 0)
+            .map(([name, val]) => ({ name, value: val }))
+            .sort((a, b) => b.value - a.value);
+    }, [filteredData, activeTab, selectedUnit, selectedSegment]);
+
+    const prodSalesData = useMemo(() => {
+        if (activeTab !== 'dashboard' || !selectedUnit) return [];
+        const months = {};
+        ytdData.filter(t => t.type === 'metric' && (t.metricType === 'producao' || t.metricType === 'vendas')).forEach(t => {
+            const d = typeof t.date === 'string' && t.date.length >= 10 ? new Date(t.date + 'T12:00:00') : new Date(t.date);
+            const mLabel = d.toLocaleDateString('pt-BR', { month: 'short' });
+            if (!months[mLabel]) months[mLabel] = { name: mLabel, Produção: 0, Vendas: 0, sortKey: d.getMonth() };
+            if (t.metricType === 'producao') months[mLabel].Produção += t.value;
+            if (t.metricType === 'vendas') months[mLabel].Vendas += t.value;
+        });
+        return Object.values(months).sort((a, b) => a.sortKey - b.sortKey).map(({ sortKey, ...rest }) => rest);
+    }, [ytdData, activeTab, selectedUnit]);
+
+    const stockEvolutionData = useMemo(() => {
+        if (activeTab !== 'dashboard' || !selectedUnit) return [];
+
+        let endM = filter.type === 'month' ? filter.month :
+            filter.type === 'quarter' ? (filter.quarter * 3) - 1 :
+                filter.type === 'semester' ? (filter.semester * 6) - 1 :
+                    11;
+        let endDate = new Date(filter.year, endM + 1, 0, 23, 59, 59);
+
+        const relevantTransactions = [...unitTransactions].filter(t => new Date(t.date) <= endDate);
+        const sorted = relevantTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        const fullEvolution = [];
+        let currentStock = 0;
+
+        sorted.forEach(t => {
+            if (t.type !== 'metric') return;
+            const val = t.value || 0;
+            if (t.metricType === 'producao') currentStock += val;
+            else if (t.metricType === 'vendas') currentStock -= val;
+            else if (t.metricType === 'estoque_fisico') currentStock = val;
+
+            const safeDateStr = t.date?.length === 10 ? t.date + 'T12:00:00' : t.date;
+            const dateObj = new Date(safeDateStr);
+            const mLabel = dateObj.toLocaleDateString('pt-BR', { month: 'short' });
+
+            const year = dateObj.getFullYear();
+            if (year === filter.year) {
+                let mKey = dateObj.getMonth();
+                fullEvolution[mKey] = { name: mLabel, Estoque: currentStock, sortKey: mKey };
+            }
+        });
+
+        return fullEvolution.filter(Boolean);
+    }, [unitTransactions, filter, activeTab, selectedUnit]);
 
     // Loading Screen
     if (loading) {
@@ -428,6 +605,7 @@ export default function App() {
                             { id: 'rateios', icon: Share2, label: 'Rateios' },
                             { id: 'global', icon: Globe, label: 'Consolidado Global' },
                             { id: 'users', icon: Users, label: 'Gerenciar Usuários' },
+                            { id: 'costcenters', icon: Building2, label: 'Centros de Custo' },
                         ].map((item) => (
                             <button
                                 key={item.id}
@@ -493,6 +671,7 @@ export default function App() {
                             { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
                             { id: 'estoque', icon: Package, label: 'Estoque' },
                             { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
+                            { id: 'rateios_unit', icon: Share2, label: 'Rateios' },
                             { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
                             { id: 'investimentos_report', icon: TrendingUp, label: 'Investimentos' },
                             { id: 'ingestion', icon: UploadCloud, label: 'Importar TXT' },
@@ -511,12 +690,12 @@ export default function App() {
                 )}
 
                 {/* Content Renderer */}
-                {!selectedUnit && !selectedSegment && !['rateios', 'global', 'users'].includes(activeTab) ? (
+                {!selectedUnit && !selectedSegment && !['rateios', 'global', 'users', 'costcenters'].includes(activeTab) ? (
                     <WelcomeDashboard />
                 ) : (
                     <>
                         {/* Segment Dashboard */}
-                        {selectedSegment && !selectedUnit && !['rateios', 'global', 'users'].includes(activeTab) && (
+                        {selectedSegment && !selectedUnit && !['rateios', 'global', 'users', 'costcenters'].includes(activeTab) && (
                             <SegmentDashboard
                                 transactions={transactions}
                                 segmentName={selectedSegment}
@@ -539,28 +718,79 @@ export default function App() {
                                         <p className="text-xs font-bold text-slate-500 uppercase">Margem Líquida</p>
                                         <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
                                     </div>
-                                    {/* Other mini cards... */}
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border dark:border-slate-700 flex flex-col justify-center text-center">
+                                        <p className="text-xs font-bold text-slate-500 uppercase">Total Produzido</p>
+                                        <h3 className="text-3xl font-bold text-indigo-500">{totalProduction.toLocaleString('pt-BR')} <span className="text-sm font-medium">{currentMeasureUnit}</span></h3>
+                                    </div>
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border dark:border-slate-700 flex flex-col justify-center text-center">
+                                        <p className="text-xs font-bold text-slate-500 uppercase">Total Vendido</p>
+                                        <h3 className="text-3xl font-bold text-emerald-500">{totalSales.toLocaleString('pt-BR')} <span className="text-sm font-medium">{currentMeasureUnit}</span></h3>
+                                    </div>
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border dark:border-slate-700 flex flex-col justify-center text-center">
+                                        <p className="text-xs font-bold text-slate-500 uppercase">Estoque Estimado</p>
+                                        <h3 className="text-3xl font-bold text-amber-500">{(stockEvolutionData.length > 0 ? stockEvolutionData[stockEvolutionData.length - 1].Estoque : 0).toLocaleString('pt-BR')} <span className="text-sm font-medium">{currentMeasureUnit}</span></h3>
+                                    </div>
                                 </div>
 
-                                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm h-96 border dark:border-slate-700">
-                                    <h3 className="mb-6 font-bold text-lg dark:text-white flex items-center gap-2"><BarChartIcon size={20} /> Performance Financeira</h3>
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={[{ name: 'Período', Receitas: kpis.revenue, Despesas: kpis.expense, Resultado: kpis.balance }]} barSize={80}>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
-                                            <XAxis dataKey="name" />
-                                            <YAxis tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`} />
-                                            <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff' }} />
-                                            <Legend />
-                                            <Bar name="Receitas" dataKey="Receitas" fill="#10b981" radius={[6, 6, 0, 0]} />
-                                            <Bar name="Despesas" dataKey="Despesas" fill="#f43f5e" radius={[6, 6, 0, 0]} />
-                                            <Bar name="Resultado" dataKey="Resultado" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                    {/* Gráfico de Despesas */}
+                                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700">
+                                        <h3 className="mb-6 font-bold text-sm uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2"><DollarSign size={18} className="text-rose-500" /> Grupos de Despesa</h3>
+                                        <div className="h-64">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={expenseGroupsData} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.1} />
+                                                    <XAxis type="number" tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
+                                                    <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 9, fontWeight: 'bold' }} />
+                                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
+                                                    <Bar dataKey="value" name="Valor" radius={[0, 4, 4, 0]} barSize={20}>
+                                                        {expenseGroupsData.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={'#f43f5e'} />
+                                                        ))}
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+
+                                    {/* Gráfico de Produção vs Vendas */}
+                                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700">
+                                        <h3 className="mb-6 font-bold text-sm uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2"><Factory size={18} className="text-indigo-500" /> Produção vs Vendas (Mensal)</h3>
+                                        <div className="h-64">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <ComposedChart data={prodSalesData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
+                                                    <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                                                    <YAxis tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
+                                                    <Tooltip cursor={{ fill: 'rgba(148, 163, 184, 0.1)' }} contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} />
+                                                    <Legend wrapperStyle={{ fontSize: '10px' }} />
+                                                    <Bar dataKey="Produção" fill="#8884d8" radius={[4, 4, 0, 0]} />
+                                                    <Line type="monotone" dataKey="Vendas" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
+                                                </ComposedChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+
+                                    {/* Gráfico de Estoque */}
+                                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700">
+                                        <h3 className="mb-6 font-bold text-sm uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2"><Package size={18} className="text-amber-500" /> Evolução do Estoque (Mês)</h3>
+                                        <div className="h-64">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={stockEvolutionData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
+                                                    <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                                                    <YAxis tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
+                                                    <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} />
+                                                    <Bar dataKey="Estoque" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={25} />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
 
-                        {activeTab === 'lancamentos' && (
+                        {activeTab === 'lancamentos' && selectedUnit && (
                             <div className="space-y-6">
                                 {showEntryForm ? (
                                     <ManualEntryForm
@@ -603,15 +833,15 @@ export default function App() {
                                                         <td colSpan="3" className="p-4 text-right font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest text-xs">
                                                             Total do Período Filtrado:
                                                         </td>
-                                                        <td className={`p-4 text-right font-black text-lg ${filteredData.filter(t => t.type !== 'metric').reduce((acc, curr) => acc + (curr.type === 'revenue' ? curr.value : -curr.value), 0) >= 0
+                                                        <td className={`p-4 text-right font-black text-lg ${displayLancamentos.reduce((acc, curr) => acc + (curr.type === 'revenue' ? curr.value : -curr.value), 0) >= 0
                                                             ? 'text-emerald-600 dark:text-emerald-400'
                                                             : 'text-rose-600 dark:text-rose-400'
                                                             }`}>
-                                                            {filteredData.filter(t => t.type !== 'metric').reduce((acc, curr) => acc + (curr.type === 'revenue' ? curr.value : -curr.value), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                            {displayLancamentos.reduce((acc, curr) => acc + (curr.type === 'revenue' ? curr.value : -curr.value), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                                         </td>
                                                         <td className="p-4"></td>
                                                     </tr>
-                                                    {filteredData.filter(t => t.type !== 'metric').slice(0, 100).map(t => (
+                                                    {displayLancamentos.slice(0, 100).map(t => (
                                                         <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                                             <td className="p-4 text-slate-600 dark:text-slate-300 font-medium">{formatDate(t.date)}</td>
                                                             <td className="p-4">
@@ -673,16 +903,18 @@ export default function App() {
                                     <RateioAdmCentral filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} showToast={showToast} />
                                 )}
                                 {activeRateioModule === 'unidades' && (
-                                    <RateioUnidadesCentral transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} />
+                                    <RateioUnidadesCentral transactions={transactions} filter={filter} setFilter={setFilter} years={[2025, 2026, 2027]} user={user} onImport={handleImport} isProcessing={isProcessing} />
                                 )}
                             </div>
                         )}
 
-                        {activeTab === 'custos' && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
-                        {activeTab === 'fechamento' && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={selectedUnit} />}
-                        {activeTab === 'estoque' && <StockComponent transactions={filteredData} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} onAddMetric={handleAddMetric} onDeleteMetric={handleDeleteTx} />}
-                        {activeTab === 'producao' && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} onAddMetric={handleAddMetric} onDeleteMetric={handleDeleteTx} />}
+                        {activeTab === 'custos' && selectedUnit && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
+                        {activeTab === 'fechamento' && selectedUnit && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={selectedUnit} />}
+                        {activeTab === 'estoque' && selectedUnit && <StockComponent transactions={unitTransactions} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} onAddMetric={handleAddMetric} onUpdateMetric={handleUpdateMetric} onDeleteMetric={handleDeleteTx} />}
+                        {activeTab === 'producao' && selectedUnit && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} currentFilter={filter} onAddMetric={handleAddMetric} onUpdateMetric={handleUpdateMetric} onDeleteMetric={handleDeleteTx} />}
+                        {activeTab === 'rateios_unit' && selectedUnit && <RateioUnitSummaryComponent transactions={transactions} selectedUnit={selectedUnit} parentSegment={selectedSegment} filter={filter} user={user} />}
                         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}
+                        {activeTab === 'costcenters' && <CostCenterManager user={user} showToast={showToast} />}
                         {activeTab === 'ingestion' && (
                             <AutomaticImportComponent
                                 transactions={transactions}

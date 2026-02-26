@@ -11,6 +11,7 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
     const [previewData, setPreviewData] = useState([]);
     const [importHistory, setImportHistory] = useState([]);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
     const fileRef = useRef(null);
 
     React.useEffect(() => {
@@ -30,6 +31,12 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
             txList.forEach(tx => {
                 // Focus only on automatic imports
                 if (tx.source !== 'automatic_import') return;
+
+                // Filter by selectedUnit
+                if (selectedUnit) {
+                    const cleanTxSegment = tx.segment && tx.segment.includes(':') ? tx.segment.split(':')[1].trim() : (tx.segment || "").trim();
+                    if (cleanTxSegment !== selectedUnit) return;
+                }
 
                 let batchId = tx.importBatchId || tx.sourceFile;
                 let filename = tx.sourceFile;
@@ -134,29 +141,50 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
         }
 
         if (selectedUnit) {
-            const cleanDetectedUnit = row.segment && row.segment.includes(':') ? row.segment.split(':')[1].trim() : (row.segment || "").trim();
-            if (cleanDetectedUnit !== selectedUnit && !cleanDetectedUnit.includes('DESCONHECIDO')) {
-                issues.push(`Aviso: Este item pertence à unidade "${cleanDetectedUnit}", mas você está na unidade "${selectedUnit}".`);
+            const ccCodeStr = row.costCenter ? row.costCenter.split(' ')[0] : '0';
+            const detectedUnit = getUnitByCostCenter(ccCodeStr);
+            if (detectedUnit && detectedUnit !== selectedUnit) {
+                issues.push(`Aviso: O centro de custo (${ccCodeStr}) pertence nativamente à unidade "${detectedUnit}", mas será importado para "${selectedUnit}".`);
             }
         }
 
         return issues;
     };
 
-    const handleFile = (e) => {
-        const file = e.target.files[0];
+    const processFile = (file) => {
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = (evt) => {
             const text = evt.target.result;
             setFileText(text);
-            parseAndPreview(text);
+            parseAndPreview(text, file.name);
         };
         reader.readAsText(file, 'ISO-8859-1');
     };
 
-    const parseAndPreview = (text) => {
+    const handleFile = (e) => {
+        processFile(e.target.files[0]);
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            processFile(e.dataTransfer.files[0]);
+        }
+    };
+
+    const parseAndPreview = (text, fileName) => {
         const lines = text.split('\n');
         let headerIndex = -1;
         let colMap = {};
@@ -200,7 +228,7 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
                 const ccCode = cols[colMap['PRMAT-CCUS']]?.trim();
                 const ccDesc = cols[colMap['PRMAT-NCUS']]?.trim() || '';
 
-                if (!ccCode || ['1087', '01087', '1089', '01089', '1042', '01042'].includes(ccCode)) continue;
+                if (!ccCode) continue;
 
                 const rawDate = cols[colMap['PRGER-DATA']]?.trim();
                 const supplier = cols[colMap['PRMAT-NSUB']]?.trim();
@@ -222,7 +250,7 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
                 const safeDateWithTime = `${isoDate}T12:00:00`;
 
                 const detectedUnit = getUnitByCostCenter(ccCode);
-                const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
+                const finalSegment = selectedUnit ? selectedUnit : (detectedUnit || `DESCONHECIDO (CC: ${ccCode})`);
 
                 parsed.push({
                     id: i,
@@ -239,12 +267,12 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
                     type: 'expense',
                     source: 'automatic_import',
                     createdAt: new Date().toISOString(),
-                    importBatchId: file.name
+                    importBatchId: fileName
                 });
 
             } else if (hasEntradaColumns) {
                 const ccCode = cols[colMap['PRGER-CCUS']]?.trim();
-                if (!ccCode || ['1087', '01087', '1089', '01089', '1042', '01042'].includes(ccCode)) continue;
+                if (!ccCode) continue;
 
                 const dateStr = cols[colMap['PRGER-LCTO']]?.trim() || cols[colMap['PRGER-EMIS']]?.trim();
                 const planCode = cols[colMap['PRGER-PLAN']]?.trim();
@@ -271,10 +299,8 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
 
                 const currentType = (planCode?.startsWith('1.') || planCode?.startsWith('01.') || planDesc?.toUpperCase().includes('RECEITA')) ? 'revenue' : 'expense';
 
-
-
                 const detectedUnit = getUnitByCostCenter(ccCode);
-                const finalSegment = detectedUnit || `DESCONHECIDO (CC: ${ccCode})`;
+                const finalSegment = selectedUnit ? selectedUnit : (detectedUnit || `DESCONHECIDO (CC: ${ccCode})`);
 
                 parsed.push({
                     id: i,
@@ -290,7 +316,7 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
                     type: currentType,
                     source: 'automatic_import',
                     createdAt: new Date().toISOString(),
-                    importBatchId: file.name
+                    importBatchId: fileName
                 });
             }
         }
@@ -440,9 +466,17 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
                 )}
             </div>
             {previewData.length === 0 && (
-                <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onClick={() => fileRef.current?.click()}>
-                    <UploadCloud className="mx-auto text-indigo-500 mb-3" size={40} />
-                    <p className="font-medium text-slate-700 dark:text-slate-200">Clique para selecionar o arquivo TXT (Entrada ou Saída)</p>
+                <div
+                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${isDragging ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+                    onClick={() => fileRef.current?.click()}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                >
+                    <UploadCloud className={`mx-auto mb-3 transition-colors ${isDragging ? 'text-indigo-600' : 'text-indigo-500'}`} size={40} />
+                    <p className={`font-medium ${isDragging ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                        {isDragging ? 'Solte o arquivo aqui...' : 'Clique ou arraste para selecionar o arquivo TXT (Entrada ou Saída)'}
+                    </p>
                     <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
                 </div>
             )}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Calendar, DollarSign, Tag, Hash, FileText, User, Layout, CheckCircle, HelpCircle, Search, ArrowLeft, Layers, Bookmark } from 'lucide-react';
+import { X, Calendar, DollarSign, Tag, Hash, FileText, User, Layout, CheckCircle, HelpCircle, Search, ArrowLeft, Layers, Bookmark, Truck, Package, HeartHandshake, Building2 } from 'lucide-react';
 import dbService from '../../services/dbService';
 import { PLANO_CONTAS } from '../../constants/planoContas';
 import SearchableSelect from '../common/SearchableSelect';
@@ -36,8 +36,30 @@ const ManualEntryForm = ({ onClose, segments, currentUnit, onSave, user, initial
         accountPlan: '',
         grupo: '',
         subgrupo: '',
-        source: 'manual'
+        source: 'manual',
+        revenueType: '',
+        revenueSubType: '',
+        costCenterInput: ''
     });
+
+    const [costCenterDict, setCostCenterDict] = useState([]);
+    const [loadingCC, setLoadingCC] = useState(false);
+
+    // Fetch Cost Center Dictionary
+    useEffect(() => {
+        const fetchCCDictionary = async () => {
+            setLoadingCC(true);
+            try {
+                const data = await dbService.getAll(user, 'costcenter_dictionary');
+                setCostCenterDict(data || []);
+            } catch (error) {
+                console.error("Error fetching cost centers:", error);
+            } finally {
+                setLoadingCC(false);
+            }
+        };
+        fetchCCDictionary();
+    }, [user]);
 
     useEffect(() => {
         if (initialData) {
@@ -52,7 +74,10 @@ const ManualEntryForm = ({ onClose, segments, currentUnit, onSave, user, initial
                 source: initialData.source || 'manual',
                 accountPlan: initialData.accountPlan || '',
                 grupo: initialData.grupo || '',
-                subgrupo: initialData.subgrupo || ''
+                subgrupo: initialData.subgrupo || '',
+                revenueType: initialData.revenueType || '',
+                revenueSubType: initialData.revenueSubType || '',
+                costCenterInput: initialData.costCenterInput || (initialData.costCenter ? initialData.costCenter.split(' ')[0] : '')
             });
         }
     }, [initialData]);
@@ -77,16 +102,41 @@ const ManualEntryForm = ({ onClose, segments, currentUnit, onSave, user, initial
 
         if (!form.description) return showToast("Preencha o histórico/descrição.", 'error');
         if (isNaN(val)) return showToast("Preencha um valor válido.", 'error');
-        if (!form.grupo) return showToast("Selecione o grupo.", 'error');
-        if (!form.accountPlan) return showToast("Selecione a classe.", 'error');
 
-        const planItem = PLANO_CONTAS.find(p => p.code === form.accountPlan);
-        const planDesc = planItem ? planItem.name : '';
+        let planDesc = '';
+        let finalAccountPlan = form.accountPlan;
+
+        if (form.type === 'expense') {
+            if (!form.grupo) return showToast("Selecione o grupo.", 'error');
+            if (!form.accountPlan) return showToast("Selecione a classe.", 'error');
+            const planItem = PLANO_CONTAS.find(p => p.code === form.accountPlan);
+            planDesc = planItem ? planItem.name : '';
+        } else {
+            // Mapping revenue types to a generic account plan structure for consistency
+            if (!form.revenueType) return showToast("Selecione o tipo de receita.", 'error');
+            if (['Receita de Material', 'Receita de Frete'].includes(form.revenueType) && !form.revenueSubType) {
+                return showToast("Selecione o sub-tipo da receita.", 'error');
+            }
+            finalAccountPlan = '01.00'; // Generic Revenue Code
+            planDesc = `${form.revenueType} ${form.revenueSubType ? `- ${form.revenueSubType}` : ''}`;
+        }
+
+        let finalCostCenter = '';
+        if (form.costCenterInput) {
+            const ccItem = costCenterDict.find(c => c.codigo === form.costCenterInput);
+            if (ccItem) {
+                finalCostCenter = `${ccItem.codigo} - ${ccItem.nome}`;
+            } else {
+                finalCostCenter = `${form.costCenterInput} - Adicionado Manualmente`;
+            }
+        }
 
         const tx = {
             ...form,
             value: val,
+            accountPlan: finalAccountPlan,
             planDescription: planDesc,
+            costCenter: finalCostCenter,
             segment: currentUnit || form.segment, // Garante que a unidade do contexto seja usada
             updatedAt: new Date().toISOString()
         };
@@ -199,38 +249,112 @@ const ManualEntryForm = ({ onClose, segments, currentUnit, onSave, user, initial
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* GRUPO */}
-                    <SearchableSelect
-                        label="GRUPO"
-                        placeholder="Selecione o grupo"
-                        options={groupOptions}
-                        value={form.grupo}
-                        onChange={val => setForm({ ...form, grupo: val, subgrupo: '' })}
-                        icon={Layers}
-                        showSearch={false}
-                    />
+                    {form.type === 'expense' ? (
+                        <>
+                            {/* CENTRO DE CUSTO */}
+                            <SearchableSelect
+                                label="CENTRO DE CUSTO"
+                                placeholder={loadingCC ? "Carregando..." : "Selecione o Centro de Custo"}
+                                options={costCenterDict.map(cc => ({
+                                    value: cc.codigo,
+                                    label: `${cc.codigo} - ${cc.nome}`
+                                }))}
+                                value={form.costCenterInput}
+                                onChange={val => {
+                                    const selectedCC = costCenterDict.find(cc => cc.codigo === val);
+                                    setForm(prev => ({
+                                        ...prev,
+                                        costCenterInput: val,
+                                        description: selectedCC && !prev.description ? selectedCC.nome : prev.description
+                                    }));
+                                }}
+                                disabled={loadingCC}
+                                icon={Building2}
+                            />
 
-                    {/* SUB-GRUPO */}
-                    <SearchableSelect
-                        label="SUB-GRUPO"
-                        placeholder="Selecione o sub-grupo"
-                        options={subGroupOptions}
-                        value={form.subgrupo}
-                        onChange={val => setForm({ ...form, subgrupo: val })}
-                        disabled={!form.grupo}
-                        icon={Bookmark}
-                        showSearch={false}
-                    />
+                            {/* GRUPO */}
+                            <SearchableSelect
+                                label="GRUPO"
+                                placeholder="Selecione o grupo"
+                                options={groupOptions}
+                                value={form.grupo}
+                                onChange={val => setForm({ ...form, grupo: val, subgrupo: '' })}
+                                icon={Layers}
+                                showSearch={false}
+                            />
 
-                    {/* CLASSE */}
-                    <SearchableSelect
-                        label="CLASSE"
-                        placeholder="Selecione a classe"
-                        options={classOptions}
-                        value={form.accountPlan}
-                        onChange={val => setForm({ ...form, accountPlan: val })}
-                        icon={Tag}
-                    />
+                            {/* SUB-GRUPO */}
+                            <SearchableSelect
+                                label="SUB-GRUPO"
+                                placeholder="Selecione o sub-grupo"
+                                options={subGroupOptions}
+                                value={form.subgrupo}
+                                onChange={val => setForm({ ...form, subgrupo: val })}
+                                disabled={!form.grupo}
+                                icon={Bookmark}
+                                showSearch={false}
+                            />
+
+                            {/* CLASSE */}
+                            <SearchableSelect
+                                label="CLASSE"
+                                placeholder="Selecione a classe"
+                                options={classOptions}
+                                value={form.accountPlan}
+                                onChange={val => setForm({ ...form, accountPlan: val })}
+                                icon={Tag}
+                            />
+                        </>
+                    ) : (
+                        <>
+                            {/* TIPO DE RECEITA */}
+                            <SearchableSelect
+                                label="TIPO DE RECEITA"
+                                placeholder="Selecione o tipo"
+                                options={[
+                                    { value: 'Receita de Material', label: 'Receita de Material' },
+                                    { value: 'Receita de Frete', label: 'Receita de Frete' },
+                                    { value: 'Subsídio de Terceiros', label: 'Subsídio de Terceiros' }
+                                ]}
+                                value={form.revenueType}
+                                onChange={val => setForm({ ...form, revenueType: val, revenueSubType: '' })}
+                                icon={HeartHandshake}
+                                showSearch={false}
+                            />
+
+                            {/* SUB-TIPO DE RECEITA */}
+                            {form.revenueType === 'Receita de Material' && (
+                                <SearchableSelect
+                                    label="ENTREGA OU RETIRA"
+                                    placeholder="Selecione"
+                                    options={[
+                                        { value: 'Retira', label: 'Retira' },
+                                        { value: 'Entrega', label: 'Entrega' }
+                                    ]}
+                                    value={form.revenueSubType}
+                                    onChange={val => setForm({ ...form, revenueSubType: val })}
+                                    icon={Package}
+                                    showSearch={false}
+                                />
+                            )}
+
+                            {form.revenueType === 'Receita de Frete' && (
+                                <SearchableSelect
+                                    label="MODALIDADE DE FRETE"
+                                    placeholder="Selecione a modalidade"
+                                    options={[
+                                        { value: 'Carreta', label: 'Carreta' },
+                                        { value: 'Truck', label: 'Truck' },
+                                        { value: 'Terceiros', label: 'Terceiros' }
+                                    ]}
+                                    value={form.revenueSubType}
+                                    onChange={val => setForm({ ...form, revenueSubType: val })}
+                                    icon={Truck}
+                                    showSearch={false}
+                                />
+                            )}
+                        </>
+                    )}
                 </div>
 
                 {/* Footer */}

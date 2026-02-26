@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Edit2, Save, Loader2, FileText } from 'lucide-react';
+import { Settings, Edit2, Save, Loader2, FileText, UploadCloud } from 'lucide-react';
 import { formatDate } from '../../../../../utils/formatters';
 
 export default function AbaVendedores({
@@ -12,7 +12,8 @@ export default function AbaVendedores({
     isSavingVend,
     handleSaveVendedores,
     VENDEDORES_MAP,
-    BUSINESS_HIERARCHY
+    BUSINESS_HIERARCHY,
+    onOpenImport
 }) {
     if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
         const totalDemonstrativo = calculatedData.noromixVendedoresData.reduce((acc, row) => {
@@ -161,19 +162,19 @@ export default function AbaVendedores({
                 <td className="p-3 font-medium">{unit}</td>
                 <td className="p-3">
                     <div className="flex items-center gap-1">
-                        <input type="number" className="w-16 p-1 border rounded dark:bg-slate-700 dark:border-slate-600 text-center font-bold" value={p2105} onChange={e => handlePercChange(unit, '2105', e.target.value)} />
+                        <input type="number" disabled={isLockedVend} className={`w-16 p-1 border rounded dark:bg-slate-700 dark:border-slate-600 text-center font-bold ${isLockedVend ? 'bg-slate-100 opacity-70' : ''}`} value={p2105} onChange={e => handlePercChange(unit, '2105', e.target.value)} />
                         <span className="text-[10px] text-slate-400 font-bold">%</span>
                     </div>
                 </td>
                 <td className="p-3">
                     <div className="flex items-center gap-1">
-                        <input type="number" className="w-16 p-1 border rounded dark:bg-slate-700 dark:border-slate-600 text-center font-bold" value={p3105} onChange={e => handlePercChange(unit, '3105', e.target.value)} />
+                        <input type="number" disabled={isLockedVend} className={`w-16 p-1 border rounded dark:bg-slate-700 dark:border-slate-600 text-center font-bold ${isLockedVend ? 'bg-slate-100 opacity-70' : ''}`} value={p3105} onChange={e => handlePercChange(unit, '3105', e.target.value)} />
                         <span className="text-[10px] text-slate-400 font-bold">%</span>
                     </div>
                 </td>
                 <td className="p-3">
                     <div className="flex items-center gap-1">
-                        <input type="number" className="w-16 p-1 border rounded dark:bg-slate-700 dark:border-slate-600 text-center font-bold" value={p5105} onChange={e => handlePercChange(unit, '5105', e.target.value)} />
+                        <input type="number" disabled={isLockedVend} className={`w-16 p-1 border rounded dark:bg-slate-700 dark:border-slate-600 text-center font-bold ${isLockedVend ? 'bg-slate-100 opacity-70' : ''}`} value={p5105} onChange={e => handlePercChange(unit, '5105', e.target.value)} />
                         <span className="text-[10px] text-slate-400 font-bold">%</span>
                     </div>
                 </td>
@@ -208,6 +209,16 @@ export default function AbaVendedores({
                     <p className="text-xs font-bold text-indigo-200 uppercase">Custo Total de Vendas</p>
                     <h3 className="text-xl font-black">{totalGeralVendas.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
                 </div>
+            </div>
+
+            <div className="flex justify-end">
+                <button
+                    onClick={onOpenImport}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-sm text-sm"
+                >
+                    <UploadCloud size={18} />
+                    Importar Relatório TXT (Vendedores)
+                </button>
             </div>
 
             {/* Detalhamento de Despesas (Enxuto) */}
@@ -264,7 +275,21 @@ export default function AbaVendedores({
             {/* Configuração de Rateio por Unidade */}
             <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 shadow-sm overflow-hidden">
                 <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                    <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Settings size={18} className="text-indigo-500" />Distribuição do Rateio por Unidade (%)</h4>
+                    <div>
+                        <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Settings size={18} className="text-indigo-500" />Distribuição do Rateio por Unidade (%)</h4>
+                        <p className="text-xs text-slate-500 mt-1">Defina o percentual de cada centro de custo de vendas alocado para cada unidade operacional.</p>
+                    </div>
+                    <div className="flex gap-2">
+                        {isLockedVend ? (
+                            <button onClick={() => setIsLockedVend(false)} className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm">
+                                <Edit2 size={16} /> Editar
+                            </button>
+                        ) : (
+                            <button onClick={handleSaveVendedores} disabled={isSavingVend} className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50">
+                                {isSavingVend ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />} Salvar
+                            </button>
+                        )}
+                    </div>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left">
