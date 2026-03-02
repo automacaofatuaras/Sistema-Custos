@@ -13,17 +13,17 @@ export default function AbaNoromix1046({ calculatedData, onOpenImport }) {
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
                     <p className="text-slate-500 text-xs font-bold uppercase mb-1">Qtd. Unidades Rateadas</p>
-                    <h3 className="text-2xl font-bold dark:text-white">11 <span className="text-sm font-normal text-slate-400">unidades</span></h3>
+                    <h3 className="text-2xl font-bold dark:text-white">{units.length} <span className="text-sm font-normal text-slate-400">unidades</span></h3>
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-purple-500 shadow-sm">
                     <p className="text-xs font-bold text-slate-500 uppercase">Valor Fixo por Unidade</p>
-                    <h3 className="text-2xl font-bold text-purple-600 dark:text-purple-400">{(totalExpenses / 10).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
+                    <h3 className="text-2xl font-bold text-purple-600 dark:text-purple-400">{units.length > 0 ? (totalExpenses / units.length).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}</h3>
                 </div>
             </div>
 
             <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
                 <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                    <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-purple-500" />Distribuição Igualitária (1/11)</h4>
+                    <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-purple-500" />Distribuição Igualitária (1/{units.length})</h4>
                     <button
                         onClick={onOpenImport}
                         className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition-colors text-sm shadow-sm"
@@ -32,7 +32,7 @@ export default function AbaNoromix1046({ calculatedData, onOpenImport }) {
                     </button>
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase"><tr><th className="p-3 pl-6">Unidade</th><th className="p-3 text-right">Valor a Pagar</th></tr></thead><tbody className="divide-y dark:divide-slate-700">
+                    <table className="w-full text-sm text-left"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase"><tr><th className="p-3 pl-6">Unidade</th><th className="p-3 text-right">Valor do Rateio</th></tr></thead><tbody className="divide-y dark:divide-slate-700">
                         {units.map((u, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300"><td className="p-3 pl-6 font-medium">{u.name} {u.name.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}</td><td className="p-3 text-right font-bold text-purple-600 dark:text-purple-400">{u.valueToPay.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>))}
                     </tbody></table>
                 </div>
