@@ -577,9 +577,9 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
                 return <AbaVendedores selectedSegment={selectedSegment} calculatedData={calculatedData} manualPercents={manualPercents} handlePercChange={handlePercChange} isLockedVend={isLockedVend} setIsLockedVend={setIsLockedVend} isSavingVend={isSavingVend} handleSaveVendedores={handleSaveVendedores} VENDEDORES_MAP={VENDEDORES_MAP} BUSINESS_HIERARCHY={BUSINESS_HIERARCHY} onOpenImport={() => setShowImportModal(true)} />;
             case 'COMERCIAL':
             case 'TECNICO':
-                return <AbaComercialTecnico selectedSegment={selectedSegment} activeRateioType={activeRateioType} calculatedData={calculatedData} />;
+                return <AbaComercialTecnico selectedSegment={selectedSegment} activeRateioType={activeRateioType} calculatedData={calculatedData} onOpenImport={() => setShowImportModal(true)} />;
             case 'NOROMIX_1046':
-                return <AbaNoromix1046 calculatedData={calculatedData} />;
+                return <AbaNoromix1046 calculatedData={calculatedData} onOpenImport={() => setShowImportModal(true)} />;
             case 'LIMPEZA':
                 return <AbaLimpeza calculatedData={calculatedData} limpezaParams={limpezaParams} handleLimpezaParamChange={handleLimpezaParamChange} isLockedLimpeza={isLockedLimpeza} setIsLockedLimpeza={setIsLockedLimpeza} isSavingLimpeza={isSavingLimpeza} handleSaveLimpeza={handleSaveLimpeza} BUSINESS_HIERARCHY={BUSINESS_HIERARCHY} />;
             default:

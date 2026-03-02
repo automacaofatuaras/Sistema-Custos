@@ -1,9 +1,9 @@
 import React from 'react';
-import { Factory, Share2, FileText } from 'lucide-react';
+import { Factory, Share2, FileText, UploadCloud } from 'lucide-react';
 import { formatDate } from '../../../../../utils/formatters';
 import { BUSINESS_HIERARCHY } from '../../../../../constants/business';
 
-export default function AbaComercialTecnico({ selectedSegment, activeRateioType, calculatedData }) {
+export default function AbaComercialTecnico({ selectedSegment, activeRateioType, calculatedData, onOpenImport }) {
     if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
         const data = activeRateioType === 'COMERCIAL' ? calculatedData.noromixComercialData : calculatedData.noromixTecnicoData;
         const { units, totalProduction, totalExpenses, expenseItems } = data;
@@ -37,7 +37,17 @@ export default function AbaComercialTecnico({ selectedSegment, activeRateioType,
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-emerald-500 shadow-sm"><p className="text-xs font-bold text-slate-500 uppercase">Custo Médio do Rateio</p><h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{totalProduction > 0 ? (totalExpenses / totalProduction).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00'}<span className="text-sm font-normal text-slate-400"> / m³</span></h3></div>
                 </div>
                 <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
-                    <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center"><h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Factory size={18} className="text-indigo-500" />Distribuição por Produção</h4></div>
+                    <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
+                        <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Factory size={18} className="text-indigo-500" />Distribuição por Produção</h4>
+                        {activeRateioType === 'TECNICO' && (
+                            <button
+                                onClick={onOpenImport}
+                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors text-sm shadow-sm"
+                            >
+                                <UploadCloud size={16} /> Importar Relatório TXT
+                            </button>
+                        )}
+                    </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left"><thead className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs uppercase"><tr><th className="p-3 pl-6">Unidade</th><th className="p-3 text-right">Produção</th><th className="p-3 text-right">% Participação</th><th className="p-3 text-right">Valor do Rateio</th></tr></thead><tbody className="divide-y dark:divide-slate-700">
                             {units.map((u, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300"><td className="p-3 pl-6 font-medium">{u.name} {u.name.includes('Fábrica') && <span className="ml-2 text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">FÁBRICA</span>}</td><td className="p-3 text-right font-mono text-slate-600 dark:text-slate-400">{u.production.toLocaleString()}</td><td className="p-3 text-right"><span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-xs font-bold">{(u.percent * 100).toFixed(2)}%</span></td><td className={`p-3 text-right font-bold text-${colorTheme}-600 dark:text-${colorTheme}-400`}>{u.valueToPay.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td></tr>))}

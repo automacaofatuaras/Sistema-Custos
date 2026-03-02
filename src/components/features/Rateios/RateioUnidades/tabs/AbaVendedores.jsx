@@ -30,7 +30,13 @@ export default function AbaVendedores({
                             <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Settings size={18} className="text-slate-500" />Configuração de Rateio por Centro de Custo</h4>
                             <p className="text-xs text-slate-500 mt-1">Defina a % que fica na Concreteira. O restante irá automaticamente para a Fábrica de Tubos.</p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
+                            <button
+                                onClick={onOpenImport}
+                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors text-sm shadow-sm"
+                            >
+                                <UploadCloud size={16} /> Importar TXT
+                            </button>
                             {isLockedVend ? (
                                 <button onClick={() => setIsLockedVend(false)} className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-bold hover:bg-amber-200 transition-colors text-sm"><Edit2 size={16} /> Editar</button>
                             ) : (
