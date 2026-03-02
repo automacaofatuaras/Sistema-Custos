@@ -368,8 +368,7 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
         // E. Rateio Noromix (CC 1046)
         let noromix1046Data = { units: [], totalExpenses: 0, expenseItems: [] };
         if (selectedSegment === 'Concreteiras e Fábrica de Tubos') {
-            const targetUnits = [...BUSINESS_HIERARCHY["Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]]
-                .filter(unit => unit !== "Noromix Concreto S/A - Andradina");
+            const targetUnits = [...BUSINESS_HIERARCHY["Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
             const expenses1046 = periodTxs.filter(t => t.type === 'expense' && (t.costCenter || '').startsWith('1046'));
             const totalExp1046 = expenses1046.reduce((acc, t) => acc + t.value, 0);
 
