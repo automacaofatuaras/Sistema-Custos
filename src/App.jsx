@@ -4,7 +4,7 @@ import {
     BarChart3 as BarChartIcon, FileUp, TrendingUp, Globe,
     UploadCloud, Users, Sparkles, Sun, Moon, LogOut, UserCircle,
     ChevronRight, TrendingDown, Factory, ShoppingCart, Search, FileText, PlusCircle, Edit2, Briefcase, FolderClosed,
-    ShieldCheck, Trash2, Eye, X, Building2
+    ShieldCheck, Trash2, Eye, X, Building2, Target, FileSpreadsheet
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ComposedChart, Line
@@ -31,9 +31,8 @@ import PeriodSelector from './components/common/PeriodSelector';
 
 // Feature Components
 import AutomaticImportComponent from './components/features/AutomaticImport/AutomaticImportComponent';
-import CustosComponent from './components/features/Custos/CustosComponent';
+import DreComponent from './components/features/Dre/DreComponent';
 import ProductionComponent from './components/features/Production/ProductionComponent';
-import FechamentoComponent from './components/features/Fechamento/FechamentoComponent';
 import StockComponent from './components/features/Stock/StockComponent';
 import InvestimentosReportComponent from './components/features/Investimentos/InvestimentosReportComponent';
 import GlobalComponent from './components/features/Global/GlobalComponent';
@@ -50,6 +49,9 @@ import ManualEntryForm from './components/features/ManualEntryForm';
 import AIReportModal from './components/modals/AIReportModal';
 import CostCenterReportModal from './components/modals/CostCenterReportModal';
 import RateioUnitSummaryComponent from './components/features/Rateios/RateioUnitSummaryComponent';
+
+// Hooks
+import { useUnitRateios } from './hooks/useUnitRateios';
 
 export default function App() {
     // Styles & Theme
@@ -247,20 +249,35 @@ export default function App() {
         }
     };
 
+    // Fetch synthetic Rateio Transactions
+    const { rateioTransactions, loadingRateios } = useUnitRateios(
+        selectedUnit,
+        selectedSegment,
+        filter,
+        transactions,
+        user
+    );
+
     // All transactions for the selected unit/segment without date filters
     const unitTransactions = useMemo(() => {
-        return transactions.filter(t => {
+        const baseFiltered = transactions.filter(t => {
             if (selectedUnit) {
                 const cleanName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
                 return cleanName === selectedUnit;
             }
             return true;
         });
-    }, [transactions, selectedUnit]);
+
+        // Inject synthetic rateios if viewing a specific unit
+        if (selectedUnit && rateioTransactions.length > 0) {
+            return [...baseFiltered, ...rateioTransactions];
+        }
+        return baseFiltered;
+    }, [transactions, selectedUnit, rateioTransactions]);
 
     // Filtered Data Calculations
     const filteredData = useMemo(() => {
-        return transactions.filter(t => {
+        const baseFiltered = transactions.filter(t => {
             let y, m;
             if (typeof t.date === 'string' && t.date.length >= 10) {
                 y = parseInt(t.date.substring(0, 4));
@@ -278,7 +295,14 @@ export default function App() {
             }
             return true;
         });
-    }, [transactions, filter, selectedUnit]);
+
+        // Inject synthetic rateios into the filtered data
+        if (selectedUnit && rateioTransactions.length > 0) {
+            return [...baseFiltered, ...rateioTransactions];
+        }
+
+        return baseFiltered;
+    }, [transactions, filter, selectedUnit, rateioTransactions]);
 
     const displayLancamentos = useMemo(() => {
         const base = filteredData.filter(t => t.type !== 'metric');
@@ -294,7 +318,7 @@ export default function App() {
 
     // YTD Data Calculation for Average Cost (Custo Médio)
     const ytdData = useMemo(() => {
-        return transactions.filter(t => {
+        const baseYtd = transactions.filter(t => {
             let y, m;
             if (typeof t.date === 'string' && t.date.length >= 10) {
                 y = parseInt(t.date.substring(0, 4));
@@ -318,7 +342,16 @@ export default function App() {
             }
             return true;
         });
-    }, [transactions, filter, selectedUnit]);
+
+        // We only inject current month's synthetic rateios.
+        // YTD calculation for rateios across all previous months hasn't historically been loaded in one go,
+        // but adding current rateioTransactions covers the current selection.
+        if (selectedUnit && rateioTransactions.length > 0) {
+            return [...baseYtd, ...rateioTransactions];
+        }
+
+        return baseYtd;
+    }, [transactions, filter, selectedUnit, rateioTransactions]);
 
     // KPI Calculations
     const kpis = useMemo(() => {
@@ -336,6 +369,133 @@ export default function App() {
     const currentMeasureUnit = useMemo(() => getMeasureUnit(selectedSegment || 'ALL'), [selectedSegment]);
     const costPerUnit = ytdProduction > 0 ? ytdExpense / ytdProduction : 0;
     const resultMargin = kpis.revenue > 0 ? (kpis.balance / kpis.revenue) * 100 : 0;
+
+    // Previous Period Data Calculation for Trends
+    const prevFilteredData = useMemo(() => {
+        return transactions.filter(t => {
+            let y, m;
+            if (typeof t.date === 'string' && t.date.length >= 10) {
+                y = parseInt(t.date.substring(0, 4));
+                m = parseInt(t.date.substring(5, 7)) - 1;
+            } else {
+                const d = new Date(t.date); y = d.getFullYear(); m = d.getMonth();
+            }
+
+            let targetYear = filter.year;
+            let targetMonth = null;
+            let targetQuarter = null;
+            let targetSemester = null;
+
+            if (filter.type === 'month') {
+                targetMonth = filter.month - 1;
+                if (targetMonth < 0) {
+                    targetMonth = 11;
+                    targetYear--;
+                }
+            } else if (filter.type === 'quarter') {
+                targetQuarter = filter.quarter - 1;
+                if (targetQuarter < 1) {
+                    targetQuarter = 4;
+                    targetYear--;
+                }
+            } else if (filter.type === 'semester') {
+                targetSemester = filter.semester - 1;
+                if (targetSemester < 1) {
+                    targetSemester = 2;
+                    targetYear--;
+                }
+            } else if (filter.type === 'year') {
+                targetYear--;
+            }
+
+            if (y !== targetYear) return false;
+
+            if (filter.type === 'month' && m !== targetMonth) return false;
+            if (filter.type === 'quarter') {
+                const q = Math.floor(m / 3) + 1;
+                if (q !== targetQuarter) return false;
+            }
+            if (filter.type === 'semester') {
+                const s = Math.floor(m / 6) + 1;
+                if (s !== targetSemester) return false;
+            }
+
+            if (selectedUnit) {
+                const cleanName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                return cleanName === selectedUnit;
+            }
+            return true;
+        });
+    }, [transactions, filter, selectedUnit]);
+
+    const prevYtdData = useMemo(() => {
+        return transactions.filter(t => {
+            let y, m;
+            if (typeof t.date === 'string' && t.date.length >= 10) {
+                y = parseInt(t.date.substring(0, 4));
+                m = parseInt(t.date.substring(5, 7)) - 1;
+            } else {
+                const d = new Date(t.date); y = d.getFullYear(); m = d.getMonth();
+            }
+
+            let targetYear = filter.year;
+            let endM = 11;
+
+            if (filter.type === 'month') {
+                if (filter.month === 0) {
+                    targetYear--;
+                    endM = 11;
+                } else {
+                    endM = filter.month - 1;
+                }
+            } else if (filter.type === 'quarter') {
+                if (filter.quarter === 1) {
+                    targetYear--;
+                    endM = 11;
+                } else {
+                    endM = ((filter.quarter - 1) * 3) - 1;
+                }
+            } else if (filter.type === 'semester') {
+                if (filter.semester === 1) {
+                    targetYear--;
+                    endM = 11;
+                } else {
+                    endM = ((filter.semester - 1) * 6) - 1;
+                }
+            } else if (filter.type === 'year') {
+                targetYear--;
+            }
+
+            if (y !== targetYear) return false;
+            if (m > endM) return false;
+
+            if (selectedUnit) {
+                const cleanName = t.segment.includes(':') ? t.segment.split(':')[1].trim() : t.segment;
+                return cleanName === selectedUnit;
+            }
+            return true;
+        });
+    }, [transactions, filter, selectedUnit]);
+
+    const prevKpis = useMemo(() => {
+        const rev = prevFilteredData.filter(t => t.type === 'revenue').reduce((a, b) => a + b.value, 0);
+        const exp = prevFilteredData.filter(t => t.type === 'expense').reduce((a, b) => a + b.value, 0);
+        return { revenue: rev, expense: exp, balance: rev - exp };
+    }, [prevFilteredData]);
+
+    const prevTotalProduction = useMemo(() => prevFilteredData.filter(t => t.metricType === 'producao').reduce((a, b) => a + b.value, 0), [prevFilteredData]);
+    const prevTotalSales = useMemo(() => prevFilteredData.filter(t => t.metricType === 'vendas').reduce((a, b) => a + b.value, 0), [prevFilteredData]);
+
+    const prevYtdProduction = useMemo(() => prevYtdData.filter(t => t.metricType === 'producao').reduce((a, b) => a + b.value, 0), [prevYtdData]);
+    const prevYtdExpense = useMemo(() => prevYtdData.filter(t => t.type === 'expense').reduce((a, b) => a + b.value, 0), [prevYtdData]);
+
+    const prevCostPerUnit = prevYtdProduction > 0 ? prevYtdExpense / prevYtdProduction : 0;
+    const prevResultMargin = prevKpis.revenue > 0 ? (prevKpis.balance / prevKpis.revenue) * 100 : 0;
+
+    const calcTrend = (curr, prev) => {
+        if (prev === 0) return curr > 0 ? 100 : (curr < 0 ? -100 : 0);
+        return ((curr - prev) / Math.abs(prev)) * 100;
+    };
 
     // Unidade Dashboard Data
     const expenseGroupsData = useMemo(() => {
@@ -444,7 +604,7 @@ export default function App() {
     }, [unitTransactions, filter, activeTab, selectedUnit]);
 
     // Loading Screen
-    if (loading) {
+    if (loading || (loadingRateios && selectedUnit)) {
         return (
             <div className="flex flex-col items-center justify-center bg-slate-900 h-screen gap-4 transition-colors duration-300">
                 <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
@@ -668,11 +828,10 @@ export default function App() {
                         {[
                             { id: 'dashboard', icon: LayoutDashboard, label: 'Visão Geral' },
                             { id: 'lancamentos', icon: List, label: 'Lançamentos' },
-                            { id: 'custos', icon: DollarSign, label: 'Custos e Despesas' },
+                            { id: 'dre', icon: FileSpreadsheet, label: 'DRE (Resultados)' },
                             { id: 'estoque', icon: Package, label: 'Estoque' },
                             { id: 'producao', icon: BarChartIcon, label: 'Produção vs Vendas' },
                             { id: 'rateios_unit', icon: Share2, label: 'Rateios' },
-                            { id: 'fechamento', icon: FileUp, label: 'Fechamento' },
                             { id: 'investimentos_report', icon: TrendingUp, label: 'Investimentos' },
                             { id: 'ingestion', icon: UploadCloud, label: 'Importar TXT' },
                         ].map((item) => (
@@ -707,29 +866,17 @@ export default function App() {
                         {activeTab === 'dashboard' && selectedUnit && (
                             <div className="space-y-6 animate-in fade-in duration-500">
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                    <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" />
-                                    <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" reverseColor={true} />
-                                    <KpiCard title="Resultado Líquido" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} />
-                                    <KpiCard title={`Custo / ${currentMeasureUnit}`} value={costPerUnit.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={Factory} color="rose" reverseColor={true} />
+                                    <KpiCard title="Receita Bruta" value={kpis.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" trend={calcTrend(kpis.revenue, prevKpis.revenue)} />
+                                    <KpiCard title="Despesas Totais" value={kpis.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" reverseColor={true} trend={calcTrend(kpis.expense, prevKpis.expense)} />
+                                    <KpiCard title="Resultado Líquido" value={kpis.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={kpis.balance >= 0 ? 'indigo' : 'rose'} trend={calcTrend(kpis.balance, prevKpis.balance)} />
+                                    <KpiCard title={`Custo / ${currentMeasureUnit}`} prefix="R$" value={costPerUnit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} icon={Factory} color="rose" reverseColor={true} trend={calcTrend(costPerUnit, prevCostPerUnit)} />
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border dark:border-slate-700 flex flex-col justify-center text-center">
-                                        <p className="text-xs font-bold text-slate-500 uppercase">Margem Líquida</p>
-                                        <h3 className={`text-3xl font-bold ${resultMargin >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{resultMargin.toFixed(1)}%</h3>
-                                    </div>
-                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border dark:border-slate-700 flex flex-col justify-center text-center">
-                                        <p className="text-xs font-bold text-slate-500 uppercase">Total Produzido</p>
-                                        <h3 className="text-3xl font-bold text-indigo-500">{totalProduction.toLocaleString('pt-BR')} <span className="text-sm font-medium">{currentMeasureUnit}</span></h3>
-                                    </div>
-                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border dark:border-slate-700 flex flex-col justify-center text-center">
-                                        <p className="text-xs font-bold text-slate-500 uppercase">Total Vendido</p>
-                                        <h3 className="text-3xl font-bold text-emerald-500">{totalSales.toLocaleString('pt-BR')} <span className="text-sm font-medium">{currentMeasureUnit}</span></h3>
-                                    </div>
-                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border dark:border-slate-700 flex flex-col justify-center text-center">
-                                        <p className="text-xs font-bold text-slate-500 uppercase">Estoque Estimado</p>
-                                        <h3 className="text-3xl font-bold text-amber-500">{(stockEvolutionData.length > 0 ? stockEvolutionData[stockEvolutionData.length - 1].Estoque : 0).toLocaleString('pt-BR')} <span className="text-sm font-medium">{currentMeasureUnit}</span></h3>
-                                    </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+                                    <KpiCard title="Margem Líquida" value={resultMargin.toFixed(1)} suffix="%" icon={Target} color={resultMargin >= 0 ? 'emerald' : 'rose'} trend={calcTrend(resultMargin, prevResultMargin)} />
+                                    <KpiCard title="Total Produzido" value={totalProduction.toLocaleString('pt-BR')} suffix={currentMeasureUnit} icon={Factory} color="indigo" trend={calcTrend(totalProduction, prevTotalProduction)} />
+                                    <KpiCard title="Total Vendido" value={totalSales.toLocaleString('pt-BR')} suffix={currentMeasureUnit} icon={ShoppingCart} color="sky" trend={calcTrend(totalSales, prevTotalSales)} />
+                                    <KpiCard title="Estoque Estimado" value={(stockEvolutionData.length > 0 ? stockEvolutionData[stockEvolutionData.length - 1].Estoque : 0).toLocaleString('pt-BR')} suffix={currentMeasureUnit} icon={Package} color="amber" trend={0} />
                                 </div>
 
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -861,8 +1008,17 @@ export default function App() {
                                                                     >
                                                                         <Eye size={16} />
                                                                     </button>
-                                                                    <button onClick={() => { setEditingTx(t); setShowEntryForm(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors" title="Editar"><Edit2 size={16} /></button>
-                                                                    <button onClick={() => handleDeleteTx(t.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors" title="Excluir"><Trash2 size={16} /></button>
+                                                                    {!t.isRateio && (
+                                                                        <>
+                                                                            <button onClick={() => { setEditingTx(t); setShowEntryForm(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors" title="Editar"><Edit2 size={16} /></button>
+                                                                            <button onClick={() => handleDeleteTx(t.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors" title="Excluir"><Trash2 size={16} /></button>
+                                                                        </>
+                                                                    )}
+                                                                    {t.isRateio && (
+                                                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest px-2 py-0.5 bg-slate-200 dark:bg-slate-700/50 rounded-full">
+                                                                            Gerado Aut.
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                             </td>
                                                         </tr>
@@ -908,8 +1064,7 @@ export default function App() {
                             </div>
                         )}
 
-                        {activeTab === 'custos' && selectedUnit && <CustosComponent transactions={filteredData} showToast={showToast} measureUnit={currentMeasureUnit} totalProduction={totalProduction} />}
-                        {activeTab === 'fechamento' && selectedUnit && <FechamentoComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={selectedUnit} />}
+                        {activeTab === 'dre' && selectedUnit && <DreComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={selectedUnit} />}
                         {activeTab === 'estoque' && selectedUnit && <StockComponent transactions={unitTransactions} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} onAddMetric={handleAddMetric} onUpdateMetric={handleUpdateMetric} onDeleteMetric={handleDeleteTx} />}
                         {activeTab === 'producao' && selectedUnit && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} currentFilter={filter} onAddMetric={handleAddMetric} onUpdateMetric={handleUpdateMetric} onDeleteMetric={handleDeleteTx} />}
                         {activeTab === 'rateios_unit' && selectedUnit && <RateioUnitSummaryComponent transactions={transactions} selectedUnit={selectedUnit} parentSegment={selectedSegment} filter={filter} user={user} />}

@@ -6,11 +6,25 @@ const SearchableSelect = ({ options, value, onChange, placeholder, label, icon: 
     const [search, setSearch] = useState('');
     const containerRef = useRef(null);
 
-    const filteredOptions = options.filter(opt =>
+    const normalizedOptions = React.useMemo(() => {
+        if (!Array.isArray(options)) return [];
+        return options.map(opt => {
+            if (typeof opt === 'string' || typeof opt === 'number') {
+                return { value: String(opt), label: String(opt) };
+            }
+            const val = opt?.value ?? '';
+            return {
+                value: val,
+                label: opt?.label ?? String(val)
+            };
+        });
+    }, [options]);
+
+    const filteredOptions = normalizedOptions.filter(opt =>
         opt.label.toLowerCase().includes(search.toLowerCase())
     );
 
-    const selectedOption = options.find(opt => opt.value === value);
+    const selectedOption = normalizedOptions.find(opt => opt.value === value);
 
     useEffect(() => {
         const handleClickOutside = (event) => {

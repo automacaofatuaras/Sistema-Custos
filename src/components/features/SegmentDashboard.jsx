@@ -6,6 +6,7 @@ import {
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ComposedChart, Line
 } from 'recharts';
+import KpiCard from '../common/KpiCard';
 
 const SegmentDashboard = ({ transactions, segmentName, units }) => {
     // 1. Processamento de Dados Agregados
@@ -74,38 +75,10 @@ const SegmentDashboard = ({ transactions, segmentName, units }) => {
 
             {/* KPIs Consolidados */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="p-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-lg"><TrendingUp className="text-emerald-500" size={20} /></div>
-                        <span className="text-xs font-bold text-emerald-500 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full flex items-center gap-1">TOTAL</span>
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 uppercase mb-1">Faturamento Total</p>
-                    <h3 className="text-2xl font-black dark:text-white">{totals.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
-                </div>
-
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="p-2 bg-rose-50 dark:bg-rose-950/30 rounded-lg"><TrendingDown className="text-rose-500" size={20} /></div>
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 uppercase mb-1">Custo Total</p>
-                    <h3 className="text-2xl font-black dark:text-white">{totals.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
-                </div>
-
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="p-2 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg"><DollarSign className="text-indigo-500" size={20} /></div>
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 uppercase mb-1">Resultado Líquido</p>
-                    <h3 className={`text-2xl font-black ${totals.balance >= 0 ? 'text-indigo-500' : 'text-rose-500'}`}>{totals.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
-                </div>
-
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="p-2 bg-amber-50 dark:bg-amber-950/30 rounded-lg"><Target className="text-amber-500" size={20} /></div>
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 uppercase mb-1">Margem Média</p>
-                    <h3 className="text-2xl font-black dark:text-white">{totals.margin.toFixed(1)}%</h3>
-                </div>
+                <KpiCard title="Faturamento Total" value={totals.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" prefix="" suffix="" />
+                <KpiCard title="Custo Total" value={totals.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" reverseColor={true} prefix="" suffix="" />
+                <KpiCard title="Resultado Líquido" value={totals.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={totals.balance >= 0 ? 'indigo' : 'rose'} prefix="" suffix="" />
+                <KpiCard title="Margem Média" value={totals.margin.toFixed(1)} suffix="%" icon={Target} color="amber" prefix="" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

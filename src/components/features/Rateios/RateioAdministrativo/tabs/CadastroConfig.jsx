@@ -170,32 +170,58 @@ export default function CadastroConfig() {
         reader.onload = async (event) => {
             try {
                 const text = event.target.result;
-                const lines = text.split('\n').filter(line => line.trim() !== '');
+                const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+
+                // Function to split CSV line respecting quotes
+                const splitCsvLine = (line) => {
+                    const result = [];
+                    let cur = '';
+                    let inQuotes = false;
+                    for (let i = 0; i < line.length; i++) {
+                        const char = line[i];
+                        if (char === '"') {
+                            inQuotes = !inQuotes;
+                        } else if ((char === ';' || char === ',') && !inQuotes) {
+                            result.push(cur.trim());
+                            cur = '';
+                        } else {
+                            cur += char;
+                        }
+                    }
+                    result.push(cur.trim());
+                    return result;
+                };
 
                 const parsedData = lines.map(line => {
-                    const parts = line.split(/[;,]/);
+                    const parts = splitCsvLine(line);
                     const item = {};
                     activeTab.fields.forEach((field, i) => {
-                        let val = parts[i] ? parts[i].trim() : '';
-                        if (val.startsWith('"') && val.endsWith('"')) {
-                            val = val.substring(1, val.length - 1);
-                        }
+                        let val = parts[i] || '';
 
+                        // If it's a multi-select, it might be a string with commas
                         if (field.type === 'multi-select') {
-                            val = val ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
+                            if (Array.isArray(val)) {
+                                item[field.name] = val;
+                            } else {
+                                // Split by comma and filter empty
+                                item[field.name] = val.split(',').map(s => s.trim()).filter(Boolean);
+                            }
+                        } else {
+                            item[field.name] = val;
                         }
-
-                        item[field.name] = val;
                     });
                     return item;
                 });
 
                 if (parsedData.length > 0) {
                     const firstItem = parsedData[0];
-                    const isHeader = activeTab.fields.some(f =>
-                        firstItem[f.name]?.toLowerCase() === f.label.toLowerCase() ||
-                        firstItem[f.name]?.toLowerCase() === f.name.toLowerCase()
-                    );
+                    const isHeader = activeTab.fields.some(f => {
+                        const val = firstItem[f.name];
+                        // If multi-select, val is an array, skip comparison
+                        if (Array.isArray(val)) return false;
+                        return val?.toLowerCase() === f.label.toLowerCase() ||
+                            val?.toLowerCase() === f.name.toLowerCase();
+                    });
                     if (isHeader) parsedData.shift();
                 }
 

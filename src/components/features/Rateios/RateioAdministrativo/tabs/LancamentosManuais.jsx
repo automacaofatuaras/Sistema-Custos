@@ -38,7 +38,7 @@ export default function LancamentosManuais({ filter, user, showToast }) {
     const handleDelete = async (id) => {
         if (window.confirm('Tem certeza que deseja excluir este lançamento?')) {
             try {
-                await dbService.delete(user, 'rateio_transactions', String(id));
+                await dbService.del(user, 'rateio_transactions', String(id));
                 if (showToast) showToast('Lançamento excluído', 'success');
                 loadData();
             } catch (error) {
