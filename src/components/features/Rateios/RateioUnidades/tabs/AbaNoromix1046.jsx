@@ -13,17 +13,17 @@ export default function AbaNoromix1046({ calculatedData, onOpenImport }) {
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
                     <p className="text-slate-500 text-xs font-bold uppercase mb-1">Qtd. Unidades Rateadas</p>
-                    <h3 className="text-2xl font-bold dark:text-white">10 <span className="text-sm font-normal text-slate-400">unidades</span></h3>
+                    <h3 className="text-2xl font-bold dark:text-white">11 <span className="text-sm font-normal text-slate-400">unidades</span></h3>
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border-l-4 border-purple-500 shadow-sm">
                     <p className="text-xs font-bold text-slate-500 uppercase">Valor Fixo por Unidade</p>
-                    <h3 className="text-2xl font-bold text-purple-600 dark:text-purple-400">{(totalExpenses / 10).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
+                    <h3 className="text-2xl font-bold text-purple-600 dark:text-purple-400">{(totalExpenses / 11).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
                 </div>
             </div>
 
             <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
                 <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                    <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-purple-500" />Distribuição Igualitária (1/10)</h4>
+                    <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-purple-500" />Distribuição Igualitária (1/11)</h4>
                     <button
                         onClick={onOpenImport}
                         className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition-colors text-sm shadow-sm"
