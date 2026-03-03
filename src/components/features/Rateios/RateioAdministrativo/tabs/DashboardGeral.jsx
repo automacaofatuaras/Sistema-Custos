@@ -178,7 +178,7 @@ export default function DashboardGeral({ filter, user }) {
                         Custos por Segmento
                     </h3>
                     <div className="flex-1">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <BarChart data={segmentChartData} layout="vertical" margin={{ top: 0, right: 30, left: 20, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} opacity={0.3} />
                                 <XAxis type="number" tickFormatter={(val) => `R$ ${(val / 1000)}k`} />
@@ -203,7 +203,7 @@ export default function DashboardGeral({ filter, user }) {
                         Direto vs Indireto
                     </h3>
                     <div className="flex-1 flex items-center justify-center">
-                        <ResponsiveContainer width="100%" height="100%">
+                        <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                             <PieChart>
                                 <Pie
                                     data={pieData}

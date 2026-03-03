@@ -46,11 +46,11 @@ Reporte gerado pelo painel central.
             let errorCount = 0;
             let skippedCount = 0;
 
-            // 2. Loop: Envia e-mail de forma ÚBICA para cada gestor calculando apenas o que é dele
-            const sendPromises = gestores.map(async (gestor) => {
+            // 2. Loop SEQUENCIAL: Envia e-mail de forma ÚBICA para cada gestor para evitar erro 429 (Too Many Requests)
+            for (const gestor of gestores) {
                 if (!gestor.email || !gestor.linkedCostCenters || gestor.linkedCostCenters.length === 0) {
                     skippedCount++;
-                    return;
+                    continue;
                 }
 
                 // A. Filtra somente as transações do Gestor
@@ -65,14 +65,13 @@ Reporte gerado pelo painel central.
                 // C. Se não houver despesa para ele no mês, não enche a caixa de e-mail dele
                 if (total <= 0) {
                     skippedCount++;
-                    return;
+                    continue;
                 }
 
                 const diretos = myTransactions.filter(t => t.type?.toLowerCase() === 'direto').reduce((acc, t) => acc + t.value, 0);
                 const indiretos = myTransactions.filter(t => t.type?.toLowerCase() === 'indireto').reduce((acc, t) => acc + t.value, 0);
                 const diretosPerc = total > 0 ? (diretos / total) * 100 : 0;
 
-                // D. Monta a Tabela de Extrato Analítico em HTML para o E-mail
                 // D. Monta a Tabela de Extrato Analítico em HTML para o E-mail
                 const formatBRL = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
@@ -93,24 +92,20 @@ Reporte gerado pelo painel central.
                 let htmlDashboard = `
                 <!-- PAINEL GERENCIAL -->
                 <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin-bottom: 30px;">
-                    
                     <!-- CARDS RESUMO -->
                     <table style="width: 100%; border-collapse: separate; border-spacing: 12px 0; margin-bottom: 24px;">
                         <tr>
-                            <!-- CARD TOTAL -->
-                            <td style="width: 33.3%; background-color: #312e81; border-radius: 12px; padding: 20px; color: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                            <td style="width: 33.3%; background-color: #312e81; border-radius: 12px; padding: 20px; color: white;">
                                 <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #93c5fd; margin-bottom: 8px;">Custo Total Mês</div>
                                 <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.5px;">${formatBRL(total)}</div>
                                 <div style="font-size: 11px; margin-top: 6px; color: #bfdbfe;">Soma das despesas do mês</div>
                             </td>
-                            <!-- CARD DIRETOS -->
-                            <td style="width: 33.3%; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                            <td style="width: 33.3%; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 20px;">
                                 <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #15803d; margin-bottom: 8px;">Custos Diretos</div>
                                 <div style="font-size: 20px; font-weight: 800; color: #166534; letter-spacing: -0.5px;">${formatBRL(diretos)}</div>
                                 <div style="font-size: 11px; margin-top: 6px; color: #64748b; font-weight: 600;">${diretosPerc.toFixed(1)}% de Participação</div>
                             </td>
-                            <!-- CARD INDIRETOS -->
-                            <td style="width: 33.3%; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                            <td style="width: 33.3%; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 20px;">
                                 <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #6b21a8; margin-bottom: 8px;">Custos Indiretos</div>
                                 <div style="font-size: 20px; font-weight: 800; color: #581c87; letter-spacing: -0.5px;">${formatBRL(indiretos)}</div>
                                 <div style="font-size: 11px; margin-top: 6px; color: #64748b; font-weight: 600;">${(100 - diretosPerc).toFixed(1)}% de Participação</div>
@@ -118,8 +113,7 @@ Reporte gerado pelo painel central.
                         </tr>
                     </table>
 
-                    <!-- GRÁFICO TOP 5 DESPESAS -->
-                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 2px 4px -1px rgba(0,0,0,0.05); margin-bottom: 0px;">
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 0px;">
                         <h4 style="margin: 0 0 16px 0; color: #1e293b; font-size: 14px; text-transform: uppercase; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">Top 5 Despesas (Em R$)</h4>
                         <table style="width: 100%; border-collapse: collapse;">
                 `;
@@ -131,21 +125,21 @@ Reporte gerado pelo painel central.
 
                     htmlDashboard += `
                             <tr>
-                                <td style="width: 35%; padding: 6px 12px 6px 0; font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">${item.name}</td>
+                                <td style="width: 35%; padding: 6px 12px 6px 0; font-size: 11px; font-weight: 600; color: #475569; text-transform: uppercase;">${item.name}</td>
                                 <td style="width: 65%; padding: 6px 0;">
-                                    <table style="width: 100%; border-collapse: collapse; mso-table-lspace:0pt; mso-table-rspace:0pt;">
+                                    <table style="width: 100%; border-collapse: collapse;">
                                         <tr>
-                                            <td style="width: 100%; padding-right: 10px; vertical-align: middle;">
-                                                <div style="width: 100%; border-radius: 6px; background-color: #f1f5f9; overflow: hidden;">
-                                                    <table style="width: 100%; border-collapse: collapse; height: 16px; mso-table-lspace:0pt; mso-table-rspace:0pt; border-radius: 6px;">
+                                            <td style="width: 100%; padding-right: 10px;">
+                                                <div style="width: 100%; border-radius: 6px; background-color: #f1f5f9;">
+                                                    <table style="width: 100%; border-collapse: collapse; height: 16px;">
                                                         <tr>
-                                                            <td bgcolor="${barColor}" style="background-color: ${barColor}; width: ${widthPerc.toFixed(1)}%; height: 16px; font-size: 1px; line-height: 1px; border-radius: 6px; border-top-right-radius: 0; border-bottom-right-radius: 0;">&nbsp;</td>
+                                                            <td bgcolor="${barColor}" style="background-color: ${barColor}; width: ${widthPerc.toFixed(1)}%; height: 16px; border-radius: 6px;">&nbsp;</td>
                                                             <td style="width: ${(100 - widthPerc).toFixed(1)}%;">&nbsp;</td>
                                                         </tr>
                                                     </table>
                                                 </div>
                                             </td>
-                                            <td style="white-space: nowrap; text-align: right; font-size: 12px; font-weight: bold; color: #0f172a; vertical-align: middle;">
+                                            <td style="white-space: nowrap; text-align: right; font-size: 12px; font-weight: bold; color: #0f172a;">
                                                 ${formatBRL(item.val)}
                                             </td>
                                         </tr>
@@ -165,13 +159,13 @@ Reporte gerado pelo painel central.
                 let htmlTable = htmlDashboard + `
                     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
                         <h4 style="margin: 30px 0 12px 0; color: #1e293b; font-size: 14px; text-transform: uppercase;">Extrato Analítico Fechado</h4>
-                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; mso-table-lspace:0pt; mso-table-rspace:0pt;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 25px;">
                         <thead>
                             <tr style="background-color: #4f46e5; color: #ffffff; text-align: left;">
-                                <th style="width: 15%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca;">Centro de Custo</th>
-                                <th style="width: 25%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca;">Classe Contábil</th>
-                                <th style="width: 45%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca;">Histórico / Descrição</th>
-                                <th style="width: 15%; padding: 12px 16px; font-weight: 600; border-bottom: 2px solid #4338ca; text-align: right;">Valor (R$)</th>
+                                <th style="width: 15%; padding: 12px 16px; font-weight: 600;">Centro de Custo</th>
+                                <th style="width: 25%; padding: 12px 16px; font-weight: 600;">Classe Contábil</th>
+                                <th style="width: 45%; padding: 12px 16px; font-weight: 600;">Histórico / Descrição</th>
+                                <th style="width: 15%; padding: 12px 16px; font-weight: 600; text-align: right;">Valor (R$)</th>
                             </tr>
                         </thead>
                         <tbody style="background-color: #ffffff;">
@@ -188,10 +182,8 @@ Reporte gerado pelo painel central.
                         unifiedTransactionsMap[itemKey] = { ...t, _classeStr: classeStr, _descStr: descStr };
                     } else {
                         unifiedTransactionsMap[itemKey].value += t.value;
-
                         const curCC = t.costCenter || t.costCenterCode || '';
                         const storedCC = unifiedTransactionsMap[itemKey].costCenter || unifiedTransactionsMap[itemKey].costCenterCode || '';
-
                         if (curCC !== storedCC) {
                             unifiedTransactionsMap[itemKey].costCenter = 'Diversos';
                             unifiedTransactionsMap[itemKey].costCenterCode = 'Diversos';
@@ -203,7 +195,6 @@ Reporte gerado pelo painel central.
 
                 unifiedTransactionsList.forEach((t, index) => {
                     const rowBg = index % 2 === 0 ? '#f8fafc' : '#ffffff';
-
                     htmlTable += `
                         <tr style="background-color: ${rowBg}; border-bottom: 1px solid #e2e8f0;">
                             <td style="padding: 12px 16px; color: #475569; font-weight: 500;">${t.costCenter || t.costCenterCode || ''}</td>
@@ -239,6 +230,7 @@ Reporte gerado pelo painel central.
                 };
 
                 try {
+                    console.log(`Enviando e-mail para ${gestor.email}...`);
                     await emailjs.send(
                         EMAILJS_SERVICE_ID,
                         EMAILJS_TEMPLATE_ID,
@@ -248,13 +240,16 @@ Reporte gerado pelo painel central.
                         }
                     );
                     sucessCount++;
+
+                    // Pequeno delay entre envios para não estourar rate limit e preflight do navegador
+                    await new Promise(resolve => setTimeout(resolve, 800));
                 } catch (err) {
                     console.error(`Erro ao disparar para ${gestor.email}: `, err);
                     errorCount++;
+                    // Mesmo com erro, esperamos um pouco
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 }
-            });
-
-            await Promise.all(sendPromises);
+            }
 
             return {
                 success: true,
