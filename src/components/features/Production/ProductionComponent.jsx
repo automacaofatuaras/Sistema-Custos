@@ -14,12 +14,16 @@ const FormItem = ({ label, children, className }) => (
     </div>
 );
 
-const ProductionComponent = ({ transactions, measureUnit, currentFilter, onAddMetric, onUpdateMetric, onDeleteMetric }) => {
+const ProductionComponent = ({ transactions, measureUnit, currentFilter, onAddMetric, onUpdateMetric, onDeleteMetric, selectedSegment }) => {
+    const isUsina = selectedSegment === 'Usinas de Asfalto';
+    const isConcreteira = selectedSegment === 'Concreteiras';
     const [showAdjust, setShowAdjust] = useState(false);
     const [adjustId, setAdjustId] = useState(null);
     const [adjustDate, setAdjustDate] = useState(new Date().toISOString().slice(0, 10));
     const [adjustType, setAdjustType] = useState('producao'); // producao | vendas
-    const [adjustCategory, setAdjustCategory] = useState('Areia Fina');
+
+    const defaultCategory = isUsina ? 'Massa Asfáltica' : (isConcreteira ? 'Concreto Usinado' : 'Areia Fina');
+    const [adjustCategory, setAdjustCategory] = useState(defaultCategory);
     const [adjustValue, setAdjustValue] = useState('');
 
     const getDefaultDate = () => {
@@ -195,9 +199,17 @@ const ProductionComponent = ({ transactions, measureUnit, currentFilter, onAddMe
                                     value={adjustCategory}
                                     onChange={(e) => setAdjustCategory(e.target.value)}
                                 >
-                                    <option value="Areia Fina">Areia Fina</option>
-                                    <option value="Areia Grossa">Areia Grossa</option>
-                                    <option value="Areia Suja">Areia Suja</option>
+                                    {isUsina ? (
+                                        <option value="Massa Asfáltica">Massa Asfáltica</option>
+                                    ) : isConcreteira ? (
+                                        <option value="Concreto Usinado">Concreto Usinado</option>
+                                    ) : (
+                                        <>
+                                            <option value="Areia Fina">Areia Fina</option>
+                                            <option value="Areia Grossa">Areia Grossa</option>
+                                            <option value="Areia Suja">Areia Suja</option>
+                                        </>
+                                    )}
                                 </select>
                                 <FileText className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
                             </FormItem>

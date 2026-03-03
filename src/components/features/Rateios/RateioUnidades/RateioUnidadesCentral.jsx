@@ -389,10 +389,25 @@ const RateioUnidadesCentral = ({ transactions, filter, setFilter, years, user = 
                 const cc = parseInt((t.costCenter || '').split(' ')[0]);
                 const mapInfo = VENDEDORES_MAP.find(m => m.cc === cc);
                 const unitName = mapInfo ? mapInfo.unit : 'Desconhecida';
-                const key = `${cc}-${t.accountPlan}`;
 
-                if (!grouped[key]) grouped[key] = { cc, unitName, accountCode: t.accountPlan, accountDesc: t.planDescription, originalValue: 0 };
-                grouped[key].originalValue += t.value;
+                // NOVA REGRA: 50% de Pereira Barreto (29003) vai para Ilha Solteira (22003)
+                if (cc === 29003) {
+                    const halfVal = t.value / 2;
+
+                    // Parte que fica em 29003
+                    const key29 = `29003-${t.accountPlan}`;
+                    if (!grouped[key29]) grouped[key29] = { cc: 29003, unitName: 'Pereira Barreto', accountCode: t.accountPlan, accountDesc: t.planDescription, originalValue: 0 };
+                    grouped[key29].originalValue += halfVal;
+
+                    // Parte que vai para 22003
+                    const key22 = `22003-${t.accountPlan}`;
+                    if (!grouped[key22]) grouped[key22] = { cc: 22003, unitName: 'Ilha Solteira', accountCode: t.accountPlan, accountDesc: t.planDescription, originalValue: 0 };
+                    grouped[key22].originalValue += halfVal;
+                } else {
+                    const key = `${cc}-${t.accountPlan}`;
+                    if (!grouped[key]) grouped[key] = { cc, unitName, accountCode: t.accountPlan, accountDesc: t.planDescription, originalValue: 0 };
+                    grouped[key].originalValue += t.value;
+                }
             });
             noromixVendedoresData = Object.values(grouped).sort((a, b) => a.cc - b.cc);
         }

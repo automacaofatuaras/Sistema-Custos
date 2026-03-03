@@ -119,8 +119,9 @@ export default function AbaComercialTecnico({ selectedSegment, activeRateioType,
     const portosList = BUSINESS_HIERARCHY['Portos de Areia'] || [];
     const usinasList = BUSINESS_HIERARCHY['Usinas de Asfalto'] || [];
 
-    // Divisor hardcoded de 14 para distribuição Igualitária nas 14 unidades dessa hierarquia
-    const divisorCota = 14;
+    // Divisor dinâmico: 6 Pedreiras + 2 Portos + Usinas com produção no mês
+    const activeUsinasCount = usinasList.filter(u => (calculatedData.activeUnits || []).includes(u)).length;
+    const divisorCota = 6 + 2 + activeUsinasCount;
     const shareValue = calculatedData.totalComercialGen / divisorCota;
 
     // Agrupamento para subtotais por CC (mesma lógica do Administrativo)
@@ -151,8 +152,8 @@ export default function AbaComercialTecnico({ selectedSegment, activeRateioType,
                 </div>
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border dark:border-slate-700 shadow-sm">
                     <p className="text-slate-500 text-xs font-bold uppercase mb-1">Unidades ({divisorCota}x)</p>
-                    <h3 className="text-2xl font-bold dark:text-white">14</h3>
-                    <p className="text-xs text-slate-400 mt-1">6 Pedreiras, 2 Portos, 6 Usinas de Asfalto</p>
+                    <h3 className="text-2xl font-bold dark:text-white">{divisorCota}</h3>
+                    <p className="text-xs text-slate-400 mt-1">6 Pedreiras, 2 Portos, {activeUsinasCount} Usinas Ativas</p>
                 </div>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm">
                     <p className="text-emerald-600 dark:text-emerald-400 text-xs font-bold uppercase mb-1">Alocado por Unidade</p>
@@ -214,7 +215,7 @@ export default function AbaComercialTecnico({ selectedSegment, activeRateioType,
                 {/* Distribuição Usinas */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
                     <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                        <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-amber-500" />Usinas de Asfalto (6)</h4>
+                        <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-amber-500" />Usinas de Asfalto ({activeUsinasCount})</h4>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-xs text-left">
@@ -225,12 +226,20 @@ export default function AbaComercialTecnico({ selectedSegment, activeRateioType,
                                 </tr>
                             </thead>
                             <tbody className="divide-y dark:divide-slate-700">
-                                {usinasList.sort().map((u, idx) => (
-                                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
-                                        <td className="p-2 pl-4 font-medium">{u}</td>
-                                        <td className="p-2 text-right font-bold text-amber-600 dark:text-amber-400">{shareValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                    </tr>
-                                ))}
+                                {usinasList.sort().map((u, idx) => {
+                                    const hadProduction = calculatedData.activeUnits?.includes(u);
+                                    if (!hadProduction) return null;
+
+                                    return (
+                                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
+                                            <td className="p-2 pl-4 font-medium">
+                                                {u}
+                                                <span className="ml-2 text-[9px] bg-sky-100 dark:bg-sky-900/30 text-sky-600 px-1.5 py-0.5 rounded font-bold uppercase">Usina</span>
+                                            </td>
+                                            <td className="p-2 text-right font-bold text-amber-600 dark:text-amber-400">{shareValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -246,7 +255,7 @@ export default function AbaComercialTecnico({ selectedSegment, activeRateioType,
                                 <th className="p-2">Centro de Custo</th>
                                 <th className="p-2">Classe Contábil</th>
                                 <th className="p-2 text-right">Valor Consolidado</th>
-                                <th className="p-2 text-right text-amber-600 dark:text-amber-400">Valor Rateado (1/14)</th>
+                                <th className="p-2 text-right text-amber-600 dark:text-amber-400">Valor Rateado (1/{divisorCota})</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
@@ -260,7 +269,7 @@ export default function AbaComercialTecnico({ selectedSegment, activeRateioType,
                                                 <span className="font-bold text-[10px] uppercase">{item.planDescription}</span>
                                             </td>
                                             <td className="py-2 text-right font-medium">{item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                            <td className="py-2 text-right font-bold text-amber-600 dark:text-amber-400">{(item.value / 14).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                            <td className="py-2 text-right font-bold text-amber-600 dark:text-amber-400">{(item.value / divisorCota).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                                         </tr>
                                     ))}
                                     <tr className="bg-slate-200 dark:bg-slate-800/80">
@@ -271,7 +280,7 @@ export default function AbaComercialTecnico({ selectedSegment, activeRateioType,
                                             {data.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         </td>
                                         <td className="py-2 px-3 text-right font-bold text-amber-700 dark:text-amber-400">
-                                            {(data.total / 14).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                            {(data.total / divisorCota).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         </td>
                                     </tr>
                                 </React.Fragment>

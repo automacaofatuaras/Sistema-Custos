@@ -321,20 +321,45 @@ const RateioUnitSummaryComponent = ({ transactions = [], selectedUnit, filter, u
 
             // 3. VENDEDORES NOROMIX
             if (isNoromix && Object.keys(manualPercents).length > 0) {
-                // Find CC associated with selectedUnit
                 const mapper = VENDEDORES_MAP.find(m => m.unit === selectedUnit);
                 if (mapper) {
-                    const vendorTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === mapper.cc);
-                    const originalTotal = vendorTxs.reduce((acc, t) => acc + t.value, 0);
-                    const percent = manualPercents[mapper.cc] ?? 100;
-                    const val = originalTotal * (percent / 100);
+                    let baseValue = 0;
+                    let displayBase = 0;
+                    let label = `Percentual Aplicado: ${manualPercents[mapper.cc] ?? 100}%`;
 
-                    if (val > 0) {
+                    // NOVA REGRA: 50% de Pereira Barreto (29003) vai para Ilha Solteira (22003)
+                    if (mapper.cc === 22003) {
+                        const ownTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === 22003);
+                        const ownTotal = ownTxs.reduce((acc, t) => acc + t.value, 0);
+
+                        const pbTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === 29003);
+                        const pbTotal = pbTxs.reduce((acc, t) => acc + t.value, 0);
+
+                        const percent = manualPercents[22003] ?? 100;
+                        displayBase = ownTotal + (pbTotal * 0.5);
+                        baseValue = displayBase * (percent / 100);
+                        if (pbTotal > 0) label += ` (+ 50% do CC 29003)`;
+                    } else if (mapper.cc === 29003) {
+                        const pbTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === 29003);
+                        const pbTotal = pbTxs.reduce((acc, t) => acc + t.value, 0);
+
+                        const percent = manualPercents[29003] ?? 100;
+                        displayBase = pbTotal * 0.5;
+                        baseValue = displayBase * (percent / 100);
+                        label += ` (Redução de 50% p/ CC 22003)`;
+                    } else {
+                        const vendorTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === mapper.cc);
+                        displayBase = vendorTxs.reduce((acc, t) => acc + t.value, 0);
+                        const percent = manualPercents[mapper.cc] ?? 100;
+                        baseValue = displayBase * (percent / 100);
+                    }
+
+                    if (baseValue > 0) {
                         results.push({
                             title: 'Rateio Vendedores',
                             description: 'Despesas de venda exclusivas ou rateadas manualmente',
-                            value: val,
-                            details: `Percentual Aplicado: ${percent}% (Base: ${originalTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})`
+                            value: baseValue,
+                            details: `${label} (Base: ${displayBase.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})`
                         });
                     }
                 }
@@ -379,6 +404,11 @@ const RateioUnitSummaryComponent = ({ transactions = [], selectedUnit, filter, u
                 const isUsina = (BUSINESS_HIERARCHY["Usinas de Asfalto"] || []).includes(selectedUnit);
                 const isPorto = BUSINESS_HIERARCHY["Portos de Areia"].includes(selectedUnit);
 
+                // Divisor dinâmico para CC 1043 e CC 1104: 6 Pedreiras + 2 Portos + Usinas Ativas
+                const usinasListCount = BUSINESS_HIERARCHY["Usinas de Asfalto"] || [];
+                const activeUsinasCount = usinasListCount.filter(u => periodTxs.some(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === u && (t.value || 0) > 0)).length;
+                const divisorDynamic = 6 + 2 + activeUsinasCount;
+
                 // Rateio Administrativo Principal (CC 1087 / 1089)
                 if (isPedreira || isPorto) {
                     const totalAdm = sumAdmCC([1087, 1089], admTransactions);
@@ -394,34 +424,60 @@ const RateioUnitSummaryComponent = ({ transactions = [], selectedUnit, filter, u
                 if (isPorto) {
                     const total1042 = sumCC([1042], generalTxs);
                     const listPortos = BUSINESS_HIERARCHY["Portos de Areia"];
-                    const share = listPortos.length > 0 ? total1042 / listPortos.length : 0;
+                    const share1042 = listPortos.length > 0 ? total1042 / listPortos.length : 0;
+
+                    const total1043 = sumCC([1043], generalTxs);
+                    const share1043 = divisorDynamic > 0 ? total1043 / divisorDynamic : 0;
+
                     results.push({
                         title: 'Encarregado de Produção (CC 1042)',
                         description: 'Rateio igualitário para Portos',
-                        value: share,
+                        value: share1042,
                         details: `Divisão por ${listPortos.length}`
+                    });
+                    results.push({
+                        title: 'Encarregado de Produção (CC 1043)',
+                        description: `Cota de Portos (Fração fixa 1/${divisorDynamic})`,
+                        value: share1043,
+                        details: 'Rateio compartilhado com Pedreiras/Usinas'
                     });
                 } else if (isPedreira || isUsina) {
                     const total1043 = sumCC([1043], generalTxs);
-                    const listPedreirasUsinas = [...BUSINESS_HIERARCHY["Pedreiras"], ...(BUSINESS_HIERARCHY["Usinas de Asfalto"] || [])];
-                    const share = listPedreirasUsinas.length > 0 ? total1043 / listPedreirasUsinas.length : 0;
-                    results.push({
-                        title: 'Encarregado de Produção (CC 1043)',
-                        description: 'Rateio igualitário para Pedreiras e Usinas',
-                        value: share,
-                        details: `Divisão por ${listPedreirasUsinas.length}`
-                    });
+                    const share1043 = divisorDynamic > 0 ? total1043 / divisorDynamic : 0;
+
+                    if (isUsina) {
+                        const hasProduction = periodTxs.some(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === selectedUnit && (t.value || 0) > 0);
+                        if (hasProduction) {
+                            results.push({
+                                title: 'Encarregado de Produção (CC 1043)',
+                                description: 'Rateio fixo (Com Produção)',
+                                value: share1043,
+                                details: `Fração fixa de 1/${divisorDynamic}`
+                            });
+                        }
+                    } else {
+                        results.push({
+                            title: 'Encarregado de Produção (CC 1043)',
+                            description: 'Rateio igualitário para Pedreiras e Usinas',
+                            value: share1043,
+                            details: `Fração fixa de 1/${divisorDynamic}`
+                        });
+                    }
                 }
 
-                // B. Comercial (CC 1104) -> Dividido por 14
+                // B. Comercial (CC 1104) -> Dividido por Cota Dinâmica (Pedreiras + Portos + Usinas Ativas)
                 const total1104 = sumAdmCC([1104], admTransactions);
-                const share1104 = total1104 / 14;
-                results.push({
-                    title: 'Rateio Comercial (CC 1104)',
-                    description: 'Despesa Administrativa Comercial',
-                    value: share1104,
-                    details: 'Fração fixa de 1/14'
-                });
+                const share1104 = total1104 / divisorDynamic;
+                const hadComercialProd = !isUsina || periodTxs.some(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === selectedUnit && (t.value || 0) > 0);
+
+                if (hadComercialProd) {
+                    results.push({
+                        title: 'Rateio Comercial (CC 1104)',
+                        description: 'Despesa Administrativa Comercial',
+                        value: share1104,
+                        details: `Fração fixa de 1/${divisorDynamic}`
+                    });
+                }
 
                 // C. Vendedores (2105, 3105, 5105)
                 const total2105 = sumCC([2105, 20105], generalTxs);

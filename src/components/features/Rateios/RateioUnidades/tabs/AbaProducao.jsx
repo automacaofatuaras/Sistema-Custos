@@ -12,10 +12,15 @@ export default function AbaProducao({ calculatedData, onOpenImport }) {
     const total1043 = pedreirasItems.reduce((acc, t) => acc + t.value, 0);
 
     const portosUnits = BUSINESS_HIERARCHY['Portos de Areia'];
-    const pedreirasUnits = [...BUSINESS_HIERARCHY['Pedreiras'], ...(BUSINESS_HIERARCHY['Usinas de Asfalto'] || [])];
+    const pedreirasUnits = BUSINESS_HIERARCHY['Pedreiras'];
+    const usinasUnits = BUSINESS_HIERARCHY['Usinas de Asfalto'] || [];
+
+    // Divisor dinâmico para CC 1043: 6 Pedreiras + 2 Portos + Usinas Ativas
+    const activeUsinasCount = usinasUnits.filter(u => (calculatedData.activeUnits || []).includes(u)).length;
+    const divisorDynamic = 6 + 2 + activeUsinasCount;
 
     const share1042 = portosUnits.length > 0 ? total1042 / portosUnits.length : 0;
-    const share1043 = pedreirasUnits.length > 0 ? total1043 / pedreirasUnits.length : 0;
+    const share1043 = divisorDynamic > 0 ? total1043 / divisorDynamic : 0;
 
     // Agrupamento para subtotais por CC e Sumarizado por Classe
     const groupedItems = calculatedData.itemsProd.reduce((acc, item) => {
@@ -63,7 +68,7 @@ export default function AbaProducao({ calculatedData, onOpenImport }) {
                 {/* Distribuição Portos */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
                     <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                        <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-sky-500" />Distribuição Portos (1/2)</h4>
+                        <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-sky-500" />Distribuição Portos (1/2 + 1/{divisorDynamic})</h4>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left">
@@ -77,7 +82,7 @@ export default function AbaProducao({ calculatedData, onOpenImport }) {
                                 {portosUnits.sort().map((u, idx) => (
                                     <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
                                         <td className="p-3 pl-6 font-medium">{u}</td>
-                                        <td className="p-3 text-right font-bold text-sky-600 dark:text-sky-400">{share1042.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                        <td className="p-3 text-right font-bold text-sky-600 dark:text-sky-400">{(share1042 + share1043).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -85,10 +90,10 @@ export default function AbaProducao({ calculatedData, onOpenImport }) {
                     </div>
                 </div>
 
-                {/* Distribuição Pedreiras */}
+                {/* Distribuição Pedreiras e Usinas */}
                 <div className="bg-white dark:bg-slate-800 rounded-xl border dark:border-slate-700 overflow-hidden shadow-sm">
                     <div className="p-4 bg-slate-100 dark:bg-slate-900 border-b dark:border-slate-700 flex justify-between items-center">
-                        <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-blue-500" />Distribuição Pedreiras e Usinas (1/12)</h4>
+                        <h4 className="font-bold text-slate-700 dark:text-white flex items-center gap-2"><Share2 size={18} className="text-blue-500" />Distribuição Pedreiras e Usinas (1/{divisorDynamic})</h4>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm text-left">
@@ -99,12 +104,23 @@ export default function AbaProducao({ calculatedData, onOpenImport }) {
                                 </tr>
                             </thead>
                             <tbody className="divide-y dark:divide-slate-700">
-                                {pedreirasUnits.sort().map((u, idx) => (
-                                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
-                                        <td className="p-3 pl-6 font-medium">{u}</td>
-                                        <td className="p-3 text-right font-bold text-blue-600 dark:text-blue-400">{share1043.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                    </tr>
-                                ))}
+                                {[...pedreirasUnits, ...usinasUnits].sort().map((u, idx) => {
+                                    const isUsina = usinasUnits.includes(u);
+                                    const hadProduction = calculatedData.activeUnits?.includes(u);
+
+                                    // Usinas só recebem se tiveram produção
+                                    if (isUsina && !hadProduction) return null;
+
+                                    return (
+                                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 dark:text-slate-300">
+                                            <td className="p-3 pl-6 font-medium">
+                                                {u}
+                                                {isUsina && <span className="ml-2 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-600 px-1.5 py-0.5 rounded font-bold uppercase">Usina</span>}
+                                            </td>
+                                            <td className="p-3 text-right font-bold text-blue-600 dark:text-blue-400">{share1043.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -120,23 +136,26 @@ export default function AbaProducao({ calculatedData, onOpenImport }) {
                                 <th className="p-2">Centro de Custo</th>
                                 <th className="p-2">Classe Contábil</th>
                                 <th className="p-2 text-right">Valor Consolidado</th>
-                                <th className="p-2 text-right text-blue-600 dark:text-blue-400">Valor Rateado</th>
+                                <th className="p-2 text-right text-blue-600 dark:text-blue-400">Valor Rateado (Cota)</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                             {Object.entries(groupedItems).map(([cc, data]) => (
                                 <React.Fragment key={cc}>
-                                    {Object.values(data.itemsMap).map((item, idx) => (
-                                        <tr key={`${cc}-${idx}`} className="dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
-                                            <td className="py-2 font-mono text-[10px] uppercase text-blue-600 dark:text-blue-400">{cc}</td>
-                                            <td className="py-2">
-                                                <span className="font-mono text-[10px] bg-slate-200 dark:bg-slate-700 px-1 rounded mr-1">{item.accountPlan}</span>
-                                                <span className="font-bold text-[10px] uppercase">{item.planDescription}</span>
-                                            </td>
-                                            <td className="py-2 text-right font-medium">{item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                            <td className="py-2 text-right font-bold text-blue-600 dark:text-blue-400">{(item.value / (cc.startsWith('1042') ? 2 : 12)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                                        </tr>
-                                    ))}
+                                    {Object.values(data.itemsMap).map((item, idx) => {
+                                        const divisor = cc.startsWith('1042') ? 2 : 14;
+                                        return (
+                                            <tr key={`${cc}-${idx}`} className="dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                                <td className="py-2 font-mono text-[10px] uppercase text-blue-600 dark:text-blue-400">{cc}</td>
+                                                <td className="py-2">
+                                                    <span className="font-mono text-[10px] bg-slate-200 dark:bg-slate-700 px-1 rounded mr-1">{item.accountPlan}</span>
+                                                    <span className="font-bold text-[10px] uppercase">{item.planDescription}</span>
+                                                </td>
+                                                <td className="py-2 text-right font-medium">{item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                                                <td className="py-2 text-right font-bold text-blue-600 dark:text-blue-400">{(item.value / divisor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                                            </tr>
+                                        );
+                                    })}
                                     <tr className="bg-slate-200 dark:bg-slate-800/80">
                                         <td colSpan={2} className="py-2 px-3 text-right font-bold text-slate-700 dark:text-slate-300 uppercase text-[10px]">
                                             SUBTOTAL {cc}
@@ -145,7 +164,7 @@ export default function AbaProducao({ calculatedData, onOpenImport }) {
                                             {data.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         </td>
                                         <td className="py-2 px-3 text-right font-bold text-blue-700 dark:text-blue-400">
-                                            {(data.total / (cc.startsWith('1042') ? 2 : 12)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                            {(data.total / (cc.startsWith('1042') ? 2 : 14)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         </td>
                                     </tr>
                                 </React.Fragment>

@@ -14,7 +14,10 @@ const FormItem = ({ label, children, className }) => (
     </div>
 );
 
-const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentFilter, onAddMetric, onUpdateMetric, onDeleteMetric }) => {
+const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentFilter, onAddMetric, onUpdateMetric, onDeleteMetric, selectedSegment }) => {
+    const isUsina = selectedSegment === 'Usinas de Asfalto';
+    const isConcreteira = selectedSegment === 'Concreteiras';
+    const noStockSegment = isUsina || isConcreteira;
     const [showAdjust, setShowAdjust] = useState(false);
     const [adjustId, setAdjustId] = useState(null);
     const [adjustDate, setAdjustDate] = useState(new Date().toISOString().slice(0, 10));
@@ -172,6 +175,29 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
             evolution: filteredEvolution
         };
     }, [transactions, globalCostPerUnit, currentFilter]);
+
+    if (noStockSegment) {
+        const materialName = isUsina ? 'massa asfáltica' : 'concreto usinado';
+        return (
+            <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-slate-800 rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-700 animate-in fade-in slide-in-from-bottom-4">
+                <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mb-6">
+                    <Package className="text-indigo-500" size={40} />
+                </div>
+                <h3 className="text-2xl font-black text-slate-800 dark:text-white mb-2 tracking-tight">Estoque Não Aplicável</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-center max-w-md font-medium">
+                    O segmento de {selectedSegment} opera sob demanda. Todo {materialName} produzido é carregado e vendido imediatamente, resultando em saldo de estoque zero.
+                </p>
+                <div className="mt-8 flex gap-3">
+                    <span className="px-4 py-2 bg-slate-100 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-bold uppercase tracking-widest">
+                        Operação Just-in-Time
+                    </span>
+                    <span className="px-4 py-2 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl text-xs font-bold uppercase tracking-widest">
+                        Sem Perdas de Estoque
+                    </span>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
