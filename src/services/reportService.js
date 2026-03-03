@@ -6,6 +6,11 @@ const EMAILJS_SERVICE_ID = 'service_32app23';
 const EMAILJS_TEMPLATE_ID = 'template_96sach3';
 const EMAILJS_PUBLIC_KEY = '7HOADmdflknl1TTIc';
 
+// Inicialização necessária para a versão 4 do SDK
+emailjs.init({
+    publicKey: EMAILJS_PUBLIC_KEY,
+});
+
 export const reportService = {
     /**
      * Gera o resumo executivo retornado ao objeto dashboard
@@ -238,7 +243,9 @@ Reporte gerado pelo painel central.
                         EMAILJS_SERVICE_ID,
                         EMAILJS_TEMPLATE_ID,
                         templateParams,
-                        EMAILJS_PUBLIC_KEY
+                        {
+                            publicKey: EMAILJS_PUBLIC_KEY,
+                        }
                     );
                     sucessCount++;
                 } catch (err) {
