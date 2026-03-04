@@ -195,6 +195,12 @@ export default function AbaVendedores({
         </tr>
     );
 
+    const allUnitsList = [...pedreirasList, ...portosList, ...usinasList];
+    const totalP2105 = allUnitsList.reduce((acc, unit) => acc + (parseFloat(manualPercents[unit]?.['2105']) || 0), 0);
+    const totalP3105 = allUnitsList.reduce((acc, unit) => acc + (parseFloat(manualPercents[unit]?.['3105']) || 0), 0);
+    const totalP5105 = allUnitsList.reduce((acc, unit) => acc + (parseFloat(manualPercents[unit]?.['5105']) || 0), 0);
+    const totalGeralAlocado = (calculatedData.totalVend2105 * (totalP2105 / 100)) + (calculatedData.totalVend3105 * (totalP3105 / 100)) + (calculatedData.totalVend5105 * (totalP5105 / 100));
+
     return (
         <div className="space-y-6 animate-in fade-in">
             {/* Cards Totalizadores */}
@@ -317,6 +323,24 @@ export default function AbaVendedores({
 
                             {renderSeparator("Usinas de Asfalto")}
                             {usinasList.map(u => renderUnitRow(u, 'emerald'))}
+
+                            <tr className="bg-slate-100 dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-200 border-t-2 border-slate-200 dark:border-slate-700">
+                                <td className="p-3 pl-6 text-right uppercase text-[10px] tracking-widest text-slate-500">
+                                    TOTAL DISTRIBUÍDO
+                                </td>
+                                <td className={`p-3 text-center border-x dark:border-slate-700 ${totalP2105 !== 100 ? (totalP2105 > 100 ? 'text-rose-500' : 'text-amber-500') : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                    {totalP2105}%
+                                </td>
+                                <td className={`p-3 text-center border-x dark:border-slate-700 ${totalP3105 !== 100 ? (totalP3105 > 100 ? 'text-rose-500' : 'text-amber-500') : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                    {totalP3105}%
+                                </td>
+                                <td className={`p-3 text-center border-x dark:border-slate-700 ${totalP5105 !== 100 ? (totalP5105 > 100 ? 'text-rose-500' : 'text-amber-500') : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                    {totalP5105}%
+                                </td>
+                                <td className="p-3 text-right bg-slate-200 dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 text-lg">
+                                    {totalGeralAlocado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>

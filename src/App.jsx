@@ -567,8 +567,8 @@ export default function App() {
         return Object.values(months).sort((a, b) => a.sortKey - b.sortKey).map(({ sortKey, ...rest }) => rest);
     }, [ytdData, activeTab, selectedUnit]);
 
-    const stockEvolutionData = useMemo(() => {
-        if (activeTab !== 'dashboard' || !selectedUnit) return [];
+    const stockData = useMemo(() => {
+        if (activeTab !== 'dashboard' || !selectedUnit) return { finalStock: 0, evolution: [] };
 
         let endM = filter.type === 'month' ? filter.month :
             filter.type === 'quarter' ? (filter.quarter * 3) - 1 :
@@ -580,14 +580,29 @@ export default function App() {
         const sorted = relevantTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
         const fullEvolution = [];
-        let currentStock = 0;
+        let balances = {
+            'Areia Fina': 0,
+            'Areia Grossa': 0,
+            'Areia Suja': 0
+        };
 
         sorted.forEach(t => {
             if (t.type !== 'metric') return;
+            if (t.metricType === 'estoque') return; // Apenas evolução do físico
+
+            let category = null;
+            const desc = (t.materialDescription || t.description || '').toLowerCase();
+
+            if (desc.includes('fina')) category = 'Areia Fina';
+            else if (desc.includes('grossa')) category = 'Areia Grossa';
+            else if (desc.includes('suja')) category = 'Areia Suja';
+
+            if (!category) return;
+
             const val = t.value || 0;
-            if (t.metricType === 'producao') currentStock += val;
-            else if (t.metricType === 'vendas') currentStock -= val;
-            else if (t.metricType === 'estoque_fisico') currentStock = val;
+            if (t.metricType === 'producao') balances[category] += val;
+            else if (t.metricType === 'vendas') balances[category] -= val;
+            else if (t.metricType === 'estoque_fisico') balances[category] = val;
 
             const safeDateStr = t.date?.length === 10 ? t.date + 'T12:00:00' : t.date;
             const dateObj = new Date(safeDateStr);
@@ -596,11 +611,14 @@ export default function App() {
             const year = dateObj.getFullYear();
             if (year === filter.year) {
                 let mKey = dateObj.getMonth();
-                fullEvolution[mKey] = { name: mLabel, Estoque: currentStock, sortKey: mKey };
+                const totalMoment = Object.values(balances).reduce((a, b) => a + b, 0);
+                fullEvolution[mKey] = { name: mLabel, Estoque: totalMoment, sortKey: mKey };
             }
         });
 
-        return fullEvolution.filter(Boolean);
+        const totalFinal = Object.values(balances).reduce((a, b) => a + b, 0);
+
+        return { finalStock: totalFinal, evolution: fullEvolution.filter(Boolean) };
     }, [unitTransactions, filter, activeTab, selectedUnit]);
 
     // Loading Screen
@@ -856,7 +874,8 @@ export default function App() {
                         {/* Segment Dashboard */}
                         {selectedSegment && !selectedUnit && !['rateios', 'global', 'users', 'costcenters'].includes(activeTab) && (
                             <SegmentDashboard
-                                transactions={transactions}
+                                transactions={filteredData}
+                                prevTransactions={prevFilteredData}
                                 segmentName={selectedSegment}
                                 units={BUSINESS_HIERARCHY[selectedSegment] || []}
                             />
@@ -876,7 +895,7 @@ export default function App() {
                                     <KpiCard title="Margem Líquida" value={resultMargin.toFixed(1)} suffix="%" icon={Target} color={resultMargin >= 0 ? 'emerald' : 'rose'} trend={calcTrend(resultMargin, prevResultMargin)} />
                                     <KpiCard title="Total Produzido" value={totalProduction.toLocaleString('pt-BR')} suffix={currentMeasureUnit} icon={Factory} color="indigo" trend={calcTrend(totalProduction, prevTotalProduction)} />
                                     <KpiCard title="Total Vendido" value={totalSales.toLocaleString('pt-BR')} suffix={currentMeasureUnit} icon={ShoppingCart} color="sky" trend={calcTrend(totalSales, prevTotalSales)} />
-                                    <KpiCard title="Estoque Estimado" value={(stockEvolutionData.length > 0 ? stockEvolutionData[stockEvolutionData.length - 1].Estoque : 0).toLocaleString('pt-BR')} suffix={currentMeasureUnit} icon={Package} color="amber" trend={0} />
+                                    <KpiCard title="Estoque" value={stockData.finalStock.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} suffix={currentMeasureUnit} icon={Package} color="amber" trend={0} />
                                 </div>
 
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -923,7 +942,7 @@ export default function App() {
                                         <h3 className="mb-6 font-bold text-sm uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2"><Package size={18} className="text-amber-500" /> Evolução do Estoque (Mês)</h3>
                                         <div className="h-64">
                                             <ResponsiveContainer width="100%" height="100%">
-                                                <BarChart data={stockEvolutionData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                                <BarChart data={stockData.evolution} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
                                                     <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
                                                     <YAxis tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />

@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
     Download, TrendingUp, TrendingDown, Target, FileSpreadsheet,
-    Factory, ShoppingCart, Banknote, Receipt, Truck, Briefcase, Zap
+    Factory, ShoppingCart, Banknote, Receipt, Truck, Briefcase, Zap, Package
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -82,6 +82,10 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
         const investimentos = sum(t => t.type === 'expense' && (t.accountPlan?.startsWith('06') || t.description?.toLowerCase().includes('consórcio') || t.description?.toLowerCase().includes('investimento')));
         const resultFinal = resultPosDespesas - investimentos;
 
+        // Novos Resultados Específicos
+        const resultadoMaterial = recMaterial - totalCustoOperacional - impostos - totalAdministrativo;
+        const resultadoFrete = recFrete - totalTransporteFinal;
+
         return {
             totalRevenue, recMaterial, recFrete, subsidio,
             despUnidade, outrasDespesas, totalCustoOperacional,
@@ -89,7 +93,8 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
             rateioAdm, multas, totalAdministrativo,
             impostos,
             investimentos,
-            margemContribuicao, resultOperacional, resultPosDespesas, resultFinal
+            margemContribuicao, resultOperacional, resultPosDespesas, resultFinal,
+            resultadoMaterial, resultadoFrete
         };
     }, [transactions, selectedUnit]);
 
@@ -139,15 +144,14 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             {/* Destaques */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <SummaryCard title="Receita Bruta" value={dreData.totalRevenue} icon={TrendingUp} colorClass="bg-emerald-500" highlight />
-                <SummaryCard title="Custo Operacional Total" value={dreData.totalCustoOperacional} icon={Factory} colorClass="text-amber-500" />
-                <SummaryCard title="Outros Custos (Transp, Adm, Imp)" value={dreData.totalTransporteFinal + dreData.totalAdministrativo + dreData.impostos} icon={Briefcase} colorClass="text-rose-500" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <SummaryCard title="Resultado Material" value={dreData.resultadoMaterial} icon={Factory} colorClass={dreData.resultadoMaterial >= 0 ? "bg-emerald-500" : "bg-rose-500"} highlight />
+                <SummaryCard title="Resultado Frete" value={dreData.resultadoFrete} icon={Truck} colorClass={dreData.resultadoFrete >= 0 ? "bg-sky-500" : "bg-rose-500"} highlight />
                 <SummaryCard title="Resultado Líquido" value={dreData.resultFinal} icon={Target} colorClass={dreData.resultFinal >= 0 ? "bg-indigo-600" : "bg-rose-600"} highlight />
             </div>
 
             {/* KPIs Físicos */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm flex items-center gap-4">
                     <div className="p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl text-indigo-600 dark:text-indigo-400">
                         <Factory size={24} />
@@ -164,6 +168,17 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
                     <div>
                         <p className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Vendas Totais</p>
                         <h4 className="text-2xl font-black dark:text-white">{totalSales?.toLocaleString()} <span className="text-sm text-slate-400 lowercase">{measureUnit}</span></h4>
+                    </div>
+                </div>
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm flex items-center gap-4">
+                    <div className="p-4 bg-amber-50 dark:bg-amber-900/30 rounded-xl text-amber-600 dark:text-amber-400">
+                        <Package size={24} />
+                    </div>
+                    <div>
+                        <p className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-1">Evolução do Estoque</p>
+                        <h4 className="text-2xl font-black dark:text-white">
+                            {((totalProduction || 0) - (totalSales || 0)) > 0 ? "+" : ""}{((totalProduction || 0) - (totalSales || 0)).toLocaleString()} <span className="text-sm text-slate-400 lowercase">{measureUnit}</span>
+                        </h4>
                     </div>
                 </div>
             </div>

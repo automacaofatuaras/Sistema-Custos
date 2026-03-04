@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import KpiCard from '../common/KpiCard';
 
-const SegmentDashboard = ({ transactions, segmentName, units }) => {
+const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, units }) => {
     // 1. Processamento de Dados Agregados
     const segmentData = useMemo(() => {
         const dataByUnit = {};
@@ -52,7 +52,31 @@ const SegmentDashboard = ({ transactions, segmentName, units }) => {
         return { chartData, totals };
     }, [transactions, segmentName, units]);
 
+    const prevSegmentData = useMemo(() => {
+        const prevTotals = { revenue: 0, expense: 0, balance: 0, margin: 0 };
+        prevTransactions.forEach(t => {
+            const tSegment = t.segment || '';
+            const isMatch = units.some(u => tSegment.includes(u));
+
+            if (isMatch) {
+                if (t.type === 'revenue') prevTotals.revenue += (t.value || 0);
+                if (t.type === 'expense') prevTotals.expense += (t.value || 0);
+            }
+        });
+
+        prevTotals.balance = prevTotals.revenue - prevTotals.expense;
+        prevTotals.margin = prevTotals.revenue > 0 ? (prevTotals.balance / prevTotals.revenue) * 100 : 0;
+
+        return { totals: prevTotals };
+    }, [prevTransactions, segmentName, units]);
+
+    const calcTrend = (curr, prev) => {
+        if (prev === 0) return curr > 0 ? 100 : (curr < 0 ? -100 : 0);
+        return ((curr - prev) / Math.abs(prev)) * 100;
+    };
+
     const { chartData, totals } = segmentData;
+    const { totals: prevTotals } = prevSegmentData;
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -75,10 +99,10 @@ const SegmentDashboard = ({ transactions, segmentName, units }) => {
 
             {/* KPIs Consolidados */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <KpiCard title="Faturamento Total" value={totals.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" prefix="" suffix="" />
-                <KpiCard title="Custo Total" value={totals.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" reverseColor={true} prefix="" suffix="" />
-                <KpiCard title="Resultado Líquido" value={totals.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={totals.balance >= 0 ? 'indigo' : 'rose'} prefix="" suffix="" />
-                <KpiCard title="Margem Média" value={totals.margin.toFixed(1)} suffix="%" icon={Target} color="amber" prefix="" />
+                <KpiCard title="Faturamento Total" value={totals.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingUp} color="emerald" trend={calcTrend(totals.revenue, prevTotals.revenue)} prefix="" suffix="" />
+                <KpiCard title="Custo Total" value={totals.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={TrendingDown} color="rose" reverseColor={true} trend={calcTrend(totals.expense, prevTotals.expense)} prefix="" suffix="" />
+                <KpiCard title="Resultado Líquido" value={totals.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} icon={DollarSign} color={totals.balance >= 0 ? 'indigo' : 'rose'} trend={calcTrend(totals.balance, prevTotals.balance)} prefix="" suffix="" />
+                <KpiCard title="Margem Média" value={totals.margin.toFixed(1)} suffix="%" icon={Target} color="amber" trend={calcTrend(totals.margin, prevTotals.margin)} prefix="" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
