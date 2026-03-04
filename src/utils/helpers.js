@@ -50,6 +50,8 @@ export const getUnitByCostCenter = (ccCode) => {
 };
 
 export const getTransactionDreCategory = (t, selectedUnit = null) => {
+    if (t.dreType) return t.dreType;
+
     const parentSeg = selectedUnit ? getParentSegment(selectedUnit) || "Geral" : "Geral";
     const rules = COST_CENTER_RULES[parentSeg];
 

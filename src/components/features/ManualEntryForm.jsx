@@ -3,28 +3,22 @@ import { X, Calendar, DollarSign, Tag, Hash, FileText, User, Layout, CheckCircle
 import dbService from '../../services/dbService';
 import { PLANO_CONTAS } from '../../constants/planoContas';
 import SearchableSelect from '../common/SearchableSelect';
+import { getTransactionDreCategory } from '../../utils/helpers';
 
 const GROUPS = [
-    'DESPESAS DA UNIDADE',
-    'TRANSPORTE',
-    'ADMINISTRATIVO',
-    'IMPOSTOS',
-    'INVESTIMENTOS'
+    'Custo Operacional',
+    'Custo Máquinas e Equipamentos',
+    'Combustíveis e Lubrificantes (Transporte)',
+    'Manutenção Frota (Transporte)',
+    'Outras Despesas Frota (Transporte)',
+    'Fretes Terceiros (Transporte)',
+    'Custo Frota Parada (Transporte)',
+    'Rateio Administrativo Central',
+    'Multas e Taxas',
+    'Total de Impostos',
+    'Investimentos E Consórcios',
+    'Outras Despesas'
 ];
-
-const SUB_GROUPS = {
-    'DESPESAS DA UNIDADE': [
-        'CUSTO OPERACIONAL INDÚSTRIA',
-        'CUSTO COMERCIAL GERÊNCIA',
-        'CUSTO COMERCIAL VENDEDORES',
-        'CUSTO OPERACIONAL ADMINISTRATIVO',
-        'OUTRAS DESPESAS'
-    ],
-    'TRANSPORTE': ['CUSTO TRANSPORTE', 'GERAL'],
-    'ADMINISTRATIVO': ['CUSTO RATEIO DESPESAS ADMINISTRATIVAS', 'GERAL'],
-    'IMPOSTOS': ['CUSTO IMPOSTOS', 'GERAL'],
-    'INVESTIMENTOS': ['INVESTIMENTOS GERAIS', 'GERAL']
-};
 
 const ManualEntryForm = ({ onClose, segments, currentUnit, onSave, user, initialData, showToast }) => {
     const [form, setForm] = useState({
@@ -34,8 +28,7 @@ const ManualEntryForm = ({ onClose, segments, currentUnit, onSave, user, initial
         value: '',
         segment: currentUnit || '',
         accountPlan: '',
-        grupo: '',
-        subgrupo: '',
+        dreType: '',
         source: 'manual',
         revenueType: '',
         revenueSubType: '',
@@ -68,13 +61,28 @@ const ManualEntryForm = ({ onClose, segments, currentUnit, onSave, user, initial
                 safeDate = initialData.date.substring(0, 10);
             }
 
+            let safeAccountPlan = initialData.accountPlan || '';
+            const existsInPlano = PLANO_CONTAS.some(p => p.code === safeAccountPlan);
+            if (!existsInPlano || !safeAccountPlan) {
+                const targetText = safeAccountPlan || initialData.planDescription || '';
+                if (targetText) {
+                    const fallbackOption = PLANO_CONTAS.find(p =>
+                        p.name.toUpperCase().trim() === targetText.toUpperCase().trim() ||
+                        p.name.toUpperCase().includes(targetText.toUpperCase().trim()) ||
+                        targetText.toUpperCase().trim().includes(p.name.toUpperCase())
+                    );
+                    if (fallbackOption) {
+                        safeAccountPlan = fallbackOption.code;
+                    }
+                }
+            }
+
             setForm({
                 ...initialData,
                 date: safeDate,
                 source: initialData.source || 'manual',
-                accountPlan: initialData.accountPlan || '',
-                grupo: initialData.grupo || '',
-                subgrupo: initialData.subgrupo || '',
+                accountPlan: safeAccountPlan,
+                dreType: initialData.dreType || (initialData.type === 'expense' ? getTransactionDreCategory(initialData, currentUnit) : ''),
                 revenueType: initialData.revenueType || '',
                 revenueSubType: initialData.revenueSubType || '',
                 costCenterInput: initialData.costCenterInput || (initialData.costCenter ? initialData.costCenter.split(' ')[0] : '')
@@ -89,13 +97,7 @@ const ManualEntryForm = ({ onClose, segments, currentUnit, onSave, user, initial
             .map(opt => ({ ...opt, label: opt.label.includes(' - ') ? opt.label.split(' - ')[1] : opt.label }));
     }, []);
 
-    const groupOptions = GROUPS.map(g => ({ value: g, label: g }));
-
-    const subGroupOptions = useMemo(() => {
-        if (!form.grupo) return [];
-        const subs = SUB_GROUPS[form.grupo] || [];
-        return subs.map(s => ({ value: s, label: s }));
-    }, [form.grupo]);
+    const dreTypeOptions = GROUPS.map(g => ({ value: g, label: g }));
 
     const handleSubmit = async () => {
         const val = parseFloat(form.value);
@@ -107,7 +109,7 @@ const ManualEntryForm = ({ onClose, segments, currentUnit, onSave, user, initial
         let finalAccountPlan = form.accountPlan;
 
         if (form.type === 'expense') {
-            if (!form.grupo) return showToast("Selecione o grupo.", 'error');
+            if (!form.dreType) return showToast("Selecione o Tipo DRE.", 'error');
             if (!form.accountPlan) return showToast("Selecione a classe.", 'error');
             const planItem = PLANO_CONTAS.find(p => p.code === form.accountPlan);
             planDesc = planItem ? planItem.name : '';
@@ -272,26 +274,14 @@ const ManualEntryForm = ({ onClose, segments, currentUnit, onSave, user, initial
                                 icon={Building2}
                             />
 
-                            {/* GRUPO */}
+                            {/* TIPO DRE */}
                             <SearchableSelect
-                                label="GRUPO"
-                                placeholder="Selecione o grupo"
-                                options={groupOptions}
-                                value={form.grupo}
-                                onChange={val => setForm({ ...form, grupo: val, subgrupo: '' })}
+                                label="TIPO DRE / GRUPO"
+                                placeholder="Selecione o tipo DRE"
+                                options={dreTypeOptions}
+                                value={form.dreType}
+                                onChange={val => setForm({ ...form, dreType: val })}
                                 icon={Layers}
-                                showSearch={false}
-                            />
-
-                            {/* SUB-GRUPO */}
-                            <SearchableSelect
-                                label="SUB-GRUPO"
-                                placeholder="Selecione o sub-grupo"
-                                options={subGroupOptions}
-                                value={form.subgrupo}
-                                onChange={val => setForm({ ...form, subgrupo: val })}
-                                disabled={!form.grupo}
-                                icon={Bookmark}
                                 showSearch={false}
                             />
 

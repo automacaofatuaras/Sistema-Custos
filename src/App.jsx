@@ -4,7 +4,7 @@ import {
     BarChart3 as BarChartIcon, FileUp, TrendingUp, Globe,
     UploadCloud, Users, Sparkles, Sun, Moon, LogOut, UserCircle,
     ChevronRight, TrendingDown, Factory, ShoppingCart, Search, FileText, PlusCircle, Edit2, Briefcase, FolderClosed,
-    ShieldCheck, Trash2, Eye, X, Building2, Target, FileSpreadsheet
+    ShieldCheck, Trash2, Eye, X, Building2, Target, FileSpreadsheet, ClipboardCheck
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ComposedChart, Line
@@ -44,10 +44,10 @@ import CostCenterManager from './components/features/CostCenter/CostCenterManage
 import SegmentDashboard from './components/features/SegmentDashboard';
 import WelcomeDashboard from './components/features/WelcomeDashboard';
 
-// Feature Components
 import ManualEntryForm from './components/features/ManualEntryForm';
 import AIReportModal from './components/modals/AIReportModal';
 import CostCenterReportModal from './components/modals/CostCenterReportModal';
+import ConferenciaModal from './components/features/ConferenciaModal';
 import RateioUnitSummaryComponent from './components/features/Rateios/RateioUnitSummaryComponent';
 
 // Hooks
@@ -158,11 +158,13 @@ export default function App() {
     const [filter, setFilter] = useState({ month: new Date().getMonth(), year: new Date().getFullYear(), type: 'month' });
     const [lancamentosSearch, setLancamentosSearch] = useState('');
     const [lancamentosDreType, setLancamentosDreType] = useState('ALL');
+    const [lancamentosOrigem, setLancamentosOrigem] = useState('ALL');
 
     // Modals Visibility
     const [showEntryForm, setShowEntryForm] = useState(false);
     const [showAIModal, setShowAIModal] = useState(false);
     const [showCCReportModal, setShowCCReportModal] = useState(false);
+    const [showConferenciaModal, setShowConferenciaModal] = useState(false);
     const [editingTx, setEditingTx] = useState(null);
     const [detailsTx, setDetailsTx] = useState(null);
     const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -308,6 +310,21 @@ export default function App() {
     const displayLancamentos = useMemo(() => {
         const base = filteredData.filter(t => t.type !== 'metric');
         let filtered = base;
+
+        if (lancamentosOrigem !== 'ALL') {
+            if (lancamentosOrigem === 'ENTRADAS') {
+                filtered = filtered.filter(t => (t.source && t.source === 'SAE134-1') || (t.importBatchId && t.importBatchId.includes('SAE134-1')) || (t.sourceFile && t.sourceFile.includes('SAE134-1')));
+            } else if (lancamentosOrigem === 'SAIDAS') {
+                filtered = filtered.filter(t => (t.source && t.source === 'SAE127-1') || (t.importBatchId && t.importBatchId.includes('SAE127-1')) || (t.sourceFile && t.sourceFile.includes('SAE127-1')));
+            } else if (lancamentosOrigem === 'OUTROS') {
+                filtered = filtered.filter(t => {
+                    const isNewEntry = t.source === 'SAE134-1';
+                    const isNewExit = t.source === 'SAE127-1';
+                    const idString = t.importBatchId || t.sourceFile || '';
+                    return !isNewEntry && !isNewExit && !idString.includes('SAE134-1') && !idString.includes('SAE127-1');
+                });
+            }
+        }
 
         if (lancamentosDreType && lancamentosDreType !== 'ALL') {
             filtered = filtered.filter(t => getTransactionDreCategory(t, selectedUnit) === lancamentosDreType);
@@ -988,9 +1005,41 @@ export default function App() {
                                     />
                                 ) : (
                                     <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border dark:border-slate-700 overflow-hidden">
-                                        <div className="p-6 border-b dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
-                                            <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
+                                        <div className="p-6 border-b dark:border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/50 dark:bg-slate-900/50">
+                                            <div className="flex items-center gap-4">
+                                                <h3 className="font-bold text-lg dark:text-white">Lançamentos do Período</h3>
+
+                                                {/* Botões de Filtro de Origem */}
+                                                <div className="flex items-center bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm ml-4">
+                                                    <button
+                                                        onClick={() => setLancamentosOrigem('ALL')}
+                                                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${lancamentosOrigem === 'ALL' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                    >
+                                                        Todos
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setLancamentosOrigem('ENTRADAS')}
+                                                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${lancamentosOrigem === 'ENTRADAS' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                    >
+                                                        Entradas
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setLancamentosOrigem('SAIDAS')}
+                                                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${lancamentosOrigem === 'SAIDAS' ? 'bg-rose-50 text-rose-600 dark:bg-rose-900/30' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                    >
+                                                        Saídas
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setLancamentosOrigem('OUTROS')}
+                                                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${lancamentosOrigem === 'OUTROS' ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/30' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                                    >
+                                                        Outros
+                                                    </button>
+                                                </div>
+                                            </div>
+
                                             <div className="flex gap-2">
+                                                <button onClick={() => setShowConferenciaModal(true)} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-sm transition-colors"><ClipboardCheck size={18} /> Conferência</button>
                                                 <button onClick={() => setShowCCReportModal(true)} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors"><FileText size={18} /> Relatório CC</button>
                                                 <button onClick={() => { setEditingTx(null); setShowEntryForm(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors"><PlusCircle size={18} /> Novo Lançamento</button>
                                             </div>
@@ -1150,16 +1199,25 @@ export default function App() {
                 )}
             </main>
 
-            {/* Modals */}
-            {showAIModal && <AIReportModal onClose={() => setShowAIModal(false)} period={`${filter.month + 1}/${filter.year}`} />}
-            {showCCReportModal && <CostCenterReportModal isOpen={showCCReportModal} onClose={() => setShowCCReportModal(false)} transactions={transactions} />}
-
-            {showDetailsModal && detailsTx && (
+            {/* Modals Globais */}
+            {showDetailsModal && (
                 <TransactionDetailModal
                     tx={detailsTx}
-                    onClose={() => setShowDetailsModal(false)}
+                    onClose={() => { setShowDetailsModal(false); setDetailsTx(null); }}
                 />
             )}
+
+            {showConferenciaModal && (
+                <ConferenciaModal
+                    isOpen={showConferenciaModal}
+                    onClose={() => setShowConferenciaModal(false)}
+                    transactions={filteredData.filter(t => t.type !== 'metric')}
+                    periodDesc={`${filter.type === 'month' ? filter.month + 1 + '/' : ''}${filter.year}`}
+                />
+            )}
+
+            {showAIModal && <AIReportModal onClose={() => setShowAIModal(false)} period={`${filter.month + 1}/${filter.year}`} />}
+            {showCCReportModal && <CostCenterReportModal isOpen={showCCReportModal} onClose={() => setShowCCReportModal(false)} transactions={transactions} />}
 
             {/* Toast */}
             {toast && (

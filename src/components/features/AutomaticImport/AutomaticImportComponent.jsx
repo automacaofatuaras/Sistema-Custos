@@ -265,7 +265,7 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
                     value: value,
                     quantity: parseFloat(rawQtd) / 1000,
                     type: 'expense',
-                    source: 'automatic_import',
+                    source: 'SAE127-1',
                     createdAt: new Date().toISOString(),
                     importBatchId: fileName
                 });
@@ -314,7 +314,7 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
                     materialDescription: sortDesc,
                     value: value,
                     type: currentType,
-                    source: 'automatic_import',
+                    source: 'SAE134-1',
                     createdAt: new Date().toISOString(),
                     importBatchId: fileName
                 });
