@@ -22,7 +22,7 @@ import { COST_CENTER_RULES } from './constants/costCenterRules';
 
 // Utils
 import { formatDate } from './utils/formatters';
-import { getMeasureUnit } from './utils/helpers';
+import { getMeasureUnit, getTransactionDreCategory } from './utils/helpers';
 
 // Common Components
 import KpiCard from './components/common/KpiCard';
@@ -157,6 +157,7 @@ export default function App() {
     // Filters
     const [filter, setFilter] = useState({ month: new Date().getMonth(), year: new Date().getFullYear(), type: 'month' });
     const [lancamentosSearch, setLancamentosSearch] = useState('');
+    const [lancamentosDreType, setLancamentosDreType] = useState('ALL');
 
     // Modals Visibility
     const [showEntryForm, setShowEntryForm] = useState(false);
@@ -306,15 +307,32 @@ export default function App() {
 
     const displayLancamentos = useMemo(() => {
         const base = filteredData.filter(t => t.type !== 'metric');
-        if (!lancamentosSearch) return base;
-        const lower = lancamentosSearch.toLowerCase();
-        return base.filter(t =>
-            (t.description || '').toLowerCase().includes(lower) ||
-            (t.costCenter || '').toLowerCase().includes(lower) ||
-            (t.planDescription || '').toLowerCase().includes(lower) ||
-            (t.materialDescription || '').toLowerCase().includes(lower)
-        );
-    }, [filteredData, lancamentosSearch]);
+        let filtered = base;
+
+        if (lancamentosDreType && lancamentosDreType !== 'ALL') {
+            filtered = filtered.filter(t => getTransactionDreCategory(t, selectedUnit) === lancamentosDreType);
+        }
+
+        if (lancamentosSearch) {
+            const lower = lancamentosSearch.toLowerCase();
+            filtered = filtered.filter(t =>
+                (t.description || '').toLowerCase().includes(lower) ||
+                (t.costCenter || '').toLowerCase().includes(lower) ||
+                (t.planDescription || '').toLowerCase().includes(lower) ||
+                (t.materialDescription || '').toLowerCase().includes(lower)
+            );
+        }
+        return filtered;
+    }, [filteredData, lancamentosSearch, lancamentosDreType, selectedUnit]);
+
+    const availableDreTypes = useMemo(() => {
+        if (!selectedUnit) return [];
+        const types = new Set();
+        filteredData.filter(t => t.type !== 'metric').forEach(t => {
+            types.add(getTransactionDreCategory(t, selectedUnit));
+        });
+        return Array.from(types).sort();
+    }, [filteredData, selectedUnit]);
 
     // YTD Data Calculation for Average Cost (Custo Médio)
     const ytdData = useMemo(() => {
@@ -977,10 +995,22 @@ export default function App() {
                                                 <button onClick={() => { setEditingTx(null); setShowEntryForm(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-sm shadow-md transition-colors"><PlusCircle size={18} /> Novo Lançamento</button>
                                             </div>
                                         </div>
-                                        <div className="p-4 bg-slate-50/30 dark:bg-slate-900/30">
-                                            <div className="relative">
+                                        <div className="p-4 bg-slate-50/30 dark:bg-slate-900/30 flex flex-col md:flex-row gap-4">
+                                            <div className="relative flex-1">
                                                 <Search className="absolute left-3 top-3 text-slate-400" size={16} />
-                                                <input type="text" className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg outline-none text-sm" placeholder="Pesquisar..." value={lancamentosSearch} onChange={e => setLancamentosSearch(e.target.value)} />
+                                                <input type="text" className="w-full pl-10 pr-4 py-2 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg outline-none text-sm dark:text-white" placeholder="Pesquisar..." value={lancamentosSearch} onChange={e => setLancamentosSearch(e.target.value)} />
+                                            </div>
+                                            <div className="w-full md:w-64">
+                                                <select
+                                                    className="w-full px-4 py-2 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg outline-none text-sm dark:text-white"
+                                                    value={lancamentosDreType}
+                                                    onChange={e => setLancamentosDreType(e.target.value)}
+                                                >
+                                                    <option value="ALL">Todos os Tipos DRE</option>
+                                                    {availableDreTypes.map(type => (
+                                                        <option key={type} value={type}>{type}</option>
+                                                    ))}
+                                                </select>
                                             </div>
                                         </div>
                                         <div className="overflow-x-auto">
@@ -990,13 +1020,14 @@ export default function App() {
                                                         <th className="p-4">Data</th>
                                                         <th className="p-4">Centro de Custo</th>
                                                         <th className="p-4">Classe</th>
+                                                        <th className="p-4">Tipo (DRE)</th>
                                                         <th className="p-4 text-right">Valor</th>
                                                         <th className="p-4 text-center">Ações</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y dark:divide-slate-700">
                                                     <tr className="bg-slate-100/50 dark:bg-slate-800/80">
-                                                        <td colSpan="3" className="p-4 text-right font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest text-xs">
+                                                        <td colSpan="4" className="p-4 text-right font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest text-xs">
                                                             Total do Período Filtrado:
                                                         </td>
                                                         <td className={`p-4 text-right font-black text-lg ${displayLancamentos.reduce((acc, curr) => acc + (curr.type === 'revenue' ? curr.value : -curr.value), 0) >= 0
@@ -1011,11 +1042,27 @@ export default function App() {
                                                         <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                                             <td className="p-4 text-slate-600 dark:text-slate-300 font-medium">{formatDate(t.date)}</td>
                                                             <td className="p-4">
-                                                                <div className="font-bold text-slate-700 dark:text-slate-200">{t.costCenter || 'N/A'}</div>
+                                                                {t.costCenter ? (
+                                                                    t.costCenter.includes(' - ') ? (
+                                                                        <>
+                                                                            <div className="font-bold text-slate-700 dark:text-slate-200">{t.costCenter.split(' - ')[0]}</div>
+                                                                            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">{t.costCenter.substring(t.costCenter.indexOf(' - ') + 3)}</div>
+                                                                        </>
+                                                                    ) : (
+                                                                        <div className="font-bold text-slate-700 dark:text-slate-200">{t.costCenter}</div>
+                                                                    )
+                                                                ) : (
+                                                                    <div className="font-bold text-slate-700 dark:text-slate-200">N/A</div>
+                                                                )}
                                                             </td>
                                                             <td className="p-4">
                                                                 <div className="text-xs text-indigo-500 font-bold">{t.planDescription || 'Sem Classe'}</div>
                                                                 <div className="text-[10px] text-slate-400">{t.description}</div>
+                                                            </td>
+                                                            <td className="p-4">
+                                                                <div className="text-[10px] font-bold text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded inline-block">
+                                                                    {getTransactionDreCategory(t, selectedUnit)}
+                                                                </div>
                                                             </td>
                                                             <td className={`p-4 text-right font-black ${t.type === 'revenue' ? 'text-emerald-500' : 'text-rose-500'}`}>{t.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                                                             <td className="p-4">

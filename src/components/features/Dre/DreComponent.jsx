@@ -4,14 +4,147 @@ import {
     Factory, ShoppingCart, Banknote, Receipt, Truck, Briefcase, Zap, Package
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { COST_CENTER_RULES } from '../../../constants/costCenterRules';
 import { ADMIN_CC_CODES } from '../../../constants/business';
 import { getParentSegment } from '../../../utils/helpers';
 import { formatCurrency } from '../../../utils/formatters';
 
 const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit }) => {
+
+    const handleDownloadPDF = () => {
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const pageWidth = doc.internal.pageSize.getWidth();
+
+        let yPos = 20;
+
+        // Title
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Demonstrativo de Resultados (DRE)`, 14, yPos);
+
+        yPos += 8;
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Unidade: ${selectedUnit || 'Unidade não informada'} | Período: ${filter ? (filter.type === 'month' ? `Mês ${filter.month + 1}/${filter.year}` : filter.year) : 'N/A'}`, 14, yPos);
+
+        yPos += 12;
+
+        // KPI Cards Summary
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Resumo de Indicadores:', 14, yPos);
+        yPos += 8;
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Resultado Material: ${formatBRLValue(dreData.resultadoMaterial)}`, 14, yPos);
+        doc.text(`Resultado Frete: ${formatBRLValue(dreData.resultadoFrete)}`, 100, yPos);
+        yPos += 6;
+        doc.text(`Resultado Líquido: ${formatBRLValue(dreData.resultFinal)}`, 14, yPos);
+        yPos += 10;
+
+        // Physical parameters
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Produção Total: ${totalProduction?.toLocaleString() || 0} ${measureUnit}`, 14, yPos);
+        doc.text(`Vendas Totais: ${totalSales?.toLocaleString() || 0} ${measureUnit}`, 75, yPos);
+        const estqEvol = (totalProduction || 0) - (totalSales || 0);
+        doc.text(`Evolução Estoque: ${estqEvol > 0 ? '+' : ''}${estqEvol.toLocaleString()} ${measureUnit}`, 135, yPos);
+
+        yPos += 12;
+
+        // Table Data Preparation
+        const tableData = [
+            // 1. RECEITAS
+            [{ content: '1. RECEITAS', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [240, 253, 244], textColor: [5, 150, 105] } }],
+            ['Receita Bruta Total', pct(dreData.totalRevenue, dreData.totalRevenue), rp(dreData.totalRevenue), formatBRLValue(dreData.totalRevenue)],
+            ['  Venda de Materiais', pct(dreData.recMaterial, dreData.totalRevenue), rp(dreData.recMaterial), formatBRLValue(dreData.recMaterial)],
+            ['  Receita de Fretes', pct(dreData.recFrete, dreData.totalRevenue), rp(dreData.recFrete), formatBRLValue(dreData.recFrete)],
+            ['  Outras Receitas / Subsídios', pct(dreData.subsidio, dreData.totalRevenue), rp(dreData.subsidio), formatBRLValue(dreData.subsidio)],
+
+            // 2. CUSTOS OPERACIONAIS
+            [{ content: '2. CUSTOS OPERACIONAIS', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [255, 251, 235], textColor: [217, 119, 6] } }],
+            ['  Total Custo Operacional', pct(dreData.despUnidade, dreData.totalRevenue), rp(dreData.despUnidade), formatBRLValue(dreData.despUnidade)],
+            ['  Outras Despesas', pct(dreData.outrasDespesas, dreData.totalRevenue), rp(dreData.outrasDespesas), formatBRLValue(dreData.outrasDespesas)],
+            ['Total Custo Operacional', pct(dreData.totalCustoOperacional, dreData.totalRevenue), rp(dreData.totalCustoOperacional), formatBRLValue(dreData.totalCustoOperacional)],
+
+            // MARGEM DE CONTRIBUICAO
+            [{ content: `MARGEM DE CONTRIBUIÇÃO (1 - 2)`, styles: { fontStyle: 'bold', textColor: [67, 56, 202] } },
+            { content: pct(dreData.margemContribuicao, dreData.totalRevenue), styles: { fontStyle: 'bold', textColor: [67, 56, 202] } },
+            { content: rp(dreData.margemContribuicao), styles: { fontStyle: 'bold', textColor: [67, 56, 202] } },
+            { content: formatBRLValue(dreData.margemContribuicao), styles: { fontStyle: 'bold', textColor: [67, 56, 202] } }],
+
+            // 3. TRANSPORTE
+            [{ content: '3. DESPESAS DE TRANSPORTE', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [255, 247, 237], textColor: [234, 88, 12] } }],
+            ['Total Transporte', pct(dreData.totalTransporteFinal, dreData.totalRevenue), rp(dreData.totalTransporteFinal), formatBRLValue(dreData.totalTransporteFinal)],
+            ['  Combustíveis e Lubrificantes', pct(dreData.combustivel, dreData.totalRevenue), rp(dreData.combustivel), formatBRLValue(dreData.combustivel)],
+            ['  Manutenção Frota', pct(dreData.manutencaoTotal, dreData.totalRevenue), rp(dreData.manutencaoTotal), formatBRLValue(dreData.manutencaoTotal)],
+            ['  Outras Despesas Frota', pct(dreData.residualTransporte, dreData.totalRevenue), rp(dreData.residualTransporte), formatBRLValue(dreData.residualTransporte)],
+            ['  Fretes Terceiros / Agregados', pct(dreData.transpTerceiros, dreData.totalRevenue), rp(dreData.transpTerceiros), formatBRLValue(dreData.transpTerceiros)],
+            ['  Custo Frota Parada', pct(dreData.frotaParada, dreData.totalRevenue), rp(dreData.frotaParada), formatBRLValue(dreData.frotaParada)],
+
+            // 4. TRIBUTOS
+            [{ content: '4. TRIBUTOS E IMPOSTOS', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [255, 241, 242], textColor: [225, 29, 72] } }],
+            ['Total de Impostos', pct(dreData.impostos, dreData.totalRevenue), rp(dreData.impostos), formatBRLValue(dreData.impostos)],
+
+            // RESULTADO OPERACIONAL
+            [{ content: `RESULTADO OPERACIONAL (Margem - 3 - 4)`, styles: { fontStyle: 'bold' } },
+            { content: pct(dreData.resultOperacional, dreData.totalRevenue), styles: { fontStyle: 'bold' } },
+            { content: rp(dreData.resultOperacional), styles: { fontStyle: 'bold' } },
+            { content: formatBRLValue(dreData.resultOperacional), styles: { fontStyle: 'bold' } }],
+
+            // 5. ADMINISTRATIVO
+            [{ content: '5. DESPESAS ADMINISTRATIVAS E GERAIS', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [240, 249, 255], textColor: [14, 165, 233] } }],
+            ['Total Administrativo', pct(dreData.totalAdministrativo, dreData.totalRevenue), rp(dreData.totalAdministrativo), formatBRLValue(dreData.totalAdministrativo)],
+            ['  Rateio Administrativo Central', pct(dreData.rateioAdm, dreData.totalRevenue), rp(dreData.rateioAdm), formatBRLValue(dreData.rateioAdm)],
+            ['  Multas e Taxas', pct(dreData.multas, dreData.totalRevenue), rp(dreData.multas), formatBRLValue(dreData.multas)],
+
+            // RESULTADO LIQUIDO
+            [{ content: `RESULTADO LÍQUIDO FINAL`, styles: { fontStyle: 'bold', textColor: dreData.resultFinal >= 0 ? [5, 150, 105] : [225, 29, 72], fillColor: dreData.resultFinal >= 0 ? [240, 253, 244] : [255, 241, 242] } },
+            { content: pct(dreData.resultFinal, dreData.totalRevenue), styles: { fontStyle: 'bold', textColor: dreData.resultFinal >= 0 ? [5, 150, 105] : [225, 29, 72], fillColor: dreData.resultFinal >= 0 ? [240, 253, 244] : [255, 241, 242] } },
+            { content: rp(dreData.resultFinal), styles: { fontStyle: 'bold', textColor: dreData.resultFinal >= 0 ? [5, 150, 105] : [225, 29, 72], fillColor: dreData.resultFinal >= 0 ? [240, 253, 244] : [255, 241, 242] } },
+            { content: formatBRLValue(dreData.resultFinal), styles: { fontStyle: 'bold', textColor: dreData.resultFinal >= 0 ? [5, 150, 105] : [225, 29, 72], fillColor: dreData.resultFinal >= 0 ? [240, 253, 244] : [255, 241, 242] } }],
+
+            // 6. INVESTIMENTOS
+            [{ content: '6. INVESTIMENTOS E CONSÓRCIOS (Fora do DRE Op.)', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [250, 245, 255], textColor: [168, 85, 247] } }],
+            ['Total Investimentos', pct(dreData.investimentos, dreData.totalRevenue), rp(dreData.investimentos), formatBRLValue(dreData.investimentos)],
+        ];
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['CLASSIFICAÇÃO', '% REC', `R$/${measureUnit}`, 'VALOR']],
+            body: tableData,
+            theme: 'grid',
+            headStyles: { fillColor: [241, 245, 249], textColor: [71, 85, 105], fontStyle: 'bold' },
+            styles: { fontSize: 8, cellPadding: 3 },
+            columnStyles: {
+                0: { cellWidth: 'auto' },
+                1: { cellWidth: 20, halign: 'right' },
+                2: { cellWidth: 30, halign: 'right' },
+                3: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }
+            }
+        });
+
+        const formatPdfName = () => {
+            let periodName = 'PeriodoIndefinido';
+            if (filter) {
+                if (filter.type === 'month') {
+                    const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+                    periodName = `${months[filter.month]}_${filter.year}`;
+                } else if (filter.type === 'year') {
+                    periodName = `Ano_${filter.year}`;
+                } else if (filter.type === 'custom' && filter.startDate && filter.endDate) {
+                    periodName = `${filter.startDate.substring(0, 10)}_a_${filter.endDate.substring(0, 10)}`;
+                }
+            }
+            const unitName = selectedUnit ? selectedUnit : 'Geral';
+            return `DRE_${unitName}_${periodName}.pdf`.replace(/\//g, "-").replace(/:/g, "-");
+        };
+
+        doc.save(formatPdfName());
+    };
 
     // Calcula os totais com base nas regras de negócio (COST_CENTER_RULES)
     const dreData = useMemo(() => {
@@ -37,6 +170,9 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
 
         // 2. Custos Operacionais
         const despUnidade = sum(t => t.type === 'expense' && isInRuleGroup(t, 'DESPESAS DA UNIDADE'));
+
+        const custoMaquinasEquipamentosCCs = [13001, 13004, 13006, 13030, 13031, 13032, 13079, 13121, 14002, 14006, 14030, 14031, 14032, 35082, 35350, 35519];
+        const custoMaquinas = sum(t => t.type === 'expense' && t.costCenter && custoMaquinasEquipamentosCCs.includes(parseInt(t.costCenter.split(' ')[0])));
 
         // 3. Custos de Transporte
         const totalTransporteGroup = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE'));
@@ -68,10 +204,11 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
             const isInvestimento = t.accountPlan?.startsWith('06') || t.description?.toLowerCase().includes('consórcio') || t.description?.toLowerCase().includes('investimento');
             const isTranspTerc = t.description?.toLowerCase().includes('transporte terceiros');
             const isFrota = t.description?.toLowerCase().includes('frota parada');
-            return !isDespUnidade && !isTransporteGroup && !isRateioAdm && !isMulta && !isImposto && !isInvestimento && !isTranspTerc && !isFrota;
+            const isMaquina = t.costCenter && custoMaquinasEquipamentosCCs.includes(parseInt(t.costCenter.split(' ')[0]));
+            return !isDespUnidade && !isTransporteGroup && !isRateioAdm && !isMulta && !isImposto && !isInvestimento && !isTranspTerc && !isFrota && !isMaquina;
         });
 
-        const totalCustoOperacional = despUnidade + outrasDespesas;
+        const totalCustoOperacional = despUnidade + custoMaquinas + outrasDespesas;
 
         // Resultados
         const margemContribuicao = totalRevenue - totalCustoOperacional;
@@ -88,7 +225,7 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
 
         return {
             totalRevenue, recMaterial, recFrete, subsidio,
-            despUnidade, outrasDespesas, totalCustoOperacional,
+            despUnidade, custoMaquinas, outrasDespesas, totalCustoOperacional,
             totalTransporteGroup, combustivel, manutencaoTotal, residualTransporte, transpTerceiros, frotaParada, totalTransporteFinal,
             rateioAdm, multas, totalAdministrativo,
             impostos,
@@ -191,7 +328,7 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
                         Demonstrativo de Resultados (DRE)
                     </h3>
                     <div className="flex gap-2">
-                        <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors">
+                        <button onClick={handleDownloadPDF} className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 transition-colors">
                             <Download size={16} /> PDF
                         </button>
                     </div>
@@ -214,9 +351,10 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
                         <div className="mt-6 mb-2 flex items-center gap-2 text-amber-500 font-black">
                             <Factory size={16} /> 2. CUSTOS OPERACIONAIS
                         </div>
-                        <TableRow label="Total Custo Operacional (Onde a regra do CC se aplica)" value={dreData.despUnidade} isSub />
-                        <TableRow label="Outras Despesas (Sem classificação exata no CC)" value={dreData.outrasDespesas} isSub />
-                        <TableRow label="Total Custo Operacional (Direto + Outros)" value={dreData.totalCustoOperacional} isTotal />
+                        <TableRow label="Total Custo Operacional" value={dreData.despUnidade} isSub />
+                        <TableRow label="Custo Máquinas e Equipamentos" value={dreData.custoMaquinas} isSub />
+                        <TableRow label="Outras Despesas" value={dreData.outrasDespesas} isSub />
+                        <TableRow label="Total Custo Operacional" value={dreData.totalCustoOperacional} isTotal />
 
                         {/* MARGEM DE CONTRIBUIÇÃO */}
                         <div className="mt-6 mb-2 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
