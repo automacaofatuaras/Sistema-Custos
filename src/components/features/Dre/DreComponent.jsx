@@ -8,7 +8,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { COST_CENTER_RULES } from '../../../constants/costCenterRules';
 import { ADMIN_CC_CODES } from '../../../constants/business';
-import { getParentSegment } from '../../../utils/helpers';
+import { getParentSegment, getTransactionDreCategory } from '../../../utils/helpers';
 import { formatCurrency } from '../../../utils/formatters';
 
 const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit }) => {
@@ -148,65 +148,39 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
 
     // Calcula os totais com base nas regras de negócio (COST_CENTER_RULES)
     const dreData = useMemo(() => {
-        const totalRevenue = transactions.filter(t => t.type === 'revenue').reduce((acc, t) => acc + t.value, 0);
         const sum = (fn) => transactions.filter(fn).reduce((acc, t) => acc + t.value, 0);
 
-        const parentSeg = getParentSegment(selectedUnit) || "Geral";
-        const rules = COST_CENTER_RULES[parentSeg];
-
-        const isInRuleGroup = (t, groupName, subGroupName = null) => {
-            if (!rules || !rules[groupName]) return false;
-            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
-            if (subGroupName) {
-                return rules[groupName][subGroupName]?.includes(ccCode);
-            }
-            return Object.values(rules[groupName]).flat().includes(ccCode);
-        };
-
         // 1. Receitas Detalhadas
-        const recMaterial = sum(t => t.type === 'revenue' && (t.description?.toLowerCase().includes('retira') || t.description?.toLowerCase().includes('entrega') || t.accountPlan === '01.01'));
-        const recFrete = sum(t => t.type === 'revenue' && t.description?.toLowerCase().includes('frete'));
-        const subsidio = sum(t => t.type === 'revenue' && t.description?.toLowerCase().includes('subsídio'));
+        const recMaterial = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Venda de Materiais');
+        const recFrete = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Receita de Fretes');
+        const subsidio = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Outras Receitas / Subsídios');
+        const totalRevenue = recMaterial + recFrete + subsidio + sum(t => getTransactionDreCategory(t, selectedUnit) === 'Outras Receitas / Receita Bruta');
 
         // 2. Custos Operacionais
-        const despUnidade = sum(t => t.type === 'expense' && isInRuleGroup(t, 'DESPESAS DA UNIDADE'));
-
-        const custoMaquinasEquipamentosCCs = [13001, 13004, 13006, 13030, 13031, 13032, 13079, 13121, 14002, 14006, 14030, 14031, 14032, 35082, 35350, 35519];
-        const custoMaquinas = sum(t => t.type === 'expense' && t.costCenter && custoMaquinasEquipamentosCCs.includes(parseInt(t.costCenter.split(' ')[0])));
+        const despUnidade = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Custo Operacional');
+        const custoMaquinas = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Custo Máquinas e Equipamentos');
 
         // 3. Custos de Transporte
-        const totalTransporteGroup = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE'));
-        const combustivel = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && (t.description?.toLowerCase().includes('combustivel') || t.description?.toLowerCase().includes('diesel') || t.accountPlan === '03.07.01'));
-        const manutencaoTotal = sum(t => t.type === 'expense' && isInRuleGroup(t, 'TRANSPORTE') && t.accountPlan?.startsWith('03.05'));
-        const transpTerceiros = sum(t => t.type === 'expense' && t.description?.toLowerCase().includes('transporte terceiros'));
-        const frotaParada = sum(t => t.type === 'expense' && t.description?.toLowerCase().includes('frota parada'));
-        const residualTransporte = Math.max(0, totalTransporteGroup - combustivel - manutencaoTotal); // O que sobrou do grupo de transporte
+        const combustivel = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Combustíveis e Lubrificantes (Transporte)');
+        const manutencaoTotal = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Manutenção Frota (Transporte)');
+        const residualTransporte = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Outras Despesas Frota (Transporte)');
+        const transpTerceiros = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Fretes Terceiros (Transporte)');
+        const frotaParada = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Custo Frota Parada (Transporte)');
 
+        const totalTransporteGroup = combustivel + manutencaoTotal + residualTransporte;
         const totalTransporteFinal = totalTransporteGroup + transpTerceiros + frotaParada;
 
         // 4. Administrativo
-        const rateioAdm = sum(t => t.type === 'expense' && (t.isRateio || t.description?.toLowerCase().includes('rateio despesas') || isInRuleGroup(t, 'ADMINISTRATIVO')));
-        const multas = sum(t => t.type === 'expense' && (t.description?.toLowerCase().includes('multa') || t.description?.toLowerCase().includes('taxa')));
+        const rateioAdm = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Rateio Administrativo Central');
+        const multas = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Multas e Taxas');
 
         const totalAdministrativo = rateioAdm + multas;
 
         // 5. Tributos/Impostos
-        const impostos = sum(t => t.type === 'expense' && (t.accountPlan?.startsWith('02') || t.description?.toLowerCase().includes('imposto') || t.accountPlan === '02.01'));
+        const impostos = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Total de Impostos');
 
         // 6. Outras Despesas (Fallback)
-        const outrasDespesas = sum(t => {
-            if (t.type !== 'expense') return false;
-            const isDespUnidade = isInRuleGroup(t, 'DESPESAS DA UNIDADE');
-            const isTransporteGroup = isInRuleGroup(t, 'TRANSPORTE');
-            const isRateioAdm = t.isRateio || t.description?.toLowerCase().includes('rateio despesas') || isInRuleGroup(t, 'ADMINISTRATIVO');
-            const isMulta = t.description?.toLowerCase().includes('multa') || t.description?.toLowerCase().includes('taxa');
-            const isImposto = t.accountPlan?.startsWith('02') || t.description?.toLowerCase().includes('imposto') || t.accountPlan === '02.01';
-            const isInvestimento = t.accountPlan?.startsWith('06') || t.description?.toLowerCase().includes('consórcio') || t.description?.toLowerCase().includes('investimento');
-            const isTranspTerc = t.description?.toLowerCase().includes('transporte terceiros');
-            const isFrota = t.description?.toLowerCase().includes('frota parada');
-            const isMaquina = t.costCenter && custoMaquinasEquipamentosCCs.includes(parseInt(t.costCenter.split(' ')[0]));
-            return !isDespUnidade && !isTransporteGroup && !isRateioAdm && !isMulta && !isImposto && !isInvestimento && !isTranspTerc && !isFrota && !isMaquina;
-        });
+        const outrasDespesas = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Outras Despesas');
 
         const totalCustoOperacional = despUnidade + custoMaquinas + outrasDespesas;
 
@@ -216,7 +190,7 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
         const resultPosDespesas = resultOperacional - totalAdministrativo;
 
         // Outros
-        const investimentos = sum(t => t.type === 'expense' && (t.accountPlan?.startsWith('06') || t.description?.toLowerCase().includes('consórcio') || t.description?.toLowerCase().includes('investimento')));
+        const investimentos = sum(t => getTransactionDreCategory(t, selectedUnit) === 'Investimentos E Consórcios');
         const resultFinal = resultPosDespesas - investimentos;
 
         // Novos Resultados Específicos
