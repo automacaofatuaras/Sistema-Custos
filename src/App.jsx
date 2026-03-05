@@ -271,8 +271,8 @@ export default function App() {
             return true;
         });
 
-        // Inject synthetic rateios if viewing a specific unit
-        if (selectedUnit && rateioTransactions.length > 0) {
+        // Inject synthetic rateios
+        if (rateioTransactions.length > 0) {
             return [...baseFiltered, ...rateioTransactions];
         }
         return baseFiltered;
@@ -300,7 +300,7 @@ export default function App() {
         });
 
         // Inject synthetic rateios into the filtered data
-        if (selectedUnit && rateioTransactions.length > 0) {
+        if (rateioTransactions.length > 0) {
             return [...baseFiltered, ...rateioTransactions];
         }
 
@@ -381,7 +381,7 @@ export default function App() {
         // We only inject current month's synthetic rateios.
         // YTD calculation for rateios across all previous months hasn't historically been loaded in one go,
         // but adding current rateioTransactions covers the current selection.
-        if (selectedUnit && rateioTransactions.length > 0) {
+        if (rateioTransactions.length > 0) {
             return [...baseYtd, ...rateioTransactions];
         }
 

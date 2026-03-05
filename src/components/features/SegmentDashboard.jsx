@@ -121,6 +121,7 @@ const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, un
                                     <Tooltip
                                         cursor={{ fill: 'transparent' }}
                                         contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                                        itemStyle={{ color: '#fff' }}
                                         formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                     />
                                     <Bar dataKey="revenue" name="Receita" radius={[4, 4, 0, 0]}>
@@ -148,6 +149,7 @@ const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, un
                                         <Tooltip
                                             cursor={{ fill: 'rgba(148, 163, 184, 0.1)' }}
                                             contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                                            itemStyle={{ color: '#fff' }}
                                         />
                                         <Legend wrapperStyle={{ fontSize: '10px' }} />
                                         <Bar dataKey="production" name="Produção" fill="#8884d8" radius={[4, 4, 0, 0]} />
@@ -171,6 +173,7 @@ const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, un
                                         <Tooltip
                                             cursor={{ fill: 'transparent' }}
                                             contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                                            itemStyle={{ color: '#fff' }}
                                             formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                         />
                                         <Bar dataKey="avgPrice" name="Preço Médio" radius={[4, 4, 0, 0]}>

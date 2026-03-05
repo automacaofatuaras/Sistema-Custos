@@ -10,7 +10,8 @@ export const useUnitRateios = (selectedUnit, parentSegment, filter, transactions
 
     useEffect(() => {
         const fetchAndCalculateRateios = async () => {
-            if (!selectedUnit || !parentSegment || !filter || !transactions) {
+            // Updated condition: allow null selectedUnit if parentSegment is provided
+            if (!parentSegment || !filter || !transactions) {
                 setRateioTransactions([]);
                 return;
             }
@@ -19,6 +20,12 @@ export const useUnitRateios = (selectedUnit, parentSegment, filter, transactions
 
             try {
                 const isNoromix = parentSegment === 'Concreteiras e Fábrica de Tubos';
+                const targetUnits = selectedUnit ? [selectedUnit] : (BUSINESS_HIERARCHY[parentSegment] || []);
+
+                if (targetUnits.length === 0) {
+                    setRateioTransactions([]);
+                    return;
+                }
 
                 // --- SETUP DATE & FILTER TXS ---
                 const periodTxs = transactions.filter(t => {
@@ -90,7 +97,7 @@ export const useUnitRateios = (selectedUnit, parentSegment, filter, transactions
                 const results = [];
                 let synthIdCounter = 1;
 
-                const pushSyntheticTx = (title, value, description) => {
+                const pushSyntheticTx = (targetUnit, title, value, description) => {
                     const absValue = Math.abs(value);
                     if (absValue === 0) return;
                     results.push({
@@ -101,7 +108,7 @@ export const useUnitRateios = (selectedUnit, parentSegment, filter, transactions
                         description: description ? `${title} (${description})` : title,
                         planDescription: 'RATEIO ADMINISTRATIVO - ' + title.toUpperCase(),
                         costCenter: 'CC Virtual Rateio',
-                        segment: selectedUnit,
+                        segment: targetUnit,
                         isRateio: true
                     });
                 };
@@ -116,270 +123,267 @@ export const useUnitRateios = (selectedUnit, parentSegment, filter, transactions
 
                 const generalTxs = periodTxs;
 
-                // 1. RATEIO ADMINISTRATIVO
-                const totalIndiretoGeral = admTransactions
-                    .filter(t => {
-                        const seg = (t.segment || '').trim().toUpperCase();
-                        return seg === 'GERAL' || seg === 'GERAL / ADMINISTRATIVO' || seg === 'ADMINISTRATIVO GERAL' || seg === 'ADMINISTRATIVO' || seg === 'INDIFERENTE';
-                    })
-                    .reduce((acc, t) => {
-                        if (t.type?.toUpperCase() === 'DIRETO') return acc;
-                        return acc + (t.value || 0);
-                    }, 0);
+                // Loop through units to calculate unit-specific rateios
+                for (const currentUnit of targetUnits) {
+                    // 1. RATEIO ADMINISTRATIVO
+                    const totalIndiretoGeral = admTransactions
+                        .filter(t => {
+                            const seg = (t.segment || '').trim().toUpperCase();
+                            return seg === 'GERAL' || seg === 'GERAL / ADMINISTRATIVO' || seg === 'ADMINISTRATIVO GERAL' || seg === 'ADMINISTRATIVO' || seg === 'INDIFERENTE';
+                        })
+                        .reduce((acc, t) => {
+                            if (t.type?.toUpperCase() === 'DIRETO') return acc;
+                            return acc + (t.value || 0);
+                        }, 0);
 
-                if (isNoromix && admParams) {
-                    const concreteUnits = BUSINESS_HIERARCHY["Concreteiras"];
-                    const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
-                    const allRateioUnits = [...concreteUnits, pipeUnit];
+                    if (isNoromix && admParams) {
+                        const concreteUnits = BUSINESS_HIERARCHY["Concreteiras"];
+                        const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
+                        const allRateioUnits = [...concreteUnits, pipeUnit];
 
-                    let volConcretoTotal = 0;
-                    let volGlobalTotal = 0;
-                    const unitVolumes = {};
+                        let volGlobalTotal = 0;
+                        const unitVolumes = {};
 
-                    allRateioUnits.forEach(u => {
-                        const vol = Number(admParams.volumes?.[u] || 0);
-                        unitVolumes[u] = vol;
-                        volGlobalTotal += vol;
-                        if (u !== pipeUnit) volConcretoTotal += vol;
-                    });
+                        allRateioUnits.forEach(u => {
+                            const vol = Number(admParams.volumes?.[u] || 0);
+                            unitVolumes[u] = vol;
+                            volGlobalTotal += vol;
+                        });
 
-                    let totalSalariosCalc = 0;
-                    allRateioUnits.forEach(u => {
-                        const count = admParams.employees?.[u] || 0;
-                        let factor = 0;
-                        if (count > 0 && count <= 6) factor = 2;
-                        else if (count > 6 && count <= 14) factor = 4;
-                        else if (count >= 15) factor = 6;
-                        totalSalariosCalc += (factor * (admParams.minWage || 1518));
-                    });
+                        const vol = unitVolumes[currentUnit] || 0;
+                        const isPipe = currentUnit === pipeUnit;
 
-                    const autoTargetValue = totalIndiretoGeral * 0.10;
-                    const despesasPot = Math.max(0, autoTargetValue - totalSalariosCalc - 20000);
-
-                    const vol = unitVolumes[selectedUnit] || 0;
-                    const isPipe = selectedUnit === pipeUnit;
-                    const rateioFolha = volGlobalTotal > 0 ? (totalSalariosCalc / volGlobalTotal) * vol : 0;
-
-                    let rateioDespesas = 0;
-                    if (isPipe) {
-                        rateioDespesas = 20000;
-                    } else {
-                        rateioDespesas = volConcretoTotal > 0 ? (vol / volConcretoTotal) * despesasPot : 0;
-                    }
-
-                    if (admParams.employees?.[selectedUnit] !== undefined) {
-                        pushSyntheticTx('Despesas Administrativas (Rateio 10%)', rateioFolha + rateioDespesas, `Produção: ${vol} m³ | Funcionários Ref: ${admParams.employees[selectedUnit] || 0}`, '1087');
-                    }
-                } else if (!isNoromix && admParams) {
-                    const basePedreiras = totalIndiretoGeral * 0.285;
-                    const basePortos = totalIndiretoGeral * 0.015;
-
-                    const pedreirasUnits = BUSINESS_HIERARCHY["Pedreiras"];
-                    const portosUnits = BUSINESS_HIERARCHY["Portos de Areia"];
-
-                    const calcSalarios = (units) => {
-                        let total = 0;
-                        units.forEach(u => {
+                        let totalSalariosCalc = 0;
+                        allRateioUnits.forEach(u => {
                             const count = admParams.employees?.[u] || 0;
                             let factor = 0;
                             if (count > 0 && count <= 6) factor = 2;
                             else if (count > 6 && count <= 14) factor = 4;
                             else if (count >= 15) factor = 6;
-                            total += (factor * (admParams.minWage || 1518));
+                            totalSalariosCalc += (factor * (admParams.minWage || 1518));
                         });
-                        return total;
-                    };
 
-                    const isPedreira = pedreirasUnits.includes(selectedUnit);
-                    const isPorto = portosUnits.includes(selectedUnit);
+                        const autoTargetValue = totalIndiretoGeral * 0.10;
+                        const despesasPot = Math.max(0, autoTargetValue - totalSalariosCalc - 20000);
 
-                    if (isPedreira || isPorto) {
-                        const salariosPedreiras = calcSalarios(pedreirasUnits);
-                        const salariosPortos = calcSalarios(portosUnits);
-
-                        const sobraPedreiras = Math.max(0, basePedreiras - salariosPedreiras);
-                        const sobraPortos = Math.max(0, basePortos - salariosPortos);
-
-                        const count = admParams.employees?.[selectedUnit] || 0;
-                        let factor = 0;
-                        if (count > 0 && count <= 6) factor = 2;
-                        else if (count > 6 && count <= 14) factor = 4;
-                        else if (count >= 15) factor = 6;
-
-                        const rateioFolha = factor * (admParams.minWage || 1518);
+                        const rateioFolha = volGlobalTotal > 0 ? (totalSalariosCalc / volGlobalTotal) * vol : 0;
 
                         let rateioDespesas = 0;
-                        if (isPedreira) {
-                            let percC2 = 18;
-                            if (selectedUnit.includes('Riolândia')) percC2 = 10;
-                            rateioDespesas = sobraPedreiras * (percC2 / 100);
-                        } else if (isPorto) {
-                            rateioDespesas = sobraPortos * 0.5;
-                        }
-
-                        pushSyntheticTx('Despesas Administrativas (Faixa Salarial)', rateioFolha, `Funcionários Ref: ${count}`, '1087');
-                        pushSyntheticTx(isPedreira ? 'Despesas Administrativas (Rateio Fixo %)' : 'Despesas Administrativas (Rateio 50%)', rateioDespesas, isPedreira ? (selectedUnit.includes('Riolândia') ? 'Alocação de 10%' : 'Alocação de 18%') : 'Divisão por 2', '1089');
-                    }
-                }
-
-                // 2. COMERCIAL e TÉCNICO NOROMIX
-                if (isNoromix && admParams) {
-                    const segmentDiretoItems = admTransactions.filter(t => {
-                        if (t.type?.toUpperCase() !== 'DIRETO') return false;
-                        const seg = (t.segment || '').trim().toUpperCase();
-                        return seg.includes('CONCRE') || seg.includes('FABRICA') || seg.includes('TUBOS');
-                    });
-                    const totalDiretoSegmento = segmentDiretoItems.reduce((acc, t) => acc + (t.value || 0), 0);
-                    const totalExp1105 = totalDiretoSegmento;
-                    const totalExp1075 = sumCC([1075], generalTxs);
-
-                    const concreteUnits = BUSINESS_HIERARCHY["Concreteiras"];
-                    const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
-                    const allRateioUnits = [...concreteUnits, pipeUnit];
-                    let volGlobalTotal = 0;
-                    allRateioUnits.forEach(u => volGlobalTotal += Number(admParams.volumes?.[u] || 0));
-
-                    const vol = Number(admParams.volumes?.[selectedUnit] || 0);
-                    const percent = volGlobalTotal > 0 ? vol / volGlobalTotal : 0;
-
-                    if (totalExp1105 > 0) {
-                        pushSyntheticTx('Rateio Comercial (CC 1105)', totalExp1105 * percent, `Peso da unidade: ${(percent * 100).toFixed(1)}%`, '1105');
-                    }
-
-                    if (totalExp1075 > 0) {
-                        pushSyntheticTx('Rateio Departamento Técnico (CC 1075)', totalExp1075 * percent, `Peso da unidade: ${(percent * 100).toFixed(1)}%`, '1075');
-                    }
-                }
-
-                // 3. VENDEDORES NOROMIX
-                const VENDEDORES_MAP = [
-                    { cc: 8003, unit: "Noromix Concreto S/A - Votuporanga" },
-                    { cc: 9003, unit: "Noromix Concreto S/A - Três Fronteiras" },
-                    { cc: 22003, unit: "Noromix Concreto S/A - Ilha Solteira" },
-                    { cc: 25003, unit: "Noromix Concreto S/A - Jales" },
-                    { cc: 27003, unit: "Noromix Concreto S/A - Fernandópolis" },
-                    { cc: 28003, unit: "Noromix Concreto S/A - Andradina" },
-                    { cc: 29003, unit: "Noromix Concreto S/A - Pereira Barreto" },
-                    { cc: 33003, unit: "Noromix Concreto S/A - Ouroeste" },
-                    { cc: 34003, unit: "Noromix Concreto S/A - Monções" },
-                    { cc: 38003, unit: "Noromix Concreto S/A - Paranaíba" }
-                ];
-
-                if (isNoromix && Object.keys(manualPercents).length > 0) {
-                    const mapper = VENDEDORES_MAP.find(m => m.unit === selectedUnit);
-                    if (mapper) {
-                        let baseValue = 0;
-                        let label = `Percentual Aplicado: ${manualPercents[mapper.cc] ?? 100}%`;
-
-                        // NOVA REGRA: Pereira Barreto (29003) divide 50% com Ilha Solteira (22003)
-                        if (mapper.cc === 22003) {
-                            // Ilha Solteira (Próprio + 50% de Pereira Barreto)
-                            const ownTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === 22003);
-                            const ownTotal = ownTxs.reduce((acc, t) => acc + t.value, 0);
-
-                            const pbTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === 29003);
-                            const pbTotal = pbTxs.reduce((acc, t) => acc + t.value, 0);
-
-                            const percent = manualPercents[22003] ?? 100;
-                            // O percentual manual de Ilha Solteira se aplica sobre a base composta
-                            baseValue = (ownTotal + (pbTotal * 0.5)) * (percent / 100);
-                            if (pbTotal > 0) label += ` (+ 50% do CC 29003)`;
-                        } else if (mapper.cc === 29003) {
-                            // Pereira Barreto (Somente 50% do Próprio)
-                            const pbTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === 29003);
-                            const pbTotal = pbTxs.reduce((acc, t) => acc + t.value, 0);
-
-                            const percent = manualPercents[29003] ?? 100;
-                            baseValue = (pbTotal * 0.5) * (percent / 100);
-                            label += ` (Redução de 50% p/ CC 22003)`;
+                        if (isPipe) {
+                            rateioDespesas = 20000;
                         } else {
-                            // Demais unidades (Regra padrão)
-                            const vendorTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === mapper.cc);
-                            const originalTotal = vendorTxs.reduce((acc, t) => acc + t.value, 0);
-                            const percent = manualPercents[mapper.cc] ?? 100;
-                            baseValue = originalTotal * (percent / 100);
+                            const volConcretoTotal = allRateioUnits.filter(u => u !== pipeUnit).reduce((acc, u) => acc + (unitVolumes[u] || 0), 0);
+                            rateioDespesas = volConcretoTotal > 0 ? (vol / volConcretoTotal) * despesasPot : 0;
                         }
 
-                        if (baseValue > 0) pushSyntheticTx('Rateio Vendedores', baseValue, label, mapper.cc);
-                    }
-                }
+                        if (admParams.employees?.[currentUnit] !== undefined) {
+                            pushSyntheticTx(currentUnit, 'Despesas Administrativas (Rateio 10%)', rateioFolha + rateioDespesas, `Produção: ${vol} m³ | Funcionários Ref: ${admParams.employees[currentUnit] || 0}`, '1087');
+                        }
+                    } else if (!isNoromix && admParams) {
+                        const basePedreiras = totalIndiretoGeral * 0.285;
+                        const basePortos = totalIndiretoGeral * 0.015;
 
-                // 4. NOROMIX 1046
-                if (isNoromix) {
-                    const totalExp1046 = sumCC([1046], generalTxs);
-                    const targetUnits = [...BUSINESS_HIERARCHY["Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
-                    const shareValue = targetUnits.length > 0 ? totalExp1046 / targetUnits.length : 0;
+                        const pedreirasUnits = BUSINESS_HIERARCHY["Pedreiras"];
+                        const portosUnits = BUSINESS_HIERARCHY["Portos de Areia"];
 
-                    if (shareValue > 0) pushSyntheticTx('Rateio Noromix (CC 1046)', shareValue, 'Divisão exata', '1046');
-                }
+                        const calcSalarios = (units) => {
+                            let total = 0;
+                            units.forEach(u => {
+                                const count = admParams.employees?.[u] || 0;
+                                let factor = 0;
+                                if (count > 0 && count <= 6) factor = 2;
+                                else if (count > 6 && count <= 14) factor = 4;
+                                else if (count >= 15) factor = 6;
+                                total += (factor * (admParams.minWage || 1518));
+                            });
+                            return total;
+                        };
 
-                if (limpezaParams && Object.keys(limpezaParams.employeeHours || {}).length > 0) {
-                    const unitHours = limpezaParams.employeeHours[selectedUnit] || 0;
-                    let totalH = 0;
-                    Object.values(limpezaParams.employeeHours).forEach(v => totalH += Number(v));
-                    const totalLimpezaExp = sumCC([1121], generalTxs);
+                        const isPedreira = pedreirasUnits.includes(currentUnit);
+                        const isPorto = portosUnits.includes(currentUnit);
 
-                    if (unitHours > 0 && totalH > 0) {
-                        const share = totalLimpezaExp * (unitHours / totalH);
-                        pushSyntheticTx('Rateio Limpeza (CC 1121)', share, `${unitHours} horas alocadas`, '1121');
-                    }
-                }
+                        if (isPedreira || isPorto) {
+                            const salariosPedreiras = calcSalarios(pedreirasUnits);
+                            const salariosPortos = calcSalarios(portosUnits);
 
-                // --- NON-NOROMIX ---
-                if (!isNoromix) {
-                    const isPedreira = BUSINESS_HIERARCHY["Pedreiras"].includes(selectedUnit);
-                    const isUsina = (BUSINESS_HIERARCHY["Usinas de Asfalto"] || []).includes(selectedUnit);
-                    const isPorto = BUSINESS_HIERARCHY["Portos de Areia"].includes(selectedUnit);
+                            const sobraPedreiras = Math.max(0, basePedreiras - salariosPedreiras);
+                            const sobraPortos = Math.max(0, basePortos - salariosPortos);
 
-                    if (isPedreira || isPorto) {
-                        const totalAdm = sumAdmCC([1087, 1089], admTransactions);
-                        pushSyntheticTx('Rateio Administrativo', totalAdm / 8, 'Distribuição Igualitária (1/8)', '1087');
-                    }
+                            const count = admParams.employees?.[currentUnit] || 0;
+                            let factor = 0;
+                            if (count > 0 && count <= 6) factor = 2;
+                            else if (count > 6 && count <= 14) factor = 4;
+                            else if (count >= 15) factor = 6;
 
-                    // Divisor dinâmico: 6 Pedreiras + 2 Portos + Usinas Ativas no período
-                    const usinasList = BUSINESS_HIERARCHY["Usinas de Asfalto"] || [];
-                    const activeUsinasCount = usinasList.filter(u => periodTxs.some(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === u && (t.value || 0) > 0)).length;
-                    const divisorDynamic = 6 + 2 + activeUsinasCount;
+                            const rateioFolha = factor * (admParams.minWage || 1518);
 
-                    if (isPorto) {
-                        const total1042 = sumCC([1042], generalTxs);
-                        const listPortos = BUSINESS_HIERARCHY["Portos de Areia"];
-                        const share1042 = listPortos.length > 0 ? total1042 / listPortos.length : 0;
-
-                        const total1043 = sumCC([1043], generalTxs);
-                        const share1043 = divisorDynamic > 0 ? total1043 / divisorDynamic : 0;
-
-                        pushSyntheticTx('Encarregado de Produção (CC 1042)', share1042, `Divisão por ${listPortos.length}`, '1042');
-                        pushSyntheticTx('Encarregado de Produção (CC 1043)', share1043, `Fração fixa de 1/${divisorDynamic}`, '1043');
-                    } else if (isPedreira || isUsina) {
-                        const total1043 = sumCC([1043], generalTxs);
-                        const share1043 = divisorDynamic > 0 ? total1043 / divisorDynamic : 0;
-
-                        if (isUsina) {
-                            const hasProduction = periodTxs.some(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === selectedUnit && (t.value || 0) > 0);
-                            if (hasProduction) {
-                                pushSyntheticTx('Encarregado de Produção (CC 1043)', share1043, `Fração fixa de 1/${divisorDynamic} (Com Produção)`, '1043');
+                            let rateioDespesas = 0;
+                            if (isPedreira) {
+                                let percC2 = 18;
+                                if (currentUnit.includes('Riolândia')) percC2 = 10;
+                                rateioDespesas = sobraPedreiras * (percC2 / 100);
+                            } else if (isPorto) {
+                                rateioDespesas = sobraPortos * 0.5;
                             }
-                        } else {
-                            pushSyntheticTx('Encarregado de Produção (CC 1043)', share1043, `Fração fixa de 1/${divisorDynamic}`, '1043');
+
+                            pushSyntheticTx(currentUnit, 'Despesas Administrativas (Faixa Salarial)', rateioFolha, `Funcionários Ref: ${count}`, '1087');
+                            pushSyntheticTx(currentUnit, isPedreira ? 'Despesas Administrativas (Rateio Fixo %)' : 'Despesas Administrativas (Rateio 50%)', rateioDespesas, isPedreira ? (currentUnit.includes('Riolândia') ? 'Alocação de 10%' : 'Alocação de 18%') : 'Divisão por 2', '1089');
                         }
                     }
 
-                    const total1104 = sumAdmCC([1104], admTransactions);
-                    if (isPorto || isPedreira || (isUsina && periodTxs.some(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === selectedUnit && (t.value || 0) > 0))) {
-                        pushSyntheticTx('Comercial (CC 1104)', total1104 / divisorDynamic, `Rateio igualitário (1/${divisorDynamic})`, '1104');
+                    // 2. COMERCIAL e TÉCNICO NOROMIX
+                    if (isNoromix && admParams) {
+                        const segmentDiretoItems = admTransactions.filter(t => {
+                            if (t.type?.toUpperCase() !== 'DIRETO') return false;
+                            const seg = (t.segment || '').trim().toUpperCase();
+                            return seg.includes('CONCRE') || seg.includes('FABRICA') || seg.includes('TUBOS');
+                        });
+                        const totalDiretoSegmento = segmentDiretoItems.reduce((acc, t) => acc + (t.value || 0), 0);
+                        const totalExp1105 = totalDiretoSegmento;
+                        const totalExp1075 = sumCC([1075], generalTxs);
+
+                        const concreteUnits = BUSINESS_HIERARCHY["Concreteiras"];
+                        const pipeUnit = BUSINESS_HIERARCHY["Fábrica de Tubos"][0];
+                        const allRateioUnits = [...concreteUnits, pipeUnit];
+                        let volGlobalTotal = 0;
+                        allRateioUnits.forEach(u => volGlobalTotal += Number(admParams.volumes?.[u] || 0));
+
+                        const vol = Number(admParams.volumes?.[currentUnit] || 0);
+                        const percent = volGlobalTotal > 0 ? vol / volGlobalTotal : 0;
+
+                        if (totalExp1105 > 0) {
+                            pushSyntheticTx(currentUnit, 'Rateio Comercial (CC 1105)', totalExp1105 * percent, `Peso da unidade: ${(percent * 100).toFixed(1)}%`, '1105');
+                        }
+
+                        if (totalExp1075 > 0) {
+                            pushSyntheticTx(currentUnit, 'Rateio Departamento Técnico (CC 1075)', totalExp1075 * percent, `Peso da unidade: ${(percent * 100).toFixed(1)}%`, '1075');
+                        }
                     }
-                    const total2105 = sumCC([2105, 20105], generalTxs);
-                    const total3105 = sumCC([3105], generalTxs);
-                    const total5105 = sumCC([5105], generalTxs);
 
-                    const p2105 = manualPercents[selectedUnit]?.['2105'] || 0;
-                    const p3105 = manualPercents[selectedUnit]?.['3105'] || 0;
-                    const p5105 = manualPercents[selectedUnit]?.['5105'] || 0;
+                    // 3. VENDEDORES NOROMIX
+                    const VENDEDORES_MAP = [
+                        { cc: 8003, unit: "Noromix Concreto S/A - Votuporanga" },
+                        { cc: 9003, unit: "Noromix Concreto S/A - Três Fronteiras" },
+                        { cc: 22003, unit: "Noromix Concreto S/A - Ilha Solteira" },
+                        { cc: 25003, unit: "Noromix Concreto S/A - Jales" },
+                        { cc: 27003, unit: "Noromix Concreto S/A - Fernandópolis" },
+                        { cc: 28003, unit: "Noromix Concreto S/A - Andradina" },
+                        { cc: 29003, unit: "Noromix Concreto S/A - Pereira Barreto" },
+                        { cc: 33003, unit: "Noromix Concreto S/A - Ouroeste" },
+                        { cc: 34003, unit: "Noromix Concreto S/A - Monções" },
+                        { cc: 38003, unit: "Noromix Concreto S/A - Paranaíba" }
+                    ];
 
-                    const vendShare = (total2105 * (p2105 / 100)) + (total3105 * (p3105 / 100)) + (total5105 * (p5105 / 100));
+                    if (isNoromix && Object.keys(manualPercents).length > 0) {
+                        const mapper = VENDEDORES_MAP.find(m => m.unit === currentUnit);
+                        if (mapper) {
+                            let baseValue = 0;
+                            let label = `Percentual Aplicado: ${manualPercents[mapper.cc] ?? 100}%`;
 
-                    pushSyntheticTx('Rateio Vendedores (2105, 3105, 5105)', vendShare, `Carga: 2105 (${p2105}%) | 3105 (${p3105}%) | 5105 (${p5105}%)`, isPorto ? '14103' : '2105');
+                            if (mapper.cc === 22003) {
+                                const ownTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === 22003);
+                                const ownTotal = ownTxs.reduce((acc, t) => acc + t.value, 0);
+
+                                const pbTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === 29003);
+                                const pbTotal = pbTxs.reduce((acc, t) => acc + t.value, 0);
+
+                                const percent = manualPercents[22003] ?? 100;
+                                baseValue = (ownTotal + (pbTotal * 0.5)) * (percent / 100);
+                                if (pbTotal > 0) label += ` (+ 50% do CC 29003)`;
+                            } else if (mapper.cc === 29003) {
+                                const pbTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === 29003);
+                                const pbTotal = pbTxs.reduce((acc, t) => acc + t.value, 0);
+
+                                const percent = manualPercents[29003] ?? 100;
+                                baseValue = (pbTotal * 0.5) * (percent / 100);
+                                label += ` (Redução de 50% p/ CC 22003)`;
+                            } else {
+                                const vendorTxs = admTransactions.filter(t => t.type === 'expense' && parseInt((t.costCenter || '').split(' ')[0]) === mapper.cc);
+                                const originalTotal = vendorTxs.reduce((acc, t) => acc + t.value, 0);
+                                const percent = manualPercents[mapper.cc] ?? 100;
+                                baseValue = originalTotal * (percent / 100);
+                            }
+
+                            if (baseValue > 0) pushSyntheticTx(currentUnit, 'Rateio Vendedores', baseValue, label, mapper.cc);
+                        }
+                    }
+
+                    // 4. NOROMIX 1046
+                    if (isNoromix) {
+                        const totalExp1046 = sumCC([1046], generalTxs);
+                        const targetUnitsList = [...BUSINESS_HIERARCHY["Concreteiras"], ...BUSINESS_HIERARCHY["Fábrica de Tubos"]];
+                        const shareValue = targetUnitsList.length > 0 ? totalExp1046 / targetUnitsList.length : 0;
+
+                        if (shareValue > 0) pushSyntheticTx(currentUnit, 'Rateio Noromix (CC 1046)', shareValue, 'Divisão exata', '1046');
+                    }
+
+                    if (limpezaParams && Object.keys(limpezaParams.employeeHours || {}).length > 0) {
+                        const unitHours = limpezaParams.employeeHours[currentUnit] || 0;
+                        let totalH = 0;
+                        Object.values(limpezaParams.employeeHours).forEach(v => totalH += Number(v));
+                        const totalLimpezaExp = sumCC([1121], generalTxs);
+
+                        if (unitHours > 0 && totalH > 0) {
+                            const share = totalLimpezaExp * (unitHours / totalH);
+                            pushSyntheticTx(currentUnit, 'Rateio Limpeza (CC 1121)', share, `${unitHours} horas alocadas`, '1121');
+                        }
+                    }
+
+                    // --- NON-NOROMIX ---
+                    if (!isNoromix) {
+                        const isPedreira = (BUSINESS_HIERARCHY["Pedreiras"] || []).includes(currentUnit);
+                        const isUsina = (BUSINESS_HIERARCHY["Usinas de Asfalto"] || []).includes(currentUnit);
+                        const isPorto = (BUSINESS_HIERARCHY["Portos de Areia"] || []).includes(currentUnit);
+
+                        if (isPedreira || isPorto) {
+                            const totalAdm = sumAdmCC([1087, 1089], admTransactions);
+                            pushSyntheticTx(currentUnit, 'Rateio Administrativo', totalAdm / 8, 'Distribuição Igualitária (1/8)', '1087');
+                        }
+
+                        const usinasList = BUSINESS_HIERARCHY["Usinas de Asfalto"] || [];
+                        const activeUsinasCount = usinasList.filter(u => periodTxs.some(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === u && (t.value || 0) > 0)).length;
+                        const divisorDynamic = 6 + 2 + activeUsinasCount;
+
+                        if (isPorto) {
+                            const total1042 = sumCC([1042], generalTxs);
+                            const listPortos = BUSINESS_HIERARCHY["Portos de Areia"];
+                            const share1042 = listPortos.length > 0 ? total1042 / listPortos.length : 0;
+
+                            const total1043 = sumCC([1043], generalTxs);
+                            const share1043 = divisorDynamic > 0 ? total1043 / divisorDynamic : 0;
+
+                            pushSyntheticTx(currentUnit, 'Encarregado de Produção (CC 1042)', share1042, `Divisão por ${listPortos.length}`, '1042');
+                            pushSyntheticTx(currentUnit, 'Encarregado de Produção (CC 1043)', share1043, `Fração fixa de 1/${divisorDynamic}`, '1043');
+                        } else if (isPedreira || isUsina) {
+                            const total1043 = sumCC([1043], generalTxs);
+                            const share1043 = divisorDynamic > 0 ? total1043 / divisorDynamic : 0;
+
+                            if (isUsina) {
+                                const hasProduction = periodTxs.some(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === currentUnit && (t.value || 0) > 0);
+                                if (hasProduction) {
+                                    pushSyntheticTx(currentUnit, 'Encarregado de Produção (CC 1043)', share1043, `Fração fixa de 1/${divisorDynamic} (Com Produção)`, '1043');
+                                }
+                            } else {
+                                pushSyntheticTx(currentUnit, 'Encarregado de Produção (CC 1043)', share1043, `Fração fixa de 1/${divisorDynamic}`, '1043');
+                            }
+                        }
+
+                        const total1104 = sumAdmCC([1104], admTransactions);
+                        if (isPorto || isPedreira || (isUsina && periodTxs.some(t => t.type === 'metric' && t.metricType === 'producao' && t.segment === currentUnit && (t.value || 0) > 0))) {
+                            pushSyntheticTx(currentUnit, 'Comercial (CC 1104)', total1104 / divisorDynamic, `Rateio igualitário (1/${divisorDynamic})`, '1104');
+                        }
+                        const total2105 = sumCC([2105, 20105], generalTxs);
+                        const total3105 = sumCC([3105], generalTxs);
+                        const total5105 = sumCC([5105], generalTxs);
+
+                        const p2105 = manualPercents[currentUnit]?.['2105'] || 0;
+                        const p3105 = manualPercents[currentUnit]?.['3105'] || 0;
+                        const p5105 = manualPercents[currentUnit]?.['5105'] || 0;
+
+                        const vendShare = (total2105 * (p2105 / 100)) + (total3105 * (p3105 / 100)) + (total5105 * (p5105 / 100));
+
+                        pushSyntheticTx(currentUnit, 'Rateio Vendedores (2105, 3105, 5105)', vendShare, `Carga: 2105 (${p2105}%) | 3105 (${p3105}%) | 5105 (${p5105}%)`, isPorto ? '14103' : '2105');
+                    }
                 }
 
                 setRateioTransactions(results);
