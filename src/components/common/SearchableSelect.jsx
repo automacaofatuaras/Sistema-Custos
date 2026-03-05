@@ -20,9 +20,32 @@ const SearchableSelect = ({ options, value, onChange, placeholder, label, icon: 
         });
     }, [options]);
 
-    const filteredOptions = normalizedOptions.filter(opt =>
-        opt.label.toLowerCase().includes(search.toLowerCase())
-    );
+    const filteredOptions = React.useMemo(() => {
+        const query = search ? String(search).toLowerCase().trim() : '';
+        if (!query) return normalizedOptions;
+
+        const searchTerms = query.split(/\s+/).filter(Boolean);
+
+        return normalizedOptions.filter(opt => {
+            const labelLower = String(opt.label).toLowerCase();
+            return searchTerms.every(term => labelLower.includes(term));
+        }).sort((a, b) => {
+            const aLabel = String(a.label).toLowerCase();
+            const bLabel = String(b.label).toLowerCase();
+
+            // Priority 1: Exact matches
+            if (aLabel === query && bLabel !== query) return -1;
+            if (bLabel === query && aLabel !== query) return 1;
+
+            // Priority 2: Starts with query
+            const aStarts = aLabel.startsWith(query);
+            const bStarts = bLabel.startsWith(query);
+            if (aStarts && !bStarts) return -1;
+            if (!aStarts && bStarts) return 1;
+
+            return 0; // Keep original order for the rest
+        });
+    }, [normalizedOptions, search]);
 
     const selectedOption = normalizedOptions.find(opt => opt.value === value);
 

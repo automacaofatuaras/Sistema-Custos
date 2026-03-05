@@ -401,9 +401,22 @@ export default function App() {
     const ytdProduction = useMemo(() => ytdData.filter(t => t.metricType === 'producao').reduce((a, b) => a + b.value, 0), [ytdData]);
     const ytdExpense = useMemo(() => ytdData.filter(t => t.type === 'expense').reduce((a, b) => a + b.value, 0), [ytdData]);
 
+    const ytdTransportExpense = useMemo(() => {
+        return ytdData.filter(t => t.type === 'expense').reduce((acc, t) => {
+            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
+            const rules = COST_CENTER_RULES?.[selectedSegment] || {};
+            let isTransport = false;
+            if (t.grupo?.toUpperCase() === 'TRANSPORTE') isTransport = true;
+            else if (rules['TRANSPORTE']) {
+                for (const ccList of Object.values(rules['TRANSPORTE'])) {
+                    if (ccList.includes(ccCode)) { isTransport = true; break; }
+                }
+            }
+            return isTransport ? acc + t.value : acc;
+        }, 0);
+    }, [ytdData, selectedSegment]);
+
     const currentMeasureUnit = useMemo(() => getMeasureUnit(selectedSegment || 'ALL'), [selectedSegment]);
-    const costPerUnit = ytdProduction > 0 ? ytdExpense / ytdProduction : 0;
-    const resultMargin = kpis.revenue > 0 ? (kpis.balance / kpis.revenue) * 100 : 0;
 
     // Previous Period Data Calculation for Trends
     const prevFilteredData = useMemo(() => {
@@ -524,7 +537,40 @@ export default function App() {
     const prevYtdProduction = useMemo(() => prevYtdData.filter(t => t.metricType === 'producao').reduce((a, b) => a + b.value, 0), [prevYtdData]);
     const prevYtdExpense = useMemo(() => prevYtdData.filter(t => t.type === 'expense').reduce((a, b) => a + b.value, 0), [prevYtdData]);
 
-    const prevCostPerUnit = prevYtdProduction > 0 ? prevYtdExpense / prevYtdProduction : 0;
+    const transportExpense = useMemo(() => {
+        return filteredData.filter(t => t.type === 'expense').reduce((acc, t) => {
+            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
+            const rules = COST_CENTER_RULES?.[selectedSegment] || {};
+            let isTransport = false;
+            if (t.grupo?.toUpperCase() === 'TRANSPORTE') isTransport = true;
+            else if (rules['TRANSPORTE']) {
+                for (const ccList of Object.values(rules['TRANSPORTE'])) {
+                    if (ccList.includes(ccCode)) { isTransport = true; break; }
+                }
+            }
+            return isTransport ? acc + t.value : acc;
+        }, 0);
+    }, [filteredData, selectedSegment]);
+
+    const prevTransportExpense = useMemo(() => {
+        return prevFilteredData.filter(t => t.type === 'expense').reduce((acc, t) => {
+            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
+            const rules = COST_CENTER_RULES?.[selectedSegment] || {};
+            let isTransport = false;
+            if (t.grupo?.toUpperCase() === 'TRANSPORTE') isTransport = true;
+            else if (rules['TRANSPORTE']) {
+                for (const ccList of Object.values(rules['TRANSPORTE'])) {
+                    if (ccList.includes(ccCode)) { isTransport = true; break; }
+                }
+            }
+            return isTransport ? acc + t.value : acc;
+        }, 0);
+    }, [prevFilteredData, selectedSegment]);
+
+    const costPerUnit = totalProduction > 0 ? (kpis.expense - transportExpense) / totalProduction : 0;
+    const resultMargin = kpis.revenue > 0 ? (kpis.balance / kpis.revenue) * 100 : 0;
+
+    const prevCostPerUnit = prevTotalProduction > 0 ? (prevKpis.expense - prevTransportExpense) / prevTotalProduction : 0;
     const prevResultMargin = prevKpis.revenue > 0 ? (prevKpis.balance / prevKpis.revenue) * 100 : 0;
 
     const calcTrend = (curr, prev) => {
@@ -1180,7 +1226,7 @@ export default function App() {
                         )}
 
                         {activeTab === 'dre' && selectedUnit && <DreComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={selectedUnit} />}
-                        {activeTab === 'estoque' && selectedUnit && <StockComponent transactions={unitTransactions} measureUnit={currentMeasureUnit} globalCostPerUnit={costPerUnit} currentFilter={filter} onAddMetric={handleAddMetric} onUpdateMetric={handleUpdateMetric} onDeleteMetric={handleDeleteTx} selectedSegment={selectedSegment} />}
+                        {activeTab === 'estoque' && selectedUnit && <StockComponent transactions={unitTransactions} measureUnit={currentMeasureUnit} globalCostPerUnit={ytdProduction > 0 ? (ytdExpense - ytdTransportExpense) / ytdProduction : 0} ytdExpense={ytdExpense} ytdProduction={ytdProduction} ytdTransportExpense={ytdTransportExpense} currentFilter={filter} onAddMetric={handleAddMetric} onUpdateMetric={handleUpdateMetric} onDeleteMetric={handleDeleteTx} selectedSegment={selectedSegment} />}
                         {activeTab === 'producao' && selectedUnit && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} currentFilter={filter} onAddMetric={handleAddMetric} onUpdateMetric={handleUpdateMetric} onDeleteMetric={handleDeleteTx} selectedSegment={selectedSegment} />}
                         {activeTab === 'rateios_unit' && selectedUnit && <RateioUnitSummaryComponent transactions={transactions} selectedUnit={selectedUnit} parentSegment={selectedSegment} filter={filter} user={user} />}
                         {activeTab === 'users' && <UsersScreen user={user} myRole={userRole} showToast={showToast} />}

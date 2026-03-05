@@ -14,7 +14,7 @@ const FormItem = ({ label, children, className }) => (
     </div>
 );
 
-const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentFilter, onAddMetric, onUpdateMetric, onDeleteMetric, selectedSegment }) => {
+const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, ytdExpense, ytdProduction, ytdTransportExpense, currentFilter, onAddMetric, onUpdateMetric, onDeleteMetric, selectedSegment }) => {
     const isUsina = selectedSegment === 'Usinas de Asfalto';
     const isConcreteira = selectedSegment === 'Concreteiras';
     const noStockSegment = isUsina || isConcreteira;
@@ -296,7 +296,6 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
 
             {showAdjust && (
                 <div id="stock-adjust-form" className="bg-white dark:bg-slate-900 w-full rounded-[2rem] shadow-[0_15px_60px_rgba(0,0,0,0.08)] border border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500 mb-8 overflow-hidden">
-                    {/* Header Inline Form */}
                     <div className="bg-slate-50 dark:bg-slate-800/50 p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
                         <div>
                             <h2 className="text-xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-2">
@@ -309,8 +308,6 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
 
                     <div className="p-8 space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-
-                            {/* TIPO */}
                             <FormItem label="TIPO">
                                 <select
                                     className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-indigo-500 rounded-2xl p-4 font-bold text-slate-700 dark:text-white outline-none transition-all appearance-none"
@@ -323,7 +320,6 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
                                 <Layout className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
                             </FormItem>
 
-                            {/* CATEGORIA */}
                             {adjustType === 'physical' ? (
                                 <FormItem label="CATEGORIA">
                                     <select
@@ -341,7 +337,6 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
                                 <div className="hidden md:block"></div>
                             )}
 
-                            {/* MÊS / DATA */}
                             <FormItem label="DATA DO LANÇAMENTO">
                                 <input
                                     type="date"
@@ -352,7 +347,6 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
                                 <Calendar className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
                             </FormItem>
 
-                            {/* VOLUME TOTAL */}
                             <FormItem label={adjustType === 'physical' ? `N. QUANTIDADE (${measureUnit})` : 'NOVO VALOR (R$)'}>
                                 <div className="relative">
                                     {adjustType === 'financial' && <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={18} />}
@@ -368,7 +362,6 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
                             </FormItem>
                         </div>
 
-                        {/* Footer Ações */}
                         <div className="flex justify-between items-center pt-4 border-t dark:border-slate-800">
                             <p className="text-xs text-slate-400 flex items-center gap-1">
                                 <Info size={14} className="inline text-indigo-400" /> O ajuste substituirá o cálculo automático a partir desta data.
@@ -398,11 +391,9 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
                 </div>
             )}
 
-            {/* Tabela de Lançamentos Manuais de Estoque */}
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 p-6">
                 <h3 className="font-bold text-lg mb-4 dark:text-white flex items-center gap-2">
-                    <Package className="text-slate-400" size={20} />
-                    Histórico de Ajustes Manuais
+                    <Package className="text-slate-400" size={20} /> Histórico de Ajustes Manuais
                 </h3>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
@@ -421,37 +412,20 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
                                 .sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date))
                                 .map(t => (
                                     <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                        <td className="p-4 text-slate-600 dark:text-slate-300 font-medium">
-                                            {formatDate(t.date)}
-                                        </td>
+                                        <td className="p-4 text-slate-600 dark:text-slate-300 font-medium">{formatDate(t.date)}</td>
                                         <td className="p-4">
-                                            <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider
-                                                ${t.metricType === 'estoque' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'}`}>
+                                            <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${t.metricType === 'estoque' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'}`}>
                                                 {t.metricType === 'estoque' ? 'Ajuste Financeiro' : 'Ajuste Físico'}
                                             </span>
                                         </td>
-                                        <td className="p-4 text-slate-500 dark:text-slate-400 font-medium">
-                                            {t.materialDescription}
-                                        </td>
+                                        <td className="p-4 text-slate-500 dark:text-slate-400 font-medium">{t.materialDescription}</td>
                                         <td className="p-4 text-right font-black text-slate-700 dark:text-slate-200">
                                             {t.value.toLocaleString('pt-BR', t.metricType === 'estoque' ? { style: 'currency', currency: 'BRL' } : {})} {t.metricType === 'estoque_fisico' ? measureUnit : ''}
                                         </td>
                                         <td className="p-4">
                                             <div className="flex items-center justify-center gap-2">
-                                                <button
-                                                    onClick={() => handleEditAdjust(t)}
-                                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                                    title="Editar Lançamento"
-                                                >
-                                                    <Edit2 size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => onDeleteMetric && onDeleteMetric(t.id)}
-                                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                                    title="Excluir Lançamento"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
+                                                <button onClick={() => handleEditAdjust(t)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"><Edit2 size={16} /></button>
+                                                <button onClick={() => onDeleteMetric && onDeleteMetric(t.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"><Trash2 size={16} /></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -464,6 +438,84 @@ const StockComponent = ({ transactions, measureUnit, globalCostPerUnit, currentF
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            {/* Memória de Cálculo */}
+            <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 p-8 mt-12 mb-8 animate-in fade-in duration-700">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center">
+                        <FileText className="text-indigo-600 dark:text-indigo-400" size={20} />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-black text-slate-800 dark:text-white leading-tight">Memória de Cálculo</h3>
+                        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-0.5">Entenda como chegamos nos valores acima</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Passo 1: Custo Médio */}
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 bg-slate-800 text-white rounded-full flex items-center justify-center text-[10px] font-black">1</span>
+                            <h4 className="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-tight">Cálculo do Custo Médio (YTD)</h4>
+                        </div>
+
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="text-slate-500 font-medium">Despesa Acumulada no Ano (Líquida)</span>
+                            <span className="font-black text-slate-700 dark:text-white">{((ytdExpense - (ytdTransportExpense || 0)) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-sm">
+                            <span className="text-slate-500 font-medium">Produção Acumulada no Ano (YTD)</span>
+                            <span className="font-black text-slate-700 dark:text-white">{(ytdProduction || 0).toLocaleString('pt-BR')} {measureUnit}</span>
+                        </div>
+                        <div className="pt-3 border-t dark:border-slate-700 flex flex-col gap-2">
+                            <p className="text-[10px] font-bold text-indigo-500 uppercase">Fórmula FINAL (YTD):</p>
+                            <div className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-white italic bg-indigo-50/50 dark:bg-indigo-500/5 p-2 rounded-lg">
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] text-slate-400 font-normal">Despesa - Transporte</span>
+                                    <span>{((ytdExpense - (ytdTransportExpense || 0)) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                                </div>
+                                <span className="text-slate-400 mx-1">/</span>
+                                <span>{(ytdProduction || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                                <span className="text-indigo-500 mx-1">=</span>
+                                <span className="bg-indigo-600 text-white px-2 py-0.5 rounded not-italic shadow-sm shadow-indigo-200 dark:shadow-none">R$ {stockData.avgCost.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Passo 2: Valor Estoque */}
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 bg-slate-800 text-white rounded-full flex items-center justify-center text-[10px] font-black">2</span>
+                            <h4 className="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-tight">Avaliação do Saldo Final</h4>
+                        </div>
+
+                        <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border dark:border-slate-700 shadow-sm space-y-3">
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-500 font-medium">Estoque Físico Calculado</span>
+                                <span className="font-black text-slate-700 dark:text-white">{stockData.total.toLocaleString()} {measureUnit}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-500 font-medium">Custo Médio Aplicado</span>
+                                <span className="font-black text-slate-700 dark:text-white">R$ {stockData.avgCost.toFixed(2)}</span>
+                            </div>
+                            <div className="pt-3 border-t dark:border-slate-700 flex flex-col gap-2">
+                                <p className="text-[10px] font-bold text-emerald-500 uppercase">Fórmula FINAL:</p>
+                                <div className="flex items-center gap-2 text-sm font-black text-slate-800 dark:text-white italic bg-emerald-50/50 dark:bg-emerald-500/5 p-2 rounded-lg">
+                                    <span>{stockData.total.toLocaleString()}</span>
+                                    <span className="text-slate-400 mx-1">×</span>
+                                    <span>R$ {stockData.avgCost.toFixed(2)}</span>
+                                    <span className="text-emerald-500 mx-1">=</span>
+                                    <span className="text-emerald-600 dark:text-emerald-400 font-extrabold not-italic text-lg">{stockData.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <p className="mt-6 text-[10px] text-slate-400 font-medium leading-relaxed italic border-t dark:border-slate-800 pt-4">
+                    * Nota: O Custo Médio é calculado com base no acumulado do ano (YTD) até o período selecionado para garantir a diluição correta das despesas fixas. Ajustes manuais de valor final no histórico abaixo substituem o cálculo automático para o período do lançamento.
+                </p>
             </div>
         </div>
     );
