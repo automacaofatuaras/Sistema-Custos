@@ -7,7 +7,7 @@ import {
     ShieldCheck, Trash2, Eye, X, Building2, Target, FileSpreadsheet, ClipboardCheck
 } from 'lucide-react';
 import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ComposedChart, Line
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ComposedChart, Line, LineChart
 } from 'recharts';
 
 // Services
@@ -943,7 +943,7 @@ export default function App() {
                                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.1} />
                                                     <XAxis type="number" tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
                                                     <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 9, fontWeight: 'bold' }} />
-                                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
+                                                    <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} itemStyle={{ color: '#fff' }} formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
                                                     <Bar dataKey="value" name="Valor" radius={[0, 4, 4, 0]} barSize={20}>
                                                         {expenseGroupsData.map((entry, index) => (
                                                             <Cell key={`cell-${index}`} fill={'#f43f5e'} />
@@ -963,7 +963,7 @@ export default function App() {
                                                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
                                                     <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
                                                     <YAxis tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
-                                                    <Tooltip cursor={{ fill: 'rgba(148, 163, 184, 0.1)' }} contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} />
+                                                    <Tooltip cursor={{ fill: 'rgba(148, 163, 184, 0.1)' }} contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} itemStyle={{ color: '#fff' }} />
                                                     <Legend wrapperStyle={{ fontSize: '10px' }} />
                                                     <Bar dataKey="Produção" fill="#8884d8" radius={[4, 4, 0, 0]} />
                                                     <Line type="monotone" dataKey="Vendas" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
@@ -977,13 +977,13 @@ export default function App() {
                                         <h3 className="mb-6 font-bold text-sm uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2"><Package size={18} className="text-amber-500" /> Evolução do Estoque (Mês)</h3>
                                         <div className="h-64">
                                             <ResponsiveContainer width="100%" height="100%">
-                                                <BarChart data={stockData.evolution} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                                <LineChart data={stockData.evolution} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                                     <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
                                                     <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
                                                     <YAxis tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
-                                                    <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} />
-                                                    <Bar dataKey="Estoque" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={25} />
-                                                </BarChart>
+                                                    <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} itemStyle={{ color: '#fff' }} formatter={(value) => value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} />
+                                                    <Line type="monotone" dataKey="Estoque" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                                                </LineChart>
                                             </ResponsiveContainer>
                                         </div>
                                     </div>
