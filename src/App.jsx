@@ -582,58 +582,35 @@ export default function App() {
     const expenseGroupsData = useMemo(() => {
         if (activeTab !== 'dashboard' || !selectedUnit) return [];
 
-        let totals = {
-            'DESPESAS DA UNIDADE': 0,
-            'TRANSPORTE': 0,
-            'ADMINISTRATIVO': 0,
-            'IMPOSTOS': 0,
-            'INVESTIMENTOS': 0,
-            'OUTROS': 0
+        const totals = {
+            'Custos Operacionais': 0,
+            'Despesas de Transporte': 0,
+            'Tributos e Impostos': 0,
+            'Despesas Administrativas': 0,
+            'Investimentos': 0
         };
 
         filteredData.filter(t => t.type === 'expense').forEach(t => {
-            const ccCode = t.costCenter ? parseInt(t.costCenter.split(' ')[0]) : 0;
-            const segmentName = selectedSegment; // selectedSegment is available
-            const rules = COST_CENTER_RULES?.[segmentName] || {};
+            const cat = getTransactionDreCategory(t, selectedUnit);
 
-            let root = 'OUTROS';
-            let matched = false;
-
-            if (t.grupo) {
-                root = t.grupo.toUpperCase();
-                matched = true;
+            if (cat === 'Custo Operacional' || cat === 'Custo Máquinas e Equipamentos' || cat === 'Outras Despesas') {
+                totals['Custos Operacionais'] += t.value;
+            } else if (cat.includes('(Transporte)')) {
+                totals['Despesas de Transporte'] += t.value;
+            } else if (cat === 'Total de Impostos') {
+                totals['Tributos e Impostos'] += t.value;
+            } else if (cat === 'Rateio Administrativo Central' || cat === 'Multas e Taxas') {
+                totals['Despesas Administrativas'] += t.value;
+            } else if (cat === 'Investimentos E Consórcios') {
+                totals['Investimentos'] += t.value;
             }
-
-            if (!matched && rules) {
-                for (const [rootGroup, subGroups] of Object.entries(rules)) {
-                    for (const [subGroup, ccList] of Object.entries(subGroups)) {
-                        if (ccList.includes(ccCode)) {
-                            root = rootGroup.toUpperCase();
-                            matched = true;
-                            break;
-                        }
-                    }
-                    if (matched) break;
-                }
-            }
-
-            if (!matched) {
-                if (t.accountPlan?.startsWith('06')) root = "INVESTIMENTOS";
-                else if (t.accountPlan === '02.01') root = "IMPOSTOS";
-                else if (ADMIN_CC_CODES?.includes(ccCode)) root = 'ADMINISTRATIVO';
-                else if (t.accountPlan?.startsWith('03') || t.accountPlan?.startsWith('04')) root = 'DESPESAS DA UNIDADE';
-                else root = 'DESPESAS DA UNIDADE';
-            }
-
-            if (!totals[root] && totals[root] !== 0) totals[root] = 0;
-            totals[root] += t.value;
         });
 
         return Object.entries(totals)
             .filter(([_, val]) => val > 0)
             .map(([name, val]) => ({ name, value: val }))
             .sort((a, b) => b.value - a.value);
-    }, [filteredData, activeTab, selectedUnit, selectedSegment]);
+    }, [filteredData, activeTab, selectedUnit]);
 
     const prodSalesData = useMemo(() => {
         if (activeTab !== 'dashboard' || !selectedUnit) return [];
@@ -982,13 +959,13 @@ export default function App() {
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                     {/* Gráfico de Despesas */}
                                     <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border dark:border-slate-700">
-                                        <h3 className="mb-6 font-bold text-sm uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2"><DollarSign size={18} className="text-rose-500" /> Grupos de Despesa</h3>
+                                        <h3 className="mb-6 font-bold text-sm uppercase tracking-widest text-slate-800 dark:text-white flex items-center gap-2"><DollarSign size={18} className="text-rose-500" /> Grupo de Despesas</h3>
                                         <div className="h-64">
                                             <ResponsiveContainer width="100%" height="100%">
-                                                <BarChart data={expenseGroupsData} layout="vertical" margin={{ top: 0, right: 20, left: 10, bottom: 0 }}>
+                                                <BarChart data={expenseGroupsData} layout="vertical" margin={{ top: 0, right: 30, left: 20, bottom: 0 }}>
                                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.1} />
                                                     <XAxis type="number" tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
-                                                    <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 9, fontWeight: 'bold' }} />
+                                                    <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 9, fontWeight: 'bold' }} />
                                                     <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} itemStyle={{ color: '#fff' }} formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
                                                     <Bar dataKey="value" name="Valor" radius={[0, 4, 4, 0]} barSize={20}>
                                                         {expenseGroupsData.map((entry, index) => (

@@ -7,16 +7,25 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ComposedChart, Line
 } from 'recharts';
 import KpiCard from '../common/KpiCard';
+import { getTransactionDreCategory } from '../../utils/helpers';
 
 const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, units }) => {
     // 1. Processamento de Dados Agregados
     const segmentData = useMemo(() => {
         const dataByUnit = {};
+        const expenseTotals = {
+            'Custos Operacionais': 0,
+            'Despesas de Transporte': 0,
+            'Tributos e Impostos': 0,
+            'Despesas Administrativas': 0,
+            'Investimentos': 0
+        };
+
         units.forEach(unit => {
             dataByUnit[unit] = { revenue: 0, expense: 0, balance: 0, margin: 0, production: 0, sales: 0 };
         });
 
-        // Filtrar transações do segmento (as transações têm campo segment formatado como "SEGMENT:UNIT" ou apenas "UNIT")
+        // Filtrar transações do segmento
         transactions.forEach(t => {
             const tSegment = t.segment || '';
             const isMatch = units.some(u => tSegment.includes(u));
@@ -24,7 +33,24 @@ const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, un
             if (isMatch) {
                 const unitMatch = units.find(u => tSegment.includes(u));
                 if (t.type === 'revenue') dataByUnit[unitMatch].revenue += (t.value || 0);
-                if (t.type === 'expense') dataByUnit[unitMatch].expense += (t.value || 0);
+                if (t.type === 'expense') {
+                    const val = (t.value || 0);
+                    dataByUnit[unitMatch].expense += val;
+
+                    // Consolidação de Despesas por Bloco DRE
+                    const cat = getTransactionDreCategory(t, unitMatch);
+                    if (cat === 'Custo Operacional' || cat === 'Custo Máquinas e Equipamentos' || cat === 'Outras Despesas') {
+                        expenseTotals['Custos Operacionais'] += val;
+                    } else if (cat.includes('(Transporte)')) {
+                        expenseTotals['Despesas de Transporte'] += val;
+                    } else if (cat === 'Total de Impostos') {
+                        expenseTotals['Tributos e Impostos'] += val;
+                    } else if (cat === 'Rateio Administrativo Central' || cat === 'Multas e Taxas') {
+                        expenseTotals['Despesas Administrativas'] += val;
+                    } else if (cat === 'Investimentos E Consórcios') {
+                        expenseTotals['Investimentos'] += val;
+                    }
+                }
                 if (t.type === 'metric' && t.metricType === 'producao') dataByUnit[unitMatch].production += (t.value || 0);
                 if (t.type === 'metric' && t.metricType === 'vendas') dataByUnit[unitMatch].sales += (t.value || 0);
             }
@@ -40,7 +66,7 @@ const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, un
             totals.expense += data.expense;
 
             return {
-                name: name.split('-').pop().trim(), // Nome curto para o gráfico
+                name: name.split('-').pop().trim(),
                 fullName: name,
                 ...data
             };
@@ -49,7 +75,12 @@ const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, un
         totals.balance = totals.revenue - totals.expense;
         totals.margin = totals.revenue > 0 ? (totals.balance / totals.revenue) * 100 : 0;
 
-        return { chartData, totals };
+        const expenseGroupsChart = Object.entries(expenseTotals)
+            .filter(([_, val]) => val > 0)
+            .map(([name, val]) => ({ name, value: val }))
+            .sort((a, b) => b.value - a.value);
+
+        return { chartData, totals, expenseGroupsChart };
     }, [transactions, segmentName, units]);
 
     const prevSegmentData = useMemo(() => {
@@ -75,7 +106,7 @@ const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, un
         return ((curr - prev) / Math.abs(prev)) * 100;
     };
 
-    const { chartData, totals } = segmentData;
+    const { chartData, totals, expenseGroupsChart } = segmentData;
     const { totals: prevTotals } = prevSegmentData;
 
     return (
@@ -106,89 +137,107 @@ const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, un
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Gráfico de Performance por Unidade */}
-                <div className="lg:col-span-2 space-y-6">
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border dark:border-slate-700">
-                        <h3 className="font-bold text-slate-800 dark:text-white mb-6 uppercase text-sm tracking-widest flex items-center gap-2">
-                            <BarChart3 size={18} className="text-indigo-500" /> Comparativo de Faturamento por Unidade
-                        </h3>
-                        <div className="h-80">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
-                                    <XAxis dataKey="name" angle={-45} textAnchor="end" interval={0} height={60} tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                                    <YAxis tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
-                                    <Tooltip
-                                        cursor={{ fill: 'transparent' }}
-                                        contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
-                                        itemStyle={{ color: '#fff' }}
-                                        formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                    />
-                                    <Bar dataKey="revenue" name="Receita" radius={[4, 4, 0, 0]}>
-                                        {chartData.map((entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={'#6366f1'} />
-                                        ))}
-                                    </Bar>
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Produção vs Vendas */}
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border dark:border-slate-700">
-                            <h3 className="font-bold text-slate-800 dark:text-white mb-6 uppercase text-sm tracking-widest flex items-center gap-2">
-                                <Package size={18} className="text-emerald-500" /> Produção vs Vendas por Unidade
-                            </h3>
-                            <div className="h-64">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
-                                        <XAxis dataKey="name" angle={-45} textAnchor="end" interval={0} height={60} tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                                        <YAxis tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
-                                        <Tooltip
-                                            cursor={{ fill: 'rgba(148, 163, 184, 0.1)' }}
-                                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
-                                            itemStyle={{ color: '#fff' }}
-                                        />
-                                        <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                        <Bar dataKey="production" name="Produção" fill="#8884d8" radius={[4, 4, 0, 0]} />
-                                        <Line type="monotone" dataKey="sales" name="Vendas" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
-                                    </ComposedChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-
-                        {/* Preço Médio */}
-                        <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border dark:border-slate-700">
-                            <h3 className="font-bold text-slate-800 dark:text-white mb-6 uppercase text-sm tracking-widest flex items-center gap-2">
-                                <DollarSign size={18} className="text-amber-500" /> Preço Médio por Unidade
-                            </h3>
-                            <div className="h-64">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
-                                        <XAxis dataKey="name" angle={-45} textAnchor="end" interval={0} height={60} tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                                        <YAxis tickFormatter={(val) => `R$ ${val}`} tick={{ fontSize: 10 }} />
-                                        <Tooltip
-                                            cursor={{ fill: 'transparent' }}
-                                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
-                                            itemStyle={{ color: '#fff' }}
-                                            formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                        />
-                                        <Bar dataKey="avgPrice" name="Preço Médio" radius={[4, 4, 0, 0]}>
-                                            {chartData.map((entry, index) => (
-                                                <Cell key={`avg-${index}`} fill={'#f59e0b'} />
-                                            ))}
-                                        </Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
+                {/* 1. Comparativo de Faturamento (2/3) */}
+                <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border dark:border-slate-700">
+                    <h3 className="font-bold text-slate-800 dark:text-white mb-6 uppercase text-sm tracking-widest flex items-center gap-2">
+                        <BarChart3 size={18} className="text-indigo-500" /> Comparativo de Faturamento por Unidade
+                    </h3>
+                    <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart layout="vertical" data={chartData} margin={{ top: 10, right: 30, left: 20, bottom: 10 }}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.1} />
+                                <XAxis type="number" tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
+                                <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                                <Tooltip
+                                    cursor={{ fill: 'transparent' }}
+                                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                                    itemStyle={{ color: '#fff' }}
+                                    formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                />
+                                <Bar dataKey="revenue" name="Receita" radius={[0, 4, 4, 0]}>
+                                    {chartData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={'#6366f1'} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
                     </div>
                 </div>
 
-                {/* Tabela de Ranking */}
+                {/* 2. Grupo de Despesas (1/3) */}
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border dark:border-slate-700">
+                    <h3 className="font-bold text-slate-800 dark:text-white mb-6 uppercase text-sm tracking-widest flex items-center gap-2">
+                        <DollarSign size={18} className="text-rose-500" /> Grupo de Despesas
+                    </h3>
+                    <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={expenseGroupsChart} layout="vertical" margin={{ top: 0, right: 30, left: 20, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.1} />
+                                <XAxis type="number" tickFormatter={(val) => `R$ ${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
+                                <YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 9, fontWeight: 'bold' }} />
+                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }} itemStyle={{ color: '#fff' }} formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} />
+                                <Bar dataKey="value" name="Valor" radius={[0, 4, 4, 0]} barSize={20}>
+                                    {expenseGroupsChart.map((entry, index) => (
+                                        <Cell key={`cell-exp-${index}`} fill={'#f43f5e'} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* 3. Produção vs Vendas (1/3) */}
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border dark:border-slate-700">
+                    <h3 className="font-bold text-slate-800 dark:text-white mb-6 uppercase text-sm tracking-widest flex items-center gap-2">
+                        <Package size={18} className="text-emerald-500" /> Produção vs Vendas por Unidade
+                    </h3>
+                    <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
+                                <XAxis dataKey="name" angle={-45} textAnchor="end" interval={0} height={60} tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                                <YAxis tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} tick={{ fontSize: 10 }} />
+                                <Tooltip
+                                    cursor={{ fill: 'rgba(148, 163, 184, 0.1)' }}
+                                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                                    itemStyle={{ color: '#fff' }}
+                                />
+                                <Legend wrapperStyle={{ fontSize: '10px' }} />
+                                <Bar dataKey="production" name="Produção" fill="#8884d8" radius={[4, 4, 0, 0]} />
+                                <Line type="monotone" dataKey="sales" name="Vendas" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} />
+                            </ComposedChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* 4. Preço Médio (1/3) */}
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border dark:border-slate-700">
+                    <h3 className="font-bold text-slate-800 dark:text-white mb-6 uppercase text-sm tracking-widest flex items-center gap-2">
+                        <DollarSign size={18} className="text-amber-500" /> Preço Médio por Unidade
+                    </h3>
+                    <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.1} />
+                                <XAxis dataKey="name" angle={-45} textAnchor="end" interval={0} height={60} tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                                <YAxis tickFormatter={(val) => `R$ ${val}`} tick={{ fontSize: 10 }} />
+                                <Tooltip
+                                    cursor={{ fill: 'transparent' }}
+                                    contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '12px' }}
+                                    itemStyle={{ color: '#fff' }}
+                                    formatter={(value) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                />
+                                <Bar dataKey="avgPrice" name="Preço Médio" radius={[4, 4, 0, 0]}>
+                                    {chartData.map((entry, index) => (
+                                        <Cell key={`avg-${index}`} fill={'#f59e0b'} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* 5. Ranking (1/3) */}
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl shadow-sm border dark:border-slate-700">
                     <h3 className="font-bold text-slate-800 dark:text-white mb-6 uppercase text-sm tracking-widest flex items-center gap-2">
                         <PieChart size={18} className="text-indigo-500" /> Ranking de Performance
