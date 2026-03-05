@@ -1,11 +1,13 @@
 import React, { useMemo } from 'react';
 import {
     TrendingUp, TrendingDown, DollarSign, Target,
-    BarChart3, PieChart, ArrowUpRight, ArrowDownRight, Factory, Package
+    BarChart3, PieChart, ArrowUpRight, ArrowDownRight, Factory, Package, Download
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell, ComposedChart, Line
 } from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import KpiCard from '../common/KpiCard';
 import { getTransactionDreCategory } from '../../utils/helpers';
 
@@ -80,7 +82,7 @@ const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, un
             .map(([name, val]) => ({ name, value: val }))
             .sort((a, b) => b.value - a.value);
 
-        return { chartData, totals, expenseGroupsChart };
+        return { chartData, totals, expenseGroupsChart, expenseTotals };
     }, [transactions, segmentName, units]);
 
     const prevSegmentData = useMemo(() => {
@@ -106,24 +108,179 @@ const SegmentDashboard = ({ transactions, prevTransactions = [], segmentName, un
         return ((curr - prev) / Math.abs(prev)) * 100;
     };
 
-    const { chartData, totals, expenseGroupsChart } = segmentData;
+    const { chartData, totals, expenseGroupsChart, expenseTotals } = segmentData;
     const { totals: prevTotals } = prevSegmentData;
+
+    const handleDownloadPDF = () => {
+        const doc = new jsPDF('p', 'mm', 'a4');
+        const pageWidth = doc.internal.pageSize.getWidth();
+
+        // Header
+        doc.setFillColor(79, 70, 229); // Indigo 600
+        doc.rect(0, 0, pageWidth, 40, 'F');
+
+        doc.setFontSize(22);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(255, 255, 255);
+        doc.text(segmentName, 14, 20);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Visão Consolidada do Segmento', 14, 28);
+        doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, pageWidth - 14, 28, { align: 'right' });
+
+        let yPos = 50;
+
+        // KPIs Summary
+        doc.setTextColor(30, 41, 59); // Slate 800
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Indicadores Consolidados', 14, yPos);
+        yPos += 10;
+
+        const kpiData = [
+            ['Faturamento Total', totals.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+            ['Custo Total', totals.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+            ['Resultado Líquido', totals.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })],
+            ['Margem Média', `${totals.margin.toFixed(1)}%`]
+        ];
+
+        autoTable(doc, {
+            startY: yPos,
+            body: kpiData,
+            theme: 'plain',
+            styles: { fontSize: 10, cellPadding: 2 },
+            columnStyles: { 0: { fontStyle: 'bold', cellWidth: 50 }, 1: { halign: 'left' } }
+        });
+
+        yPos = doc.lastAutoTable.finalY + 15;
+
+        // Comparative Table
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Performance por Unidade', 14, yPos);
+        yPos += 8;
+
+        const tableBody = chartData.map(u => [
+            u.fullName.split('-').pop().trim(),
+            u.revenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+            u.expense.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+            u.balance.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+            `${u.margin.toFixed(1)}%`
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Unidade', 'Faturamento', 'Custos', 'Resultado', 'Margem']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [79, 70, 229], textColor: 255 },
+            styles: { fontSize: 8 },
+            columnStyles: {
+                1: { halign: 'right' },
+                2: { halign: 'right' },
+                3: { halign: 'right' },
+                4: { halign: 'right' }
+            }
+        });
+
+        yPos = doc.lastAutoTable.finalY + 15;
+
+        // Produção, Vendas e Preço Médio
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 41, 59);
+        doc.text('Produção, Vendas e Preço Médio', 14, yPos);
+        yPos += 8;
+
+        const totalProduction = chartData.reduce((acc, u) => acc + (u.production || 0), 0);
+        const totalSales = chartData.reduce((acc, u) => acc + (u.sales || 0), 0);
+        const totalAvgPrice = totalSales > 0 ? totals.revenue / totalSales : 0;
+
+        const prodTableBody = chartData.map(u => [
+            u.fullName.split('-').pop().trim(),
+            u.production.toLocaleString('pt-BR', { maximumFractionDigits: 2 }),
+            u.sales.toLocaleString('pt-BR', { maximumFractionDigits: 2 }),
+            u.avgPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+        ]);
+
+        prodTableBody.push([
+            'TOTAL',
+            totalProduction.toLocaleString('pt-BR', { maximumFractionDigits: 2 }),
+            totalSales.toLocaleString('pt-BR', { maximumFractionDigits: 2 }),
+            totalAvgPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Unidade', 'Produção', 'Vendas', 'Preço Médio']],
+            body: prodTableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [16, 185, 129], textColor: 255 },
+            styles: { fontSize: 8 },
+            columnStyles: {
+                1: { halign: 'right' },
+                2: { halign: 'right' },
+                3: { halign: 'right' }
+            },
+            willDrawCell: function (data) {
+                if (data.row.index === prodTableBody.length - 1 && data.section === 'body') {
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFillColor(241, 245, 249);
+                }
+            }
+        });
+
+        yPos = doc.lastAutoTable.finalY + 15;
+
+        // Expense Groups
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Consolidado de Despesas (DRE)', 14, yPos);
+        yPos += 8;
+
+        const expenseTable = Object.entries(expenseTotals)
+            .filter(([_, val]) => val > 0)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, val]) => [name, val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), `${((val / totals.expense) * 100).toFixed(1)}%`]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Grupo de Despesa', 'Valor Total', '% do Custo']],
+            body: expenseTable,
+            theme: 'striped',
+            headStyles: { fillColor: [244, 63, 94], textColor: 255 },
+            styles: { fontSize: 9 },
+            columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }
+        });
+
+        doc.save(`Segmento_${segmentName.replace(/\s+/g, '_')}_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.pdf`);
+    };
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
             {/* Header com Contexto */}
             <div className="bg-indigo-600 rounded-3xl p-8 text-white shadow-xl shadow-indigo-500/20 relative overflow-hidden">
-                <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 bg-white/20 rounded-lg backdrop-blur-md">
-                            <Factory size={24} />
+                <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                    <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-md">
+                                <Factory size={24} />
+                            </div>
+                            <span className="text-xs font-bold uppercase tracking-widest opacity-80">Visão Consolidada do Segmento</span>
                         </div>
-                        <span className="text-xs font-bold uppercase tracking-widest opacity-80">Visão Consolidada do Segmento</span>
+                        <h2 className="text-4xl font-black mb-2">{segmentName}</h2>
+                        <p className="text-indigo-100 max-w-xl">Análise agregada de <strong>{units.length} unidades</strong>. Visualizando performance consolidada e comparativo de mercado interno.</p>
                     </div>
-                    <h2 className="text-4xl font-black mb-2">{segmentName}</h2>
-                    <p className="text-indigo-100 max-w-xl">Análise agregada de <strong>{units.length} unidades</strong>. Visualizando performance consolidada e comparativo de mercado interno.</p>
+
+                    <button
+                        onClick={handleDownloadPDF}
+                        className="flex items-center gap-2 px-6 py-3 bg-white text-indigo-600 rounded-2xl font-black hover:bg-indigo-50 transition-all shadow-lg active:scale-95 whitespace-nowrap"
+                    >
+                        <Download size={20} /> PDF
+                    </button>
                 </div>
-                <div className="absolute top-[-20%] right-[-5%] opacity-10 rotate-12 scale-150">
+                <div className="absolute top-[-20%] right-[-5%] opacity-10 rotate-12 scale-150 pointer-events-none">
                     <BarChart3 size={300} />
                 </div>
             </div>

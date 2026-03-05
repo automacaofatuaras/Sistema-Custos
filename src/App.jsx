@@ -1202,7 +1202,7 @@ export default function App() {
                             </div>
                         )}
 
-                        {activeTab === 'dre' && selectedUnit && <DreComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={selectedUnit} />}
+                        {activeTab === 'dre' && selectedUnit && <DreComponent transactions={filteredData} totalSales={totalSales} totalProduction={totalProduction} measureUnit={currentMeasureUnit} filter={filter} selectedUnit={selectedUnit} globalCostPerUnit={ytdProduction > 0 ? (ytdExpense - ytdTransportExpense) / ytdProduction : 0} periodCostPerUnit={costPerUnit} />}
                         {activeTab === 'estoque' && selectedUnit && <StockComponent transactions={unitTransactions} measureUnit={currentMeasureUnit} globalCostPerUnit={ytdProduction > 0 ? (ytdExpense - ytdTransportExpense) / ytdProduction : 0} ytdExpense={ytdExpense} ytdProduction={ytdProduction} ytdTransportExpense={ytdTransportExpense} currentFilter={filter} onAddMetric={handleAddMetric} onUpdateMetric={handleUpdateMetric} onDeleteMetric={handleDeleteTx} selectedSegment={selectedSegment} />}
                         {activeTab === 'producao' && selectedUnit && <ProductionComponent transactions={filteredData} measureUnit={currentMeasureUnit} currentFilter={filter} onAddMetric={handleAddMetric} onUpdateMetric={handleUpdateMetric} onDeleteMetric={handleDeleteTx} selectedSegment={selectedSegment} />}
                         {activeTab === 'rateios_unit' && selectedUnit && <RateioUnitSummaryComponent transactions={transactions} selectedUnit={selectedUnit} parentSegment={selectedSegment} filter={filter} user={user} />}

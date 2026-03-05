@@ -11,7 +11,7 @@ import { ADMIN_CC_CODES } from '../../../constants/business';
 import { getParentSegment, getTransactionDreCategory } from '../../../utils/helpers';
 import { formatCurrency } from '../../../utils/formatters';
 
-const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit }) => {
+const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, filter, selectedUnit, globalCostPerUnit, periodCostPerUnit }) => {
 
     const handleDownloadPDF = () => {
         const doc = new jsPDF('p', 'mm', 'a4');
@@ -39,10 +39,19 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
 
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
+
+        doc.setTextColor(dreData.resultadoMaterial >= 0 ? 5 : 225, dreData.resultadoMaterial >= 0 ? 150 : 29, dreData.resultadoMaterial >= 0 ? 105 : 72);
         doc.text(`Resultado Material: ${formatBRLValue(dreData.resultadoMaterial)}`, 14, yPos);
+
+        doc.setTextColor(dreData.resultadoFrete >= 0 ? 5 : 225, dreData.resultadoFrete >= 0 ? 150 : 29, dreData.resultadoFrete >= 0 ? 105 : 72);
         doc.text(`Resultado Frete: ${formatBRLValue(dreData.resultadoFrete)}`, 100, yPos);
+
         yPos += 6;
+
+        doc.setTextColor(dreData.resultFinal >= 0 ? 5 : 225, dreData.resultFinal >= 0 ? 150 : 29, dreData.resultFinal >= 0 ? 105 : 72);
         doc.text(`Resultado Líquido: ${formatBRLValue(dreData.resultFinal)}`, 14, yPos);
+
+        doc.setTextColor(0, 0, 0);
         yPos += 10;
 
         // Physical parameters
@@ -59,7 +68,7 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
         const tableData = [
             // 1. RECEITAS
             [{ content: '1. RECEITAS', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [240, 253, 244], textColor: [5, 150, 105] } }],
-            ['Receita Bruta Total', pct(dreData.totalRevenue, dreData.totalRevenue), rp(dreData.totalRevenue), formatBRLValue(dreData.totalRevenue)],
+            [{ content: 'Receita Bruta Total' }, { content: pct(dreData.totalRevenue, dreData.totalRevenue) }, { content: rp(dreData.totalRevenue) }, { content: formatBRLValue(dreData.totalRevenue) }].map(cell => ({ ...cell, styles: { fillColor: [241, 245, 249], fontStyle: 'bold' } })),
             ['  Venda de Materiais', pct(dreData.recMaterial, dreData.totalRevenue), rp(dreData.recMaterial), formatBRLValue(dreData.recMaterial)],
             ['  Receita de Fretes', pct(dreData.recFrete, dreData.totalRevenue), rp(dreData.recFrete), formatBRLValue(dreData.recFrete)],
             ['  Outras Receitas / Subsídios', pct(dreData.subsidio, dreData.totalRevenue), rp(dreData.subsidio), formatBRLValue(dreData.subsidio)],
@@ -67,8 +76,9 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
             // 2. CUSTOS OPERACIONAIS
             [{ content: '2. CUSTOS OPERACIONAIS', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [255, 251, 235], textColor: [217, 119, 6] } }],
             ['  Total Custo Operacional', pct(dreData.despUnidade, dreData.totalRevenue), rp(dreData.despUnidade), formatBRLValue(dreData.despUnidade)],
+            ['  Custo Máquinas e Equipamentos', pct(dreData.custoMaquinas, dreData.totalRevenue), rp(dreData.custoMaquinas), formatBRLValue(dreData.custoMaquinas)],
             ['  Outras Despesas', pct(dreData.outrasDespesas, dreData.totalRevenue), rp(dreData.outrasDespesas), formatBRLValue(dreData.outrasDespesas)],
-            ['Total Custo Operacional', pct(dreData.totalCustoOperacional, dreData.totalRevenue), rp(dreData.totalCustoOperacional), formatBRLValue(dreData.totalCustoOperacional)],
+            [{ content: 'Total Custo Operacional' }, { content: pct(dreData.totalCustoOperacional, dreData.totalRevenue) }, { content: rp(dreData.totalCustoOperacional) }, { content: formatBRLValue(dreData.totalCustoOperacional) }].map(cell => ({ ...cell, styles: { fillColor: [241, 245, 249], fontStyle: 'bold' } })),
 
             // MARGEM DE CONTRIBUICAO
             [{ content: `MARGEM DE CONTRIBUIÇÃO (1 - 2)`, styles: { fontStyle: 'bold', textColor: [67, 56, 202] } },
@@ -78,16 +88,16 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
 
             // 3. TRANSPORTE
             [{ content: '3. DESPESAS DE TRANSPORTE', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [255, 247, 237], textColor: [234, 88, 12] } }],
-            ['Total Transporte', pct(dreData.totalTransporteFinal, dreData.totalRevenue), rp(dreData.totalTransporteFinal), formatBRLValue(dreData.totalTransporteFinal)],
             ['  Combustíveis e Lubrificantes', pct(dreData.combustivel, dreData.totalRevenue), rp(dreData.combustivel), formatBRLValue(dreData.combustivel)],
             ['  Manutenção Frota', pct(dreData.manutencaoTotal, dreData.totalRevenue), rp(dreData.manutencaoTotal), formatBRLValue(dreData.manutencaoTotal)],
             ['  Outras Despesas Frota', pct(dreData.residualTransporte, dreData.totalRevenue), rp(dreData.residualTransporte), formatBRLValue(dreData.residualTransporte)],
             ['  Fretes Terceiros / Agregados', pct(dreData.transpTerceiros, dreData.totalRevenue), rp(dreData.transpTerceiros), formatBRLValue(dreData.transpTerceiros)],
             ['  Custo Frota Parada', pct(dreData.frotaParada, dreData.totalRevenue), rp(dreData.frotaParada), formatBRLValue(dreData.frotaParada)],
+            [{ content: 'Total Transporte' }, { content: pct(dreData.totalTransporteFinal, dreData.totalRevenue) }, { content: rp(dreData.totalTransporteFinal) }, { content: formatBRLValue(dreData.totalTransporteFinal) }].map(cell => ({ ...cell, styles: { fillColor: [241, 245, 249], fontStyle: 'bold' } })),
 
             // 4. TRIBUTOS
             [{ content: '4. TRIBUTOS E IMPOSTOS', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [255, 241, 242], textColor: [225, 29, 72] } }],
-            ['Total de Impostos', pct(dreData.impostos, dreData.totalRevenue), rp(dreData.impostos), formatBRLValue(dreData.impostos)],
+            [{ content: 'Total de Impostos' }, { content: pct(dreData.impostos, dreData.totalRevenue) }, { content: rp(dreData.impostos) }, { content: formatBRLValue(dreData.impostos) }].map(cell => ({ ...cell, styles: { fillColor: [241, 245, 249], fontStyle: 'bold' } })),
 
             // RESULTADO OPERACIONAL
             [{ content: `RESULTADO OPERACIONAL (Margem - 3 - 4)`, styles: { fontStyle: 'bold' } },
@@ -97,9 +107,9 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
 
             // 5. ADMINISTRATIVO
             [{ content: '5. DESPESAS ADMINISTRATIVAS E GERAIS', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [240, 249, 255], textColor: [14, 165, 233] } }],
-            ['Total Administrativo', pct(dreData.totalAdministrativo, dreData.totalRevenue), rp(dreData.totalAdministrativo), formatBRLValue(dreData.totalAdministrativo)],
             ['  Rateio Administrativo Central', pct(dreData.rateioAdm, dreData.totalRevenue), rp(dreData.rateioAdm), formatBRLValue(dreData.rateioAdm)],
             ['  Multas e Taxas', pct(dreData.multas, dreData.totalRevenue), rp(dreData.multas), formatBRLValue(dreData.multas)],
+            [{ content: 'Total Administrativo' }, { content: pct(dreData.totalAdministrativo, dreData.totalRevenue) }, { content: rp(dreData.totalAdministrativo) }, { content: formatBRLValue(dreData.totalAdministrativo) }].map(cell => ({ ...cell, styles: { fillColor: [241, 245, 249], fontStyle: 'bold' } })),
 
             // RESULTADO LIQUIDO
             [{ content: `RESULTADO LÍQUIDO FINAL`, styles: { fontStyle: 'bold', textColor: dreData.resultFinal >= 0 ? [5, 150, 105] : [225, 29, 72], fillColor: dreData.resultFinal >= 0 ? [240, 253, 244] : [255, 241, 242] } },
@@ -110,6 +120,25 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
             // 6. INVESTIMENTOS
             [{ content: '6. INVESTIMENTOS E CONSÓRCIOS (Fora do DRE Op.)', colSpan: 4, styles: { fontStyle: 'bold', fillColor: [250, 245, 255], textColor: [168, 85, 247] } }],
             ['Total Investimentos', pct(dreData.investimentos, dreData.totalRevenue), rp(dreData.investimentos), formatBRLValue(dreData.investimentos)],
+
+            [{ content: '', colSpan: 4, styles: { minCellHeight: 6, fillColor: [255, 255, 255] } }], // Espaço em branco
+
+            // RESULTADO COM ESTOQUE
+            [{ content: `RESULTADO COM ESTOQUE`, styles: { fontStyle: 'bold', textColor: resultadoComEstoque >= 0 ? [5, 150, 105] : [225, 29, 72], fillColor: resultadoComEstoque >= 0 ? [240, 253, 244] : [255, 241, 242] } },
+            { content: pct(resultadoComEstoque, dreData.totalRevenue), styles: { fontStyle: 'bold', textColor: resultadoComEstoque >= 0 ? [5, 150, 105] : [225, 29, 72], fillColor: resultadoComEstoque >= 0 ? [240, 253, 244] : [255, 241, 242] } },
+            { content: rp(resultadoComEstoque), styles: { fontStyle: 'bold', textColor: resultadoComEstoque >= 0 ? [5, 150, 105] : [225, 29, 72], fillColor: resultadoComEstoque >= 0 ? [240, 253, 244] : [255, 241, 242] } },
+            { content: formatBRLValue(resultadoComEstoque), styles: { fontStyle: 'bold', textColor: resultadoComEstoque >= 0 ? [5, 150, 105] : [225, 29, 72], fillColor: resultadoComEstoque >= 0 ? [240, 253, 244] : [255, 241, 242] } }],
+
+            [{
+                content: `Evolução: ${estoqueEvolucao > 0 ? '+' : ''}${estoqueEvolucao.toLocaleString('pt-BR')} ${measureUnit} × ${estoqueEvolucao > 0 ? 'Custo/Ton Período' : 'Custo Médio'} (${formatBRLValue(estoqueEvolucao > 0 ? periodCostPerUnit : globalCostPerUnit)}) = ${formatBRLValue(resultadoEstoque)}`,
+                colSpan: 4,
+                styles: {
+                    fontStyle: 'bold',
+                    fontSize: 7,
+                    textColor: resultadoComEstoque >= 0 ? [5, 150, 105] : [225, 29, 72],
+                    fillColor: resultadoComEstoque >= 0 ? [240, 253, 244] : [255, 241, 242]
+                }
+            }],
         ];
 
         autoTable(doc, {
@@ -221,6 +250,12 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
         return (val / totalProduction).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     };
 
+    const estoqueEvolucao = (totalProduction || 0) - (totalSales || 0);
+    const resultadoEstoque = estoqueEvolucao > 0
+        ? estoqueEvolucao * (periodCostPerUnit || 0)
+        : estoqueEvolucao * (globalCostPerUnit || 0);
+    const resultadoComEstoque = dreData.resultFinal + resultadoEstoque;
+
     // Card Component Auxiliar
     const SummaryCard = ({ title, value, subtext, icon: Icon, colorClass, highlight = false }) => (
         <div className={`p-5 rounded-2xl border ${highlight ? `${colorClass} text-white shadow-lg` : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 shadow-sm'} transition-transform hover:-translate-y-1`}>
@@ -316,7 +351,9 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
                         <div className="mt-4 mb-2 flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-black">
                             <Banknote size={16} /> 1. RECEITAS
                         </div>
-                        <TableRow label="Receita Bruta Total" value={dreData.totalRevenue} isTotal />
+                        <div className="bg-slate-100 dark:bg-slate-800/80 rounded-lg">
+                            <TableRow label="Receita Bruta Total" value={dreData.totalRevenue} isTotal />
+                        </div>
                         <TableRow label="Venda de Materiais" value={dreData.recMaterial} isSub />
                         <TableRow label="Receita de Fretes" value={dreData.recFrete} isSub />
                         <TableRow label="Outras Receitas / Subsídios" value={dreData.subsidio} isSub />
@@ -328,7 +365,9 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
                         <TableRow label="Total Custo Operacional" value={dreData.despUnidade} isSub />
                         <TableRow label="Custo Máquinas e Equipamentos" value={dreData.custoMaquinas} isSub />
                         <TableRow label="Outras Despesas" value={dreData.outrasDespesas} isSub />
-                        <TableRow label="Total Custo Operacional" value={dreData.totalCustoOperacional} isTotal />
+                        <div className="bg-slate-100 dark:bg-slate-800/80 rounded-lg">
+                            <TableRow label="Total Custo Operacional" value={dreData.totalCustoOperacional} isTotal />
+                        </div>
 
                         {/* MARGEM DE CONTRIBUIÇÃO */}
                         <div className="mt-6 mb-2 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
@@ -339,18 +378,22 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
                         <div className="mt-6 mb-2 flex items-center gap-2 text-orange-500 font-black">
                             <Truck size={16} /> 3. DESPESAS DE TRANSPORTE
                         </div>
-                        <TableRow label="Total Transporte" value={dreData.totalTransporteFinal} isTotal />
                         <TableRow label="Combustíveis e Lubrificantes" value={dreData.combustivel} isSub />
                         <TableRow label="Manutenção Frota" value={dreData.manutencaoTotal} isSub />
                         <TableRow label="Outras Despesas Frota" value={dreData.residualTransporte} isSub />
                         <TableRow label="Fretes Terceiros / Agregados" value={dreData.transpTerceiros} isSub />
                         <TableRow label="Custo Frota Parada" value={dreData.frotaParada} isSub />
+                        <div className="bg-slate-100 dark:bg-slate-800/80 rounded-lg">
+                            <TableRow label="Total Transporte" value={dreData.totalTransporteFinal} isTotal />
+                        </div>
 
                         {/* 4. TRIBUTOS */}
                         <div className="mt-6 mb-2 flex items-center gap-2 text-rose-500 font-black">
                             <Receipt size={16} /> 4. TRIBUTOS E IMPOSTOS
                         </div>
-                        <TableRow label="Total de Impostos" value={dreData.impostos} isTotal />
+                        <div className="bg-slate-100 dark:bg-slate-800/80 rounded-lg">
+                            <TableRow label="Total de Impostos" value={dreData.impostos} isTotal />
+                        </div>
 
                         {/* RESULTADO OPERACIONAL */}
                         <div className="mt-6 mb-2 p-4 bg-slate-100 dark:bg-slate-700/30 rounded-xl">
@@ -361,9 +404,11 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
                         <div className="mt-6 mb-2 flex items-center gap-2 text-sky-500 font-black">
                             <Briefcase size={16} /> 5. DESPESAS ADMINISTRATIVAS E GERAIS
                         </div>
-                        <TableRow label="Total Administrativo" value={dreData.totalAdministrativo} isTotal />
                         <TableRow label="Rateio Administrativo Central" value={dreData.rateioAdm} isSub />
                         <TableRow label="Multas e Taxas" value={dreData.multas} isSub />
+                        <div className="bg-slate-100 dark:bg-slate-800/80 rounded-lg">
+                            <TableRow label="Total Administrativo" value={dreData.totalAdministrativo} isTotal />
+                        </div>
 
                         {/* RESULTADO LIQUIDO */}
                         <div className={`mt-8 p-6 rounded-2xl border-2 ${dreData.resultFinal >= 0 ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50' : 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800/50'}`}>
@@ -387,6 +432,29 @@ const DreComponent = ({ transactions, totalSales, totalProduction, measureUnit, 
                             <Zap size={16} /> 6. INVESTIMENTOS (Fora do DRE Operacional)
                         </div>
                         <TableRow label="Total Investimentos e Consórcios" value={dreData.investimentos} isTotal />
+
+                        {/* RESULTADO COM ESTOQUE */}
+                        <div className="h-6"></div> {/* Espaço em branco */}
+                        <div className={`p-6 rounded-2xl border-2 ${resultadoComEstoque >= 0 ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50' : 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800/50'}`}>
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                <div>
+                                    <h2 className={`text-2xl font-black uppercase tracking-tight ${resultadoComEstoque >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>
+                                        RESULTADO COM ESTOQUE
+                                    </h2>
+                                    <p className={`text-xs mt-1 font-bold ${resultadoComEstoque >= 0 ? 'text-emerald-600/70 dark:text-emerald-400/70' : 'text-rose-600/70 dark:text-rose-400/70'}`}>
+                                        Evolução: {estoqueEvolucao > 0 ? '+' : ''}{estoqueEvolucao.toLocaleString('pt-BR')} {measureUnit} × {estoqueEvolucao > 0 ? 'Custo/Ton Período' : 'Custo Médio'} ({formatBRLValue(estoqueEvolucao > 0 ? periodCostPerUnit : globalCostPerUnit)}) = {formatBRLValue(resultadoEstoque)}
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <h2 className={`text-3xl font-black ${resultadoComEstoque >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                        {formatBRLValue(resultadoComEstoque)}
+                                    </h2>
+                                    <p className={`text-sm font-bold mt-1 ${resultadoComEstoque >= 0 ? 'text-emerald-600/70 dark:text-emerald-400/70' : 'text-rose-600/70 dark:text-rose-400/70'}`}>
+                                        Margem Baseada no DRE: {pct(resultadoComEstoque, dreData.totalRevenue)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
 
                     </div>
                 </div>
