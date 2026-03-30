@@ -1,10 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, AlertTriangle, CheckCircle, Loader2, Trash2 } from 'lucide-react';
+import { UploadCloud, AlertTriangle, CheckCircle, Loader2, Trash2, Database } from 'lucide-react';
 import { ADMIN_CC_CODES } from '../../../constants/business';
 import { PLANO_CONTAS } from '../../../constants/planoContas';
 import { getUnitByCostCenter } from '../../../utils/helpers';
 import { formatDate } from '../../../utils/formatters';
 import dbService from '../../../services/dbService';
+import { fetchFleetCostsFromSupabase } from '../../../services/fleetCostService';
 
 const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, BUSINESS_HIERARCHY, selectedUnit }) => {
     const [fileText, setFileText] = useState('');
@@ -12,6 +13,10 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
     const [importHistory, setImportHistory] = useState([]);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
+    const [importMode, setImportMode] = useState('file'); // 'file' or 'supabase'
+    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [isFetchingSupabase, setIsFetchingSupabase] = useState(false);
     const fileRef = useRef(null);
 
     React.useEffect(() => {
@@ -323,6 +328,24 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
         setPreviewData(parsed);
     };
 
+    const handleSupabaseFetch = async () => {
+        setIsFetchingSupabase(true);
+        try {
+            const data = await fetchFleetCostsFromSupabase(selectedMonth, selectedYear, selectedUnit);
+            if (data.length === 0) {
+                const filterDesc = selectedUnit ? ` para "${selectedUnit}"` : "";
+                alert(`Nenhum dado de frota encontrado para ${selectedMonth}/${selectedYear}${filterDesc} no Supabase.`);
+            } else {
+                setPreviewData(data);
+            }
+        } catch (error) {
+            console.error("Erro ao buscar do Supabase:", error);
+            alert("Erro ao conectar com o Supabase. Verifique as variáveis de ambiente.");
+        } finally {
+            setIsFetchingSupabase(false);
+        }
+    };
+
     const handleEditRow = (id, field, value) => {
         setPreviewData(prev => prev.map(row => {
             if (row.id !== id) return row;
@@ -466,18 +489,83 @@ const AutomaticImportComponent = ({ transactions = [], onImport, isProcessing, B
                 )}
             </div>
             {previewData.length === 0 && (
-                <div
-                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${isDragging ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
-                    onClick={() => fileRef.current?.click()}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                >
-                    <UploadCloud className={`mx-auto mb-3 transition-colors ${isDragging ? 'text-indigo-600' : 'text-indigo-500'}`} size={40} />
-                    <p className={`font-medium ${isDragging ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>
-                        {isDragging ? 'Solte o arquivo aqui...' : 'Clique ou arraste para selecionar o arquivo TXT (Entrada ou Saída)'}
-                    </p>
-                    <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
+                <div className="space-y-6">
+                    <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-900/50 rounded-lg w-fit">
+                        <button
+                            onClick={() => setImportMode('file')}
+                            className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${importMode === 'file' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Importar Arquivo (.txt)
+                        </button>
+                        <button
+                            onClick={() => setImportMode('supabase')}
+                            className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${importMode === 'supabase' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Puxar do Supabase (Frotas)
+                        </button>
+                    </div>
+
+                    {importMode === 'file' ? (
+                        <div
+                            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${isDragging ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+                            onClick={() => fileRef.current?.click()}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                        >
+                            <UploadCloud className={`mx-auto mb-3 transition-colors ${isDragging ? 'text-indigo-600' : 'text-indigo-500'}`} size={40} />
+                            <p className={`font-medium ${isDragging ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-200'}`}>
+                                {isDragging ? 'Solte o arquivo aqui...' : 'Clique ou arraste para selecionar o arquivo TXT (Entrada ou Saída)'}
+                            </p>
+                            <input type="file" ref={fileRef} className="hidden" accept=".txt,.csv" onChange={handleFile} />
+                        </div>
+                    ) : (
+                        <div className="bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700 rounded-xl p-8">
+                            <div className="max-w-md mx-auto text-center">
+                                <Database className="mx-auto mb-4 text-indigo-500" size={40} />
+                                <h4 className="font-bold text-slate-800 dark:text-white mb-2">Importação Automatizada de Frotas</h4>
+                                <p className="text-sm text-slate-500 mb-6">Selecione o período para buscar os custos de combustível e manutenção diretamente do banco de dados.</p>
+
+                                <div className="flex gap-4 mb-6">
+                                    <div className="flex-1">
+                                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1 text-left">Mês</label>
+                                        <select
+                                            value={selectedMonth}
+                                            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                                            className="w-full bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                        >
+                                            {[...Array(12)].map((_, i) => (
+                                                <option key={i + 1} value={i + 1}>
+                                                    {new Date(0, i).toLocaleString('pt-BR', { month: 'long' })}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1 text-left">Ano</label>
+                                        <select
+                                            value={selectedYear}
+                                            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                                            className="w-full bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                                        >
+                                            {[2024, 2025, 2026].map(year => (
+                                                <option key={year} value={year}>{year}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <button
+                                    onClick={handleSupabaseFetch}
+                                    disabled={isFetchingSupabase}
+                                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2"
+                                >
+                                    {isFetchingSupabase ? <Loader2 className="animate-spin" size={20} /> : <UploadCloud size={20} />}
+                                    {isFetchingSupabase ? 'Consultando Banco...' : 'Buscar Dados no Supabase'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
             {previewData.length > 0 && (
